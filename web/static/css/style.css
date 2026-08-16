@@ -283,8 +283,95 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 10px;
     cursor: pointer;
     transition: transform 0.15s ease, border-color 0.2s ease;
+}
+
+.client-item-main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+}
+
+.client-history-btn {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--card-border);
+    background-color: var(--secondary-bg);
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.client-history-btn:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+}
+
+/* Tanlangan mavjud mijoz banneri (yaratish formasida) */
+.create-client-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.35);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    margin-bottom: 16px;
+}
+
+.create-client-banner .banner-icon {
+    font-size: 18px;
+}
+
+.banner-texts {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.banner-texts .banner-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.banner-texts .banner-phone {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.banner-clear {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 20px;
+    cursor: pointer;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+
+.banner-clear:hover {
+    color: var(--accent-red);
+    background-color: rgba(239, 68, 68, 0.12);
 }
 
 .client-item-card:hover {
@@ -604,6 +691,27 @@ input:checked + .slider:before {
 
 .btn-success:hover {
     background-color: #059669;
+}
+
+.btn-secondary {
+    background: transparent;
+    border: 1.5px solid var(--primary-color);
+    color: var(--primary-color);
+}
+
+.btn-secondary:hover {
+    background: rgba(59, 130, 246, 0.08);
+}
+
+.modal-footer-btns {
+    display: flex;
+    gap: 8px;
+}
+
+.modal-footer-btns .btn {
+    flex: 1;
+    padding: 12px 10px;
+    font-size: 14px;
 }
 
 /* Product Groups (Multi-product) */

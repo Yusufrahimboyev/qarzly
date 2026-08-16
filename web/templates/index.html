@@ -103,6 +103,16 @@
                             <input type="tel" id="create-client-phone" placeholder="+998901234567" required>
                         </div>
 
+                        <!-- Tanlangan mavjud mijoz banneri (jadvaldan bosilganda) -->
+                        <div id="create-client-banner" class="create-client-banner" style="display: none;">
+                            <div class="banner-icon">➕</div>
+                            <div class="banner-texts">
+                                <span class="banner-title" id="banner-client-name">-</span>
+                                <span class="banner-phone" id="banner-client-phone">-</span>
+                            </div>
+                            <button type="button" id="banner-clear-btn" class="banner-clear" title="Boshqa mijoz kiriting">&times;</button>
+                        </div>
+
                         <!-- Tovarlar ro'yxati (dinamik) -->
                         <div id="products-container">
                             <div class="product-group" data-product-index="0">
@@ -382,9 +392,14 @@
             </div>
 
             <div class="modal-footer">
-                <button id="modal-pay-now-btn" class="btn btn-primary btn-block">
-                    💰 Ushbu Mijoz Qarzini To'lash
-                </button>
+                <div class="modal-footer-btns">
+                    <button id="modal-add-debt-btn" class="btn btn-secondary">
+                        ➕ Yana qarz
+                    </button>
+                    <button id="modal-pay-now-btn" class="btn btn-primary">
+                        💰 To'lash
+                    </button>
+                </div>
             </div>
         </div>
     </div>

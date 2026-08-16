@@ -81,6 +81,13 @@ def get_client_report_keyboard(client_id: int, has_debt: bool) -> InlineKeyboard
     """Mijoz hisoboti ekrani uchun inline tugmalar."""
     buttons: list[list[InlineKeyboardButton]] = []
 
+    buttons.append([
+        InlineKeyboardButton(
+            text="➕ Yana qarz qo'shish",
+            callback_data=f"add_debt_for_client:{client_id}",
+        )
+    ])
+
     if has_debt:
         buttons.append([
             InlineKeyboardButton(

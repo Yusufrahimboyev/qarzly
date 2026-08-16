@@ -45,6 +45,49 @@ router = Router()
 # ==========================================
 
 
+@router.callback_query(F.data.startswith("add_debt_for_client:"))
+async def cb_add_debt_for_client(
+    callback: CallbackQuery,
+    state: FSMContext,
+    client_service: ClientService,
+) -> None:
+    """Jadvaldan tanlangan mavjud mijozga yangi qarz qo'shishni boshlaydi.
+
+    Ism va telefon allaqachon ma'lum — sanadan boshlab so'raladi,
+    mijoz ma'lumotlari qayta so'ralmaydi (dublikat bo'lmaydi).
+    """
+    if callback.data is None or not isinstance(callback.message, Message):
+        await callback.answer()
+        return
+
+    client_id_raw = callback.data.split(":", 1)[1]
+    if not client_id_raw.isdigit():
+        await callback.answer("Noto'g'ri so'rov.", show_alert=True)
+        return
+
+    client = await client_service.get_by_id(int(client_id_raw))
+    if client is None:
+        await callback.answer("Mijoz topilmadi.", show_alert=True)
+        return
+
+    await state.clear()
+    await state.update_data(
+        client_name=client.full_name,
+        client_phone=client.phone,
+    )
+    await state.set_state(DebtCreationStates.waiting_date)
+
+    await callback.message.edit_text(
+        "📝 <b>YANGI QARZ YARATISH</b>\n\n"
+        f"👤 <b>Mijoz:</b> {client.full_name}\n"
+        f"📞 <b>Telefon:</b> {client.phone}\n\n"
+        "📅 <b>Qarzga olingan sanani kiriting:</b>\n\n"
+        "<i>Masalan: 17.08.2026 yoki 'Bugun' tugmasini bosing</i>",
+        reply_markup=get_date_picker_keyboard(),
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "cancel_creation")
 async def cb_cancel_creation(
     callback: CallbackQuery,
@@ -89,12 +132,21 @@ async def cb_create_back(callback: CallbackQuery, state: FSMContext) -> None:
         )
 
     elif current_state == DebtCreationStates.waiting_product_name:
-        await state.set_state(DebtCreationStates.waiting_client_phone)
-        await callback.message.edit_text(
-            "📞 <b>3-bosqich: Telefon raqamini kiriting:</b>\n\n"
-            "<i>Masalan: +998901234567</i>",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
+        if data.get("client_name") and data.get("client_phone"):
+            # Mavjud mijozga qarz qo'shilmoqda — sanaga qaytamiz
+            await state.set_state(DebtCreationStates.waiting_date)
+            await callback.message.edit_text(
+                "📅 <b>Qarzga olingan sanani kiriting:</b>\n\n"
+                "<i>Masalan: 17.08.2026 yoki 'Bugun' tugmasini bosing</i>",
+                reply_markup=get_date_picker_keyboard(),
+            )
+        else:
+            await state.set_state(DebtCreationStates.waiting_client_phone)
+            await callback.message.edit_text(
+                "📞 <b>3-bosqich: Telefon raqamini kiriting:</b>\n\n"
+                "<i>Masalan: +998901234567</i>",
+                reply_markup=get_back_cancel_keyboard(show_back=True),
+            )
 
     elif current_state == DebtCreationStates.waiting_product_quantity:
         await state.set_state(DebtCreationStates.waiting_product_name)
@@ -218,16 +270,40 @@ async def cb_date_today(callback: CallbackQuery, state: FSMContext) -> None:
     """Bugungi sanani qabul qiladi."""
     today = today_str()
     await state.update_data(debt_date=today)
-    await state.set_state(DebtCreationStates.waiting_client_name)
 
     if isinstance(callback.message, Message):
-        await callback.message.edit_text(
-            f"📅 <b>Sana:</b> {today}\n\n"
+        await _proceed_after_date(callback.message, state, today)
+    await callback.answer()
+
+
+async def _proceed_after_date(message: Message, state: FSMContext, date_str: str) -> None:
+    """Sanadan keyingi bosqichga o'tadi.
+
+    Mavjud mijozga qarz qo'shilayotgan bo'lsa (ism/telefon oldindan
+    to'ldirilgan) — ularni qayta so'ramasdan to'var kiritishga o'tadi.
+    """
+    data = await state.get_data()
+
+    if data.get("client_name") and data.get("client_phone"):
+        client_name = data["client_name"]
+        client_phone = data["client_phone"]
+        await state.update_data(_products=[])
+        await state.set_state(DebtCreationStates.waiting_product_name)
+        await message.answer(
+            f"📅 <b>Sana:</b> {date_str}\n"
+            f"👤 <b>Mijoz:</b> {client_name} ({client_phone})\n\n"
+            "📦 <b>Tovar (mahsulot) nomini kiriting:</b>\n\n"
+            "<i>Masalan: Shina, Akkumulyator, Generator</i>",
+            reply_markup=get_back_cancel_keyboard(show_back=True),
+        )
+    else:
+        await state.set_state(DebtCreationStates.waiting_client_name)
+        await message.answer(
+            f"📅 <b>Sana:</b> {date_str}\n\n"
             "👤 <b>2-bosqich: Qarz oluvchining ism-familiyasini kiriting:</b>\n\n"
             "<i>Masalan: Aliyev Anvar</i>",
             reply_markup=get_back_cancel_keyboard(show_back=True),
         )
-    await callback.answer()
 
 
 @router.message(DebtCreationStates.waiting_date)
@@ -249,13 +325,7 @@ async def process_custom_date(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(debt_date=parsed_date)
-    await state.set_state(DebtCreationStates.waiting_client_name)
-    await message.answer(
-        f"📅 <b>Sana:</b> {parsed_date}\n\n"
-        "👤 <b>2-bosqich: Qarz oluvchining ism-familiyasini kiriting:</b>\n\n"
-        "<i>Masalan: Aliyev Anvar</i>",
-        reply_markup=get_back_cancel_keyboard(show_back=True),
-    )
+    await _proceed_after_date(message, state, parsed_date)
 
 
 # ==========================================

@@ -195,28 +195,77 @@ function renderClientsList() {
 
     container.innerHTML = list.map(item => `
         <div class="client-item-card" data-client-id="${item.id}">
-            <div class="client-item-info">
-                <div class="client-item-name">${escapeHtml(item.full_name)}</div>
-                <div class="client-item-phone">${escapeHtml(item.phone)}</div>
-            </div>
-            <div class="client-item-meta">
-                <div class="client-item-debt ${item.has_debt ? 'has-debt' : 'no-debt'}">
-                    ${item.has_debt ? formatMoneyMap(item.remaining) : formatMoney(0)}
+            <div class="client-item-main">
+                <div class="client-item-info">
+                    <div class="client-item-name">${escapeHtml(item.full_name)}</div>
+                    <div class="client-item-phone">${escapeHtml(item.phone)}</div>
                 </div>
-                <span class="badge ${item.has_debt ? 'badge-danger' : 'badge-success'}">
-                    ${item.has_debt ? '🔴 Qarzdor' : '🟢 Yopilgan'}
-                </span>
+                <div class="client-item-meta">
+                    <div class="client-item-debt ${item.has_debt ? 'has-debt' : 'no-debt'}">
+                        ${item.has_debt ? formatMoneyMap(item.remaining) : formatMoney(0)}
+                    </div>
+                    <span class="badge ${item.has_debt ? 'badge-danger' : 'badge-success'}">
+                        ${item.has_debt ? '🔴 Qarzdor' : '🟢 Yopilgan'}
+                    </span>
+                </div>
             </div>
+            <button class="client-history-btn" data-client-id="${item.id}" title="Hisobotni ko'rish" aria-label="Hisobot">
+                📊
+            </button>
         </div>
     `).join('');
 
-    // Attach click handlers to open modal
+    // Karta ustiga bosilganda — o'sha mijozga yangi qarz qo'shish formasi ochiladi
     container.querySelectorAll('.client-item-card').forEach(card => {
-        card.addEventListener('click', () => {
+        card.addEventListener('click', (e) => {
+            if (e.target.closest('.client-history-btn')) return;
             const clientId = card.getAttribute('data-client-id');
-            openClientReportModal(clientId);
+            const item = state.summaries.find(s => String(s.id) === clientId);
+            if (item) startAddDebtForClient(item);
         });
     });
+
+    // 📊 tugmasi — hisobot modalini ochadi
+    container.querySelectorAll('.client-history-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openClientReportModal(btn.getAttribute('data-client-id'));
+        });
+    });
+}
+
+// Jadvaldan tanlangan mavjud mijozga yangi qarz qo'shishni boshlaydi:
+// Yaratish tabini ochib, ism/telefonni to'ldiradi (dublikat bo'lmaydi)
+function startAddDebtForClient(person) {
+    hapticImpact();
+    switchTab('tab-create');
+
+    const nameInput = document.getElementById('create-client-name');
+    const phoneInput = document.getElementById('create-client-phone');
+    if (nameInput && person.full_name) nameInput.value = person.full_name;
+    if (phoneInput && person.phone) phoneInput.value = person.phone;
+
+    const banner = document.getElementById('create-client-banner');
+    if (banner) {
+        document.getElementById('banner-client-name').textContent = person.full_name || '-';
+        document.getElementById('banner-client-phone').textContent = person.phone || '-';
+        banner.style.display = 'flex';
+    }
+
+    // Birinchi tovar nomiga foküs
+    const firstProduct = document.querySelector('#products-container .product-name');
+    if (firstProduct) setTimeout(() => firstProduct.focus(), 200);
+}
+
+// Bannerdan voz kechish — boshqa (yangi) mijoz kiritish uchun maydonlarni bo'shatadi
+function clearCreateClientBanner() {
+    const banner = document.getElementById('create-client-banner');
+    if (!banner) return;
+    banner.style.display = 'none';
+    const nameInput = document.getElementById('create-client-name');
+    const phoneInput = document.getElementById('create-client-phone');
+    if (nameInput) nameInput.value = '';
+    if (phoneInput) phoneInput.value = '';
 }
 
 function escapeHtml(str) {
@@ -638,6 +687,9 @@ function setupCreateForm() {
                 // Valyutani UZSga qaytarish
                 const uzsRadio = document.querySelector('input[name="currency"][value="UZS"]');
                 if (uzsRadio) uzsRadio.checked = true;
+                // Banner yashiriladi
+                const banner = document.getElementById('create-client-banner');
+                if (banner) banner.style.display = 'none';
 
                 updateCreateCalculation();
 
@@ -953,6 +1005,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 select.value = String(clientId);
                 select.dispatchEvent(new Event('change'));
             }
+        });
+    }
+
+    // Modal "Yana qarz" — hisobotdan to'g'ridan-to'g'ri qarz qo'shish
+    const modalAddDebtBtn = document.getElementById('modal-add-debt-btn');
+    if (modalAddDebtBtn) {
+        modalAddDebtBtn.addEventListener('click', () => {
+            if (!state.selectedClientReport) return;
+            const client = { ...state.selectedClientReport.client };
+            closeClientReportModal();
+            startAddDebtForClient(client);
+        });
+    }
+
+    // Banner × tugmasi — mavjud mijoz tanlovini bekor qilish
+    const bannerClearBtn = document.getElementById('banner-clear-btn');
+    if (bannerClearBtn) {
+        bannerClearBtn.addEventListener('click', () => {
+            clearCreateClientBanner();
+            hapticImpact();
         });
     }
 
