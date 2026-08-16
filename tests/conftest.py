@@ -1,9 +1,21 @@
+"""Testlar uchun fixture'lar."""
 from __future__ import annotations
 
+import aiosqlite
 import pytest
 
 from bot.domain.entities.user import User
 from bot.domain.repositories.user_repository import UserRepository
+from bot.infrastructure.database.repositories.client_repository import (
+    SqliteClientRepository,
+)
+from bot.infrastructure.database.repositories.debt_repository import (
+    SqliteDebtRepository,
+)
+from bot.infrastructure.database.repositories.payment_repository import (
+    SqlitePaymentRepository,
+)
+from bot.infrastructure.database.schema import SCHEMA
 
 
 class FakeUserRepository(UserRepository):
@@ -20,3 +32,34 @@ class FakeUserRepository(UserRepository):
 @pytest.fixture
 def fake_repo() -> FakeUserRepository:
     return FakeUserRepository()
+
+
+@pytest.fixture
+async def in_memory_db():
+    """In-memory SQLite ulanishi va jadvallarni yaratadi."""
+    conn = await aiosqlite.connect(":memory:")
+    conn.row_factory = aiosqlite.Row
+    await conn.execute("PRAGMA foreign_keys=ON;")
+
+    for ddl in SCHEMA:
+        await conn.executescript(ddl)
+    await conn.commit()
+
+    yield conn
+
+    await conn.close()
+
+
+@pytest.fixture
+def client_repo(in_memory_db: aiosqlite.Connection) -> SqliteClientRepository:
+    return SqliteClientRepository(in_memory_db)
+
+
+@pytest.fixture
+def debt_repo(in_memory_db: aiosqlite.Connection) -> SqliteDebtRepository:
+    return SqliteDebtRepository(in_memory_db)
+
+
+@pytest.fixture
+def payment_repo(in_memory_db: aiosqlite.Connection) -> SqlitePaymentRepository:
+    return SqlitePaymentRepository(in_memory_db)

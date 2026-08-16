@@ -43,7 +43,7 @@ class Database:
 
     async def _init_schema(self) -> None:
         for ddl in SCHEMA:
-            await self.connection.execute(ddl)
+            await self.connection.executescript(ddl)
         await self.connection.commit()
 
     async def disconnect(self) -> None:

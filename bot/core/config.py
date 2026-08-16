@@ -23,6 +23,10 @@ class Settings(BaseSettings):
 
     # --- Telegram ---
     bot_token: SecretStr = Field(..., description="BotFather'dan olingan token")
+    admin_ids: list[int] = Field(
+        default_factory=list,
+        description="Bot adminlarining Telegram ID lari (vergul bilan ajratilgan)",
+    )
 
     # --- Web / hosting ---
     port: int = Field(default=8080, ge=1, le=65535)
@@ -45,6 +49,19 @@ class Settings(BaseSettings):
                 "BOT_TOKEN bo'sh. .env faylida to'g'ri token ko'rsating."
             )
         return value
+
+    @field_validator("admin_ids", mode="before")
+    @classmethod
+    def _parse_admin_ids(cls, value: object) -> list[int]:
+        if isinstance(value, str):
+            if not value.strip():
+                return []
+            return [int(item.strip()) for item in value.split(",") if item.strip()]
+        if isinstance(value, (list, tuple, set)):
+            return [int(item) for item in value]
+        if isinstance(value, int):
+            return [value]
+        return []
 
     @property
     def token(self) -> str:
