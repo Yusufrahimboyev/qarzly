@@ -13,6 +13,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.application.common.formatters import (
+    esc_html,
     format_money,
     format_money_map,
     is_valid_phone,
@@ -309,7 +310,7 @@ async def _proceed_after_date(message: Message, state: FSMContext, date_str: str
         await state.set_state(DebtCreationStates.waiting_product_name)
         await message.answer(
             f"📅 <b>Sana:</b> {date_str}\n"
-            f"👤 <b>Mijoz:</b> {client_name} ({client_phone})\n\n"
+            f"👤 <b>Mijoz:</b> {esc_html(client_name)} ({esc_html(client_phone)})\n\n"
             "📦 <b>Tovar (mahsulot) nomini kiriting:</b>\n\n"
             "<i>Masalan: Shina, Akkumulyator, Generator</i>",
             reply_markup=get_back_cancel_keyboard(show_back=True),
@@ -362,11 +363,18 @@ async def process_client_name(message: Message, state: FSMContext) -> None:
             reply_markup=get_back_cancel_keyboard(show_back=True),
         )
         return
+    if len(name) > 80:
+        await message.answer(
+            "⚠️ <b>Ism juda uzun!</b>\n\n"
+            "Iltimos, 80 belgidan qisqa kiriting:",
+            reply_markup=get_back_cancel_keyboard(show_back=True),
+        )
+        return
 
     await state.update_data(client_name=name)
     await state.set_state(DebtCreationStates.waiting_client_phone)
     await message.answer(
-        f"👤 <b>Qarz oluvchi:</b> {name}\n\n"
+        f"👤 <b>Qarz oluvchi:</b> {esc_html(name)}\n\n"
         "📞 <b>3-bosqich: Telefon raqamini kiriting:</b>\n\n"
         "<i>Masalan: +998901234567 yoki 901234567</i>",
         reply_markup=get_back_cancel_keyboard(show_back=True),
@@ -415,11 +423,18 @@ async def process_product_name(message: Message, state: FSMContext) -> None:
             reply_markup=get_back_cancel_keyboard(show_back=True),
         )
         return
+    if len(product) > 80:
+        await message.answer(
+            "⚠️ <b>Tovar nomi juda uzun!</b>\n\n"
+            "Iltimos, 80 belgidan qisqa kiriting:",
+            reply_markup=get_back_cancel_keyboard(show_back=True),
+        )
+        return
 
     await state.update_data(product_name=product)
     await state.set_state(DebtCreationStates.waiting_product_quantity)
     await message.answer(
-        f"📦 <b>Tovar:</b> {product}\n\n"
+        f"📦 <b>Tovar:</b> {esc_html(product)}\n\n"
         "🔢 <b>5-bosqich: Tovardan nechta olindi?</b>\n\n"
         "<i>Masalan: 2 — bitta bo'lsa 1 deb yozing</i>",
         reply_markup=get_back_cancel_keyboard(show_back=True),
@@ -465,7 +480,7 @@ async def process_product_price(message: Message, state: FSMContext) -> None:
     # Tovar valyutasi so'raladi — har bir tovar o'z valyutasida bo'ladi
     await state.set_state(DebtCreationStates.waiting_product_currency)
     await message.answer(
-        f"💰 <b>Narx qabul qilindi.</b>\n\n"
+        "💰 <b>Narx qabul qilindi.</b>\n\n"
         "💱 <b>Bu tovar qaysi valyutada?</b>\n\n"
         "<i>Har bir tovar o'z valyutasida bo'lishi mumkin — so'm yoki dollar</i>",
         reply_markup=get_product_currency_keyboard(),
@@ -507,12 +522,12 @@ async def _append_product_with_currency(
     total_this = price * quantity
     if quantity > 1:
         added_line = (
-            f"✅ <b>Qo'shildi:</b> {product_name} — {quantity} × "
+            f"✅ <b>Qo'shildi:</b> {esc_html(product_name)} — {quantity} × "
             f"{format_money(price, currency)} = {format_money(total_this, currency)}\n\n"
         )
     else:
         added_line = (
-            f"✅ <b>Qo'shildi:</b> {product_name} — "
+            f"✅ <b>Qo'shildi:</b> {esc_html(product_name)} — "
             f"{format_money(price, currency)}\n\n"
         )
 
@@ -646,11 +661,17 @@ async def process_exchange_name(message: Message, state: FSMContext) -> None:
             reply_markup=get_back_cancel_keyboard(show_back=True),
         )
         return
+    if len(ex_name) > 80:
+        await message.answer(
+            "⚠️ <b>Nom juda uzun!</b>\n\nIltimos, 80 belgidan qisqa kiriting:",
+            reply_markup=get_back_cancel_keyboard(show_back=True),
+        )
+        return
 
     await state.update_data(exchange_product_name=ex_name)
     await state.set_state(DebtCreationStates.waiting_exchange_price)
     await message.answer(
-        f"📦 <b>Ayirboshlash tovari:</b> {ex_name}\n\n"
+        f"📦 <b>Ayirboshlash tovari:</b> {esc_html(ex_name)}\n\n"
         "💰 <b>Ayirboshlash tovari narxini kiriting:</b>\n\n"
         "<i>Masalan: 800 000</i>",
         reply_markup=get_back_cancel_keyboard(show_back=True),
@@ -873,7 +894,7 @@ async def cb_confirm_create_debt(
 
         success_lines = [
             "✅ <b>QARZ MUVAFFAQIYATLI SAQLANDI!</b>\n",
-            f"👤 <b>Mijoz:</b> {client.full_name} ({client.phone})",
+            f"👤 <b>Mijoz:</b> {esc_html(client.full_name)} ({esc_html(client.phone)})",
             f"📅 <b>Sana:</b> {debt_date}",
         ]
 
@@ -882,13 +903,13 @@ async def cb_confirm_create_debt(
             p_cur = Currency(p.currency)
             if p.quantity > 1:
                 success_lines.append(
-                    f"📦 <b>{p.name}</b> — {p.quantity} × "
+                    f"📦 <b>{esc_html(p.name)}</b> — {p.quantity} × "
                     f"{format_money(p.price_per_unit, p_cur)} = "
                     f"{format_money(p.total_price, p_cur)}"
                 )
             else:
                 success_lines.append(
-                    f"📦 <b>{p.name}</b> — {format_money(p.price_per_unit, p_cur)}"
+                    f"📦 <b>{esc_html(p.name)}</b> — {format_money(p.price_per_unit, p_cur)}"
                 )
 
         success_lines.append(
@@ -897,7 +918,7 @@ async def cb_confirm_create_debt(
 
         if exchange_exists:
             success_lines.append(
-                f"🔄 <b>Exchange:</b> {exchange_product_name} "
+                f"🔄 <b>Exchange:</b> {esc_html(exchange_product_name or '')} "
                 f"({format_money(exchange_product_price, exchange_currency)})"
             )
         if given_money > 0:
@@ -931,7 +952,7 @@ async def cb_confirm_create_debt(
     except Exception as exc:
         if isinstance(callback.message, Message):
             await callback.message.edit_text(
-                f"❌ <b>Xatolik yuz berdi:</b> {exc}",
+                f"❌ <b>Xatolik yuz berdi:</b> {esc_html(str(exc))}",
             )
         await callback.answer("Xatolik yuz berdi.", show_alert=True)
 
@@ -984,8 +1005,8 @@ def _render_preview(data: dict[str, Any]) -> str:
     lines = [
         "📋 <b>QARZ MA'LUMOTLARI (TASDIQLASH):</b>\n",
         f"📅 <b>Sana:</b> {debt_date}",
-        f"👤 <b>Qarz oluvchi:</b> {client_name}",
-        f"📞 <b>Telefon:</b> {client_phone}",
+        f"👤 <b>Qarz oluvchi:</b> {esc_html(client_name)}",
+        f"📞 <b>Telefon:</b> {esc_html(client_phone)}",
         "━━━━━━━━━━ <b>TOVARLAR:</b> ━━━━━━━━━━",
     ]
 
@@ -993,13 +1014,13 @@ def _render_preview(data: dict[str, Any]) -> str:
         p_cur = Currency(p.currency)
         if p.quantity > 1:
             lines.append(
-                f"  {idx}. 📦 <b>{p.name}</b> — {p.quantity} × "
+                f"  {idx}. 📦 <b>{esc_html(p.name)}</b> — {p.quantity} × "
                 f"{format_money(p.price_per_unit, p_cur)} = "
                 f"{format_money(p.total_price, p_cur)}"
             )
         else:
             lines.append(
-                f"  {idx}. 📦 <b>{p.name}</b> — "
+                f"  {idx}. 📦 <b>{esc_html(p.name)}</b> — "
                 f"{format_money(p.price_per_unit, p_cur)}"
             )
 
@@ -1007,7 +1028,7 @@ def _render_preview(data: dict[str, Any]) -> str:
 
     if exchange_exists:
         lines.append(
-            f"🔄 <b>Exchange tovar:</b> {exchange_product_name or 'Tovar'} "
+            f"🔄 <b>Exchange tovar:</b> {esc_html(exchange_product_name or 'Tovar')} "
             f"({format_money(exchange_product_price, exchange_currency)})"
         )
     else:

@@ -322,6 +322,40 @@ async def test_api_create_debt_products_validation(
 
 
 @pytest.mark.asyncio
+async def test_api_create_debt_rejects_too_long_name(
+    aiohttp_app: web.Application,
+) -> None:
+    """80 belgidan uzun mijoz ismi yoki tovar nomi qabul qilinmaydi."""
+    from aiohttp.test_utils import TestClient, TestServer
+    server = TestServer(aiohttp_app)
+    client = TestClient(server)
+    await client.start_server()
+
+    try:
+        headers = auth_header()
+
+        payload = {
+            "client_name": "a" * 81,
+            "client_phone": "+998901234567",
+            "products": [{"name": "Shina", "quantity": 1, "price_per_unit": 1000}],
+        }
+        res = await client.post("/api/debts", json=payload, headers=headers)
+        assert res.status == 400
+        data = await res.json()
+        assert "80 belgidan" in data["error"]
+
+        payload2 = {
+            "client_name": "Oddiy Ism",
+            "client_phone": "+998901234567",
+            "products": [{"name": "b" * 81, "quantity": 1, "price_per_unit": 1000}],
+        }
+        res2 = await client.post("/api/debts", json=payload2, headers=headers)
+        assert res2.status == 400
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_api_create_debt_mixed_currencies(
     aiohttp_app: web.Application,
 ) -> None:

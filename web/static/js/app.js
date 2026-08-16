@@ -372,11 +372,11 @@ async function openClientReportModal(clientId) {
     }
 
     const payBtn = document.getElementById('modal-pay-now-btn');
-    if (data.total_remaining_debt <= 0) {
-        payBtn.style.display = 'none';
-    } else {
-        payBtn.style.display = 'block';
-    }
+    // total_remaining_debt — valyutalar xaritasi ({UZS: n, USD: n}).
+    // Hammasi 0 yoki bo'sh bo'lsa tugma yashirinadi.
+    const remainingValues = Object.values(data.total_remaining_debt || {});
+    const hasAnyDebt = remainingValues.some(v => (Number(v) || 0) > 0);
+    if (payBtn) payBtn.style.display = hasAnyDebt ? 'block' : 'none';
 
     modal.style.display = 'flex';
 }
@@ -886,6 +886,9 @@ function setupPaymentForm() {
         const otherDebt = getSelectedDebtInCurrency(opt, otherCurrency);
         const mode = document.querySelector('input[name="payment_mode"]:checked')?.value || 'full';
 
+        // Quick-chips valyutaga moslanadi: so'mda 100k/500k/1M, dollarda 10/50/100
+        updateQuickChips(currency);
+
         let payAmount = totalDebt;
         if (mode === 'partial') {
             payAmount = Number(partialInput?.value) || 0;
@@ -900,6 +903,18 @@ function setupPaymentForm() {
             previewRemaining.textContent = totalText;
             previewRemaining.className = (remaining === 0 && otherDebt === 0) ? 'text-success' : 'text-danger';
         }
+    }
+
+    function updateQuickChips(currency) {
+        const chips = document.querySelectorAll('#partial-amount-group .btn-chip');
+        if (chips.length === 0) return;
+        const values = currency === 'USD'
+            ? [{ v: 10, label: '10$' }, { v: 50, label: '50$' }, { v: 100, label: '100$' }, { v: 'half', label: '50%' }]
+            : [{ v: 100000, label: '100k' }, { v: 500000, label: '500k' }, { v: 1000000, label: '1M' }, { v: 'half', label: '50%' }];
+        chips.forEach((chip, i) => {
+            chip.setAttribute('data-quick', String(values[i].v));
+            chip.textContent = values[i].label;
+        });
     }
 
     if (submitBtn) {

@@ -222,7 +222,7 @@ async def test_pay_partial_debt_fifo(
     )
 
     # Qisman to'lov: 1 300 000
-    # FIFO bo'yicha: 1-qarz (1 000 000) to'liq yopiladi (qoldiq 0), 2-qarzdan 300 000 to'lanadi (qoldiq 1 200 000)
+    # FIFO: 1-qarz (1 000 000) to'liq yopiladi, 2-qarzdan 300 000 (qoldiq 1 200 000)
     paid_amount, new_remaining, summary = await service.pay_partial_debt(
         client_id=client.id,
         amount=1300000,

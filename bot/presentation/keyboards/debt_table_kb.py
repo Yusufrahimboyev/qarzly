@@ -5,7 +5,7 @@ import math
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.application.common.formatters import format_money_map
+from bot.application.common.formatters import clip_button_text, format_money_map
 from bot.domain.entities.report import ClientDebtSummary
 
 
@@ -43,7 +43,7 @@ def get_debt_table_keyboard(
 
         keyboard.append([
             InlineKeyboardButton(
-                text=btn_text,
+                text=clip_button_text(btn_text),
                 callback_data=f"client_report:{client.id}",
             )
         ])

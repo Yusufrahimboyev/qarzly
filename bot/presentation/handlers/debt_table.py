@@ -7,6 +7,7 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.application.common.formatters import (
     aggregate_remaining,
+    esc_html,
     format_money,
     format_money_map,
 )
@@ -138,8 +139,8 @@ def _render_report(report: ClientReport) -> str:
     client = report.client
 
     lines: list[str] = [
-        f"👤 <b>MIJOZ HISOBOTI:</b> <b>{client.full_name}</b>",
-        f"📞 <b>Telefon:</b> {client.phone}",
+        f"👤 <b>MIJOZ HISOBOTI:</b> <b>{esc_html(client.full_name)}</b>",
+        f"📞 <b>Telefon:</b> {esc_html(client.phone)}",
         "━━━━━━━━━━━━━━━━━━━━",
         "<b>📦 QARZLAR TARIXI:</b>",
     ]
@@ -159,22 +160,24 @@ def _render_report(report: ClientReport) -> str:
                     p_cur = Currency(p.currency)
                     if p.quantity > 1:
                         lines.append(
-                            f"  • {p_idx}) <b>{p.name}</b> — {p.quantity} × "
+                            f"  • {p_idx}) <b>{esc_html(p.name)}</b> — {p.quantity} × "
                             f"{format_money(p.price_per_unit, p_cur)} = "
                             f"{format_money(p.total_price, p_cur)}"
                         )
                     else:
                         lines.append(
-                            f"  • {p_idx}) <b>{p.name}</b> — "
+                            f"  • {p_idx}) <b>{esc_html(p.name)}</b> — "
                             f"{format_money(p.price_per_unit, p_cur)}"
                         )
             else:
-                lines.append(f"  • Tovar: <b>{d.product_name}</b> — {d.product_quantity} ta")
+                lines.append(
+                    f"  • Tovar: <b>{esc_html(d.product_name)}</b> — {d.product_quantity} ta"
+                )
             lines.append(f"  • Narxi (jami): {format_money(d.product_price, d.currency)}")
 
             if d.exchange_exists:
                 lines.append(
-                    f"  • Exchange: <i>{d.exchange_product_name or 'Tovar'}</i> "
+                    f"  • Exchange: <i>{esc_html(d.exchange_product_name or 'Tovar')}</i> "
                     f"({format_money(d.exchange_product_price, d.currency)})"
                 )
 
@@ -191,9 +194,8 @@ def _render_report(report: ClientReport) -> str:
         lines.append("<b>💰 TO'LOVLAR TARIXI:</b>")
         for idx, pay in enumerate(actual_payments, start=1):
             p_type_label = "To'liq" if pay.payment_type == PaymentType.FULL else "Qisman"
-            lines.append(
-                f"{idx}. {pay.payment_date}: +{format_money(pay.amount, pay.currency)} ({p_type_label})"
-            )
+            pay_str = format_money(pay.amount, pay.currency)
+            lines.append(f"{idx}. {pay.payment_date}: +{pay_str} ({p_type_label})")
 
     # Yakuniy umumiy hisob — har bir total valyutalar bo'yicha
     lines.append("\n━━━━━━━━━━━━━━━━━━━━")

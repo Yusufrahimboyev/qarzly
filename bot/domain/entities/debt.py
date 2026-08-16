@@ -6,7 +6,7 @@ tovar bo'lishi mumkin — har bir tovar DebtProduct sifatida saqlanadi.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 

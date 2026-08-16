@@ -29,7 +29,7 @@ class AdminMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        # Agar admin_ids bo'sh bo'lsa, barcha foydalanuvchilarga ruxsat beriladi (dastlabki sozlash uchun)
+        # admin_ids bo'sh bo'lsa — barchaga ruxsat (dastlabki sozlash uchun)
         if not self._settings.admin_ids:
             return await handler(event, data)
 

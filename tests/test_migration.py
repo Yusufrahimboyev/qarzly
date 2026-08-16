@@ -55,9 +55,11 @@ async def test_old_database_gets_product_quantity_column(tmp_path: Path) -> None
     database = Database(db_path)
     await database.connect()
     try:
-        async with database.connection.execute(
-            "SELECT product_name, product_quantity, product_price, currency, products_json FROM debts"
-        ) as cursor:
+        select_sql = (
+            "SELECT product_name, product_quantity, product_price, currency,"
+            " products_json FROM debts"
+        )
+        async with database.connection.execute(select_sql) as cursor:
             rows = await cursor.fetchall()
 
         assert len(rows) == 1

@@ -4,11 +4,29 @@ from __future__ import annotations
 from datetime import datetime
 
 from bot.application.common.formatters import (
+    clip_button_text,
+    esc_html,
     format_money,
     normalize_phone,
     parse_date_input,
     parse_money,
 )
+
+
+def test_esc_html() -> None:
+    """Foydalanuvchi kiritgan matn Telegram HTML'ni buzmasligi kerak."""
+    assert esc_html("Ali <Bek> & Co") == "Ali &lt;Bek&gt; &amp; Co"
+    assert esc_html("Oddiy ism") == "Oddiy ism"
+    assert esc_html(123) == "123"
+
+
+def test_clip_button_text() -> None:
+    """Inline tugma matni 64 belgidan oshmasligi kerak."""
+    assert clip_button_text("qisqa") == "qisqa"
+    long_text = "🔴 " + "a" * 100
+    clipped = clip_button_text(long_text)
+    assert len(clipped) <= 64
+    assert clipped.endswith("…")
 
 
 def test_format_money() -> None:

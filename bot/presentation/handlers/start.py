@@ -6,6 +6,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
+from bot.application.common.formatters import esc_html
 from bot.application.services.user_service import UserService
 from bot.core.config import Settings
 from bot.presentation.keyboards.main_menu_kb import get_main_menu_keyboard
@@ -32,7 +33,7 @@ async def cmd_start(
 
     first_name = tg_user.first_name if tg_user else "Foydalanuvchi"
     await message.answer(
-        f"👋 <b>Assalomu alaykum, {first_name}!</b>\n\n"
+        f"👋 <b>Assalomu alaykum, {esc_html(first_name)}!</b>\n\n"
         "📖 <b>Qarz Daftar</b> botiga xush kelibsiz.\n"
         "Kerakli bo'limni tanlang:",
         reply_markup=get_main_menu_keyboard(settings.web_app_url),
@@ -45,8 +46,10 @@ async def cmd_help(message: Message) -> None:
     """Yordam menyusini ko'rsatadi."""
     await message.answer(
         "🛠 <b>Qarz Daftar Boti — Yordam:</b>\n\n"
-        "• <b>📋 Qarzlar jadvali</b> — Barcha mijozlar va qarzdorlar ro'yxati, to'liq qarz tarixi va hisobotlari.\n"
-        "• <b>➕ Yaratish</b> — Yangi qarz yozuvi kiritish (tovar, exchange/ayirboshlash, berilgan pul va hisob-kitob).\n"
+        "• <b>📋 Qarzlar jadvali</b> — Barcha mijozlar va qarzdorlar ro'yxati, "
+        "to'liq qarz tarixi va hisobotlari.\n"
+        "• <b>➕ Yaratish</b> — Yangi qarz yozuvi kiritish (tovar, "
+        "exchange/ayirboshlash, berilgan pul va hisob-kitob).\n"
         "• <b>💰 Qarz to'lovi</b> — Mijozlarning qarzini to'liq yoki qisman yopish.\n\n"
         "• /start — Asosiy menyuni qayta ochish"
     )

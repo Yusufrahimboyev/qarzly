@@ -192,10 +192,10 @@ class DebtService:
         for p in products:
             try:
                 cur = Currency(p.currency)
-            except ValueError:
+            except ValueError as exc:
                 raise ValueError(
                     f"Tovar valyutasi noto'g'ri: {p.currency} (UZS yoki USD bo'lishi kerak)."
-                )
+                ) from exc
             groups.setdefault(cur, []).append(p)
 
         created: list[Debt] = []

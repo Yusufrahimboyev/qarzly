@@ -6,9 +6,30 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from html import escape
 from zoneinfo import ZoneInfo
 
 from bot.domain.entities.currency import Currency
+
+
+def esc_html(text: str) -> str:
+    """Foydalanuvchi kiritgan matnni Telegram HTML rejimi uchun xavfsiz qiladi.
+
+    Ism yoki tovar nomida "<", ">", "&" bo'lsa, escape qilinmasa Telegram
+    "can't parse entities" xatosi qaytaradi va xabar umuman yuborilmaydi.
+    """
+    return escape(str(text))
+
+
+def clip_button_text(text: str, max_len: int = 64) -> str:
+    """Inline tugma matnini Telegram chegarasiga (64 belgi) sig'diradi.
+
+    Uzun ism + summa ko'p belgi bo'lsa Telegram butun keyboard'ni
+    qabul qilmaydi — shuning uchun matn kesib qisqartiriladi.
+    """
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1].rstrip() + "…"
 
 # Server (masalan Render) UTC da ishlashi mumkin — "bugun" sanasi har doim
 # O'zbekiston vaqti bo'yicha hisoblanishi kerak.

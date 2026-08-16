@@ -185,6 +185,10 @@ async def api_create_debt(request: web.Request) -> web.Response:
 
     if not client_name:
         return web.json_response({"error": "Mijoz ismi kiritilmadi"}, status=400)
+    if len(client_name) > 80:
+        return web.json_response(
+            {"error": "Mijoz ismi 80 belgidan oshmasligi kerak"}, status=400
+        )
     if not is_valid_phone(client_phone):
         return web.json_response(
             {"error": "Telefon raqami noto'g'ri (masalan: +998901234567)"}, status=400
@@ -245,6 +249,11 @@ async def api_create_debt(request: web.Request) -> web.Response:
                 if not p_name:
                     return web.json_response(
                         {"error": f"{idx + 1}-tovar nomi kiritilmadi"}, status=400,
+                    )
+                if len(p_name) > 80:
+                    return web.json_response(
+                        {"error": f"{idx + 1}-tovar nomi 80 belgidan oshmasligi kerak"},
+                        status=400,
                     )
                 if p_price <= 0:
                     return web.json_response(

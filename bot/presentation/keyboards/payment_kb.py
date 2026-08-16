@@ -5,7 +5,7 @@ import math
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.application.common.formatters import format_money_map
+from bot.application.common.formatters import clip_button_text, format_money_map
 from bot.domain.entities.currency import Currency
 from bot.domain.entities.report import ClientDebtSummary
 
@@ -39,7 +39,7 @@ def get_debtors_list_keyboard(
         )
         keyboard.append([
             InlineKeyboardButton(
-                text=btn_text,
+                text=clip_button_text(btn_text),
                 callback_data=f"select_pay_client:{client.id}",
             )
         ])
@@ -81,7 +81,9 @@ def get_payment_type_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"🟢 Qarzini to'liq yopish ({format_money_map(remaining_by_currency)})",
+                    text=clip_button_text(
+                        f"🟢 Qarzini to'liq yopish ({format_money_map(remaining_by_currency)})"
+                    ),
                     callback_data=f"pay_mode_full:{client_id}",
                 )
             ],
