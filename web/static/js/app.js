@@ -39,9 +39,29 @@ const state = {
 };
 
 // Utilities
-function formatMoney(amount) {
+function formatMoney(amount, currency = 'UZS') {
     const num = Math.round(Number(amount) || 0);
-    return num.toLocaleString('ru-RU').replace(/,/g, ' ') + " so'm";
+    const formatted = num.toLocaleString('ru-RU').replace(/,/g, ' ');
+    return currency === 'USD' ? `${formatted} $` : `${formatted} so'm`;
+}
+
+// Bir nechta valyutadagi summalarni bitta qatorga yig'adi:
+// {UZS: 1500000, USD: 200} -> "1 500 000 so'm + 200 $"
+function formatMoneyMap(map) {
+    if (!map || typeof map !== 'object') return formatMoney(0);
+    const parts = [];
+    if ((map.UZS || 0) > 0) parts.push(formatMoney(map.UZS, 'UZS'));
+    if ((map.USD || 0) > 0) parts.push(formatMoney(map.USD, 'USD'));
+    return parts.length > 0 ? parts.join(' + ') : formatMoney(0);
+}
+
+// Ikki valyuta xaritasini qo'shadi (UZS+UZS, USD+USD — valyutalar aralashmaydi)
+function sumMaps(a, b) {
+    const result = {};
+    for (const cur of ['UZS', 'USD']) {
+        result[cur] = ((a && a[cur]) || 0) + ((b && b[cur]) || 0);
+    }
+    return result;
 }
 
 function getTodayFormatted() {
@@ -60,16 +80,39 @@ function showToast(message) {
     setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
+// Barcha API so'rovlarini Telegram initData imzosi bilan yuboradi.
+// Server imzoni tekshiradi — begona shaxs URLni bilsa ham ma'lumot ololmaydi.
+function apiFetch(url, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (tg && tg.initData) {
+        headers['X-Telegram-Init-Data'] = tg.initData;
+    }
+    return fetch(url, { ...options, headers });
+}
+
+function showUnauthorizedState() {
+    const container = document.getElementById('clients-list');
+    if (container) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">🔒</div>
+                <p>Ma'lumotlarni ko'rish uchun ilovani Telegram ichida oching</p>
+            </div>
+        `;
+    }
+}
+
 // ==========================================
 // API REQUESTS
 // ==========================================
 
 async function fetchStats() {
     try {
-        const res = await fetch('/api/stats');
+        const res = await apiFetch('/api/stats');
+        if (res.status === 401 || res.status === 403) return;
         if (!res.ok) return;
         const data = await res.json();
-        document.getElementById('stat-total-debt').textContent = formatMoney(data.total_debt);
+        document.getElementById('stat-total-debt').textContent = formatMoneyMap(data.total_debt);
         document.getElementById('stat-debtors-count').textContent = `${data.debtors_count} ta`;
         document.getElementById('stat-clients-count').textContent = `${data.clients_count} ta`;
     } catch (err) {
@@ -79,7 +122,11 @@ async function fetchStats() {
 
 async function fetchSummaries() {
     try {
-        const res = await fetch('/api/summaries');
+        const res = await apiFetch('/api/summaries');
+        if (res.status === 401 || res.status === 403) {
+            showUnauthorizedState();
+            return;
+        }
         if (!res.ok) return;
         state.summaries = await res.json();
         renderClientsList();
@@ -97,7 +144,11 @@ async function fetchSummaries() {
 
 async function fetchClientReport(clientId) {
     try {
-        const res = await fetch(`/api/clients/${clientId}/report`);
+        const res = await apiFetch(`/api/clients/${clientId}/report`);
+        if (res.status === 401 || res.status === 403) {
+            showToast('Ma\'lumotlarni ko\'rish uchun Telegram ichida oching');
+            return null;
+        }
         if (!res.ok) throw new Error('Hisobot topilmadi');
         return await res.json();
     } catch (err) {
@@ -150,7 +201,7 @@ function renderClientsList() {
             </div>
             <div class="client-item-meta">
                 <div class="client-item-debt ${item.has_debt ? 'has-debt' : 'no-debt'}">
-                    ${item.has_debt ? formatMoney(item.total_remaining_debt) : "0 so'm"}
+                    ${item.has_debt ? formatMoneyMap(item.remaining) : formatMoney(0)}
                 </div>
                 <span class="badge ${item.has_debt ? 'badge-danger' : 'badge-success'}">
                     ${item.has_debt ? '🔴 Qarzdor' : '🟢 Yopilgan'}
@@ -193,9 +244,9 @@ async function openClientReportModal(clientId) {
 
     document.getElementById('modal-client-name').textContent = data.client.full_name;
     document.getElementById('modal-client-phone').textContent = data.client.phone;
-    document.getElementById('modal-total-products').textContent = formatMoney(data.total_product_price);
-    document.getElementById('modal-total-paid').textContent = formatMoney(data.total_paid_after + data.total_given_money);
-    document.getElementById('modal-total-remaining').textContent = formatMoney(data.total_remaining_debt);
+    document.getElementById('modal-total-products').textContent = formatMoneyMap(data.total_product_price);
+    document.getElementById('modal-total-paid').textContent = formatMoneyMap(sumMaps(data.total_paid_after, data.total_given_money));
+    document.getElementById('modal-total-remaining').textContent = formatMoneyMap(data.total_remaining_debt);
 
     // Render Debts History
     const debtsList = document.getElementById('modal-debts-list');
@@ -205,24 +256,24 @@ async function openClientReportModal(clientId) {
         debtsList.innerHTML = data.debts.map(d => `
             <div class="history-card">
                 <div class="history-card-header">
-                    <span>${escapeHtml(d.product_name)}</span>
+                    <span>${escapeHtml(d.product_name)}${d.product_quantity > 1 ? ` — ${d.product_quantity} ta` : ''}</span>
                     <span class="${d.status === 'active' ? 'text-danger' : 'text-success'}">
-                        ${d.status === 'active' ? formatMoney(d.remaining_debt) : '🟢 Yopilgan'}
+                        ${d.status === 'active' ? formatMoney(d.remaining_debt, d.currency) : '🟢 Yopilgan'}
                     </span>
                 </div>
                 <div class="history-card-detail">
                     <span>📅 ${d.debt_date}</span>
-                    <span>Narxi: ${formatMoney(d.product_price)}</span>
+                    <span>Narxi: ${formatMoney(d.product_price, d.currency)}</span>
                 </div>
                 ${d.exchange_exists ? `
                 <div class="history-card-detail" style="color:var(--accent-yellow); margin-top:2px;">
                     <span>🔄 Exchange: ${escapeHtml(d.exchange_product_name || 'Tovar')}</span>
-                    <span>-${formatMoney(d.exchange_product_price)}</span>
+                    <span>-${formatMoney(d.exchange_product_price, d.currency)}</span>
                 </div>` : ''}
                 ${d.given_money > 0 ? `
                 <div class="history-card-detail" style="color:var(--accent-green); margin-top:2px;">
                     <span>💵 Berilgan pul:</span>
-                    <span>-${formatMoney(d.given_money)}</span>
+                    <span>-${formatMoney(d.given_money, d.currency)}</span>
                 </div>` : ''}
             </div>
         `).join('');
@@ -237,7 +288,7 @@ async function openClientReportModal(clientId) {
         paymentsList.innerHTML = actualPayments.map(p => `
             <div class="history-card">
                 <div class="history-card-header">
-                    <span class="text-success">+${formatMoney(p.amount)}</span>
+                    <span class="text-success">+${formatMoney(p.amount, p.currency)}</span>
                     <span style="font-size:11px; text-transform:uppercase;">
                         ${p.payment_type === 'full' ? 'To\'liq' : 'Qisman'}
                     </span>
@@ -273,6 +324,7 @@ function setupCreateForm() {
     const dateInput = document.getElementById('create-date');
     const btnToday = document.getElementById('btn-set-today');
     const productPriceInput = document.getElementById('create-product-price');
+    const productQtyInput = document.getElementById('create-product-qty');
     const exchangeToggle = document.getElementById('create-exchange-toggle');
     const exchangeFields = document.getElementById('exchange-fields');
     const exchangePriceInput = document.getElementById('create-exchange-price');
@@ -311,33 +363,53 @@ function setupCreateForm() {
     }
 
     // Input changes for live calculation
-    [productPriceInput, exchangePriceInput, givenAmountInput].forEach(el => {
+    [productPriceInput, productQtyInput, exchangePriceInput, givenAmountInput].forEach(el => {
         if (el) el.addEventListener('input', updateCreateCalculation);
     });
 
+    // Valyuta tanlanganda live hisob yangilanadi
+    document.querySelectorAll('input[name="currency"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            updateCreateCalculation();
+            hapticImpact();
+        });
+    });
+
+    function getSelectedCurrency() {
+        return document.querySelector('input[name="currency"]:checked')?.value || 'UZS';
+    }
+
     function updateCreateCalculation() {
+        const currency = getSelectedCurrency();
+        const qty = Math.max(1, Math.floor(Number(productQtyInput?.value) || 1));
         const productPrice = Number(productPriceInput?.value) || 0;
+        const totalProductPrice = qty * productPrice;
         const hasExchange = exchangeToggle?.checked;
         const exchangePrice = hasExchange ? (Number(exchangePriceInput?.value) || 0) : 0;
         const hasGiven = givenToggle?.checked;
         const givenAmount = hasGiven ? (Number(givenAmountInput?.value) || 0) : 0;
 
-        document.getElementById('calc-product-price').textContent = formatMoney(productPrice);
+        const productCalcEl = document.getElementById('calc-product-price');
+        if (productCalcEl) {
+            productCalcEl.textContent = qty > 1
+                ? `${qty} × ${formatMoney(productPrice, currency)} = ${formatMoney(totalProductPrice, currency)}`
+                : formatMoney(productPrice, currency);
+        }
 
         const exRow = document.getElementById('calc-exchange-row');
         if (exRow) {
             exRow.style.display = hasExchange ? 'flex' : 'none';
-            document.getElementById('calc-exchange-price').textContent = `-${formatMoney(exchangePrice)}`;
+            document.getElementById('calc-exchange-price').textContent = `-${formatMoney(exchangePrice, currency)}`;
         }
 
         const givenRow = document.getElementById('calc-given-row');
         if (givenRow) {
             givenRow.style.display = hasGiven ? 'flex' : 'none';
-            document.getElementById('calc-given-price').textContent = `-${formatMoney(givenAmount)}`;
+            document.getElementById('calc-given-price').textContent = `-${formatMoney(givenAmount, currency)}`;
         }
 
-        const totalDebt = Math.max(0, productPrice - exchangePrice - givenAmount);
-        document.getElementById('calc-total-debt').textContent = formatMoney(totalDebt);
+        const totalDebt = Math.max(0, totalProductPrice - exchangePrice - givenAmount);
+        document.getElementById('calc-total-debt').textContent = formatMoney(totalDebt, currency);
     }
 
     // Submit New Debt
@@ -347,6 +419,7 @@ function setupCreateForm() {
             const clientPhone = document.getElementById('create-client-phone')?.value.trim();
             const debtDate = dateInput?.value.trim() || getTodayFormatted();
             const productName = document.getElementById('create-product-name')?.value.trim();
+            const productQty = Math.floor(Number(productQtyInput?.value)) || 0;
             const productPrice = Number(productPriceInput?.value) || 0;
 
             const hasExchange = exchangeToggle?.checked || false;
@@ -368,12 +441,16 @@ function setupCreateForm() {
                 showToast('Tovar nomini kiriting');
                 return;
             }
+            if (productQty < 1) {
+                showToast('Miqdorni kiriting (kamida 1)');
+                return;
+            }
             if (productPrice <= 0) {
                 showToast('Tovar narxini kiriting');
                 return;
             }
-            if (exchangePrice + givenMoney > productPrice) {
-                showToast('Exchange va berilgan pul tovar narxidan oshmasligi kerak');
+            if (exchangePrice + givenMoney > productQty * productPrice) {
+                showToast('Exchange va berilgan pul tovarlar jami narxidan oshmasligi kerak');
                 return;
             }
 
@@ -381,7 +458,7 @@ function setupCreateForm() {
             submitBtn.textContent = 'Saqlanmoqda...';
 
             try {
-                const res = await fetch('/api/debts', {
+                const res = await apiFetch('/api/debts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -389,7 +466,9 @@ function setupCreateForm() {
                         client_phone: clientPhone,
                         debt_date: debtDate,
                         product_name: productName,
+                        product_quantity: productQty,
                         product_price: productPrice,
+                        currency: getSelectedCurrency(),
                         exchange_exists: hasExchange,
                         exchange_product_name: exchangeName,
                         exchange_product_price: exchangePrice,
@@ -438,10 +517,22 @@ function populatePaymentClients() {
     const debtors = state.summaries.filter(s => s.has_debt);
     select.innerHTML = '<option value="">-- Mijozni tanlang --</option>' +
         debtors.map(d => `
-            <option value="${d.id}" data-phone="${escapeHtml(d.phone)}" data-debt="${d.total_remaining_debt}">
-                ${escapeHtml(d.full_name)} (${formatMoney(d.total_remaining_debt)})
+            <option value="${d.id}" data-phone="${escapeHtml(d.phone)}"
+                    data-remaining-uzs="${(d.remaining && d.remaining.UZS) || 0}"
+                    data-remaining-usd="${(d.remaining && d.remaining.USD) || 0}">
+                ${escapeHtml(d.full_name)} (${formatMoneyMap(d.remaining)})
             </option>
         `).join('');
+}
+
+function getPaymentCurrency() {
+    return document.querySelector('input[name="payment_currency"]:checked')?.value || 'UZS';
+}
+
+function getSelectedDebtInCurrency(opt, currency) {
+    if (!opt) return 0;
+    const attr = currency === 'USD' ? 'data-remaining-usd' : 'data-remaining-uzs';
+    return Number(opt.getAttribute(attr)) || 0;
 }
 
 function setupPaymentForm() {
@@ -466,11 +557,14 @@ function setupPaymentForm() {
 
             const name = opt.text.split('(')[0].trim();
             const phone = opt.getAttribute('data-phone');
-            const debt = Number(opt.getAttribute('data-debt')) || 0;
+            const remainingMap = {
+                UZS: getSelectedDebtInCurrency(opt, 'UZS'),
+                USD: getSelectedDebtInCurrency(opt, 'USD'),
+            };
 
             document.getElementById('pay-selected-client-name').textContent = name;
             document.getElementById('pay-selected-client-phone').textContent = phone;
-            document.getElementById('pay-selected-client-debt').textContent = formatMoney(debt);
+            document.getElementById('pay-selected-client-debt').textContent = formatMoneyMap(remainingMap);
 
             infoCard.style.display = 'block';
             optionsWrapper.style.display = 'block';
@@ -488,6 +582,14 @@ function setupPaymentForm() {
         });
     });
 
+    // Valyuta almashtirilganda hisob yangilanadi
+    document.querySelectorAll('input[name="payment_currency"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            updatePaymentCalculation();
+            hapticImpact();
+        });
+    });
+
     if (partialInput) {
         partialInput.addEventListener('input', updatePaymentCalculation);
     }
@@ -496,7 +598,7 @@ function setupPaymentForm() {
     document.querySelectorAll('.btn-chip').forEach(btn => {
         btn.addEventListener('click', () => {
             const opt = select?.selectedOptions[0];
-            const totalDebt = Number(opt?.getAttribute('data-debt')) || 0;
+            const totalDebt = getSelectedDebtInCurrency(opt, getPaymentCurrency());
             const quick = btn.getAttribute('data-quick');
 
             if (quick === 'half') {
@@ -511,7 +613,10 @@ function setupPaymentForm() {
 
     function updatePaymentCalculation() {
         const opt = select?.selectedOptions[0];
-        const totalDebt = Number(opt?.getAttribute('data-debt')) || 0;
+        const currency = getPaymentCurrency();
+        const totalDebt = getSelectedDebtInCurrency(opt, currency);
+        const otherCurrency = currency === 'USD' ? 'UZS' : 'USD';
+        const otherDebt = getSelectedDebtInCurrency(opt, otherCurrency);
         const mode = document.querySelector('input[name="payment_mode"]:checked')?.value || 'full';
 
         let payAmount = totalDebt;
@@ -519,11 +624,14 @@ function setupPaymentForm() {
             payAmount = Number(partialInput?.value) || 0;
         }
 
-        const remaining = Math.max(0, totalDebt - payAmount);
-        if (previewAmount) previewAmount.textContent = formatMoney(payAmount);
+        const remaining = Math.max(0, totalDebt - Math.min(payAmount, totalDebt));
+        if (previewAmount) previewAmount.textContent = formatMoney(payAmount, currency);
         if (previewRemaining) {
-            previewRemaining.textContent = formatMoney(remaining);
-            previewRemaining.className = remaining === 0 ? 'text-success' : 'text-danger';
+            const totalText = otherDebt > 0
+                ? `${formatMoney(remaining, currency)} + ${formatMoney(otherDebt, otherCurrency)}`
+                : formatMoney(remaining, currency);
+            previewRemaining.textContent = totalText;
+            previewRemaining.className = (remaining === 0 && otherDebt === 0) ? 'text-success' : 'text-danger';
         }
     }
 
@@ -531,8 +639,9 @@ function setupPaymentForm() {
         submitBtn.addEventListener('click', async () => {
             const clientId = Number(select?.value) || 0;
             const mode = document.querySelector('input[name="payment_mode"]:checked')?.value || 'full';
+            const currency = getPaymentCurrency();
             const opt = select?.selectedOptions[0];
-            const totalDebt = Number(opt?.getAttribute('data-debt')) || 0;
+            const totalDebt = getSelectedDebtInCurrency(opt, currency);
 
             if (!clientId) {
                 showToast('Qarzdor mijozni tanlang');
@@ -547,7 +656,7 @@ function setupPaymentForm() {
                     return;
                 }
                 if (amount > totalDebt) {
-                    showToast('To\'lov summasi qarzdan oshmasligi kerak');
+                    showToast('To\'lov summasi tanlangan valyutadagi qarzdan oshmasligi kerak');
                     return;
                 }
             }
@@ -556,13 +665,14 @@ function setupPaymentForm() {
             submitBtn.textContent = 'Qabul qilinmoqda...';
 
             try {
-                const res = await fetch('/api/payments', {
+                const res = await apiFetch('/api/payments', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         client_id: clientId,
                         payment_type: mode,
                         amount: amount,
+                        currency: currency,
                         payment_date: getTodayFormatted(),
                     })
                 });

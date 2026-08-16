@@ -5,7 +5,7 @@ import math
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.application.common.formatters import format_money
+from bot.application.common.formatters import format_money_map
 from bot.domain.entities.report import ClientDebtSummary
 
 
@@ -34,7 +34,10 @@ def get_debt_table_keyboard(
             continue
 
         if summary.has_debt:
-            btn_text = f"🔴 {client.full_name} — {format_money(summary.total_remaining_debt)}"
+            btn_text = (
+                f"🔴 {client.full_name} — "
+                f"{format_money_map(summary.remaining_by_currency)}"
+            )
         else:
             btn_text = f"🟢 {client.full_name} — Qarz yo'q"
 

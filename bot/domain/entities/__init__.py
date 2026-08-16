@@ -1,5 +1,6 @@
 """Domain entities paketi."""
 from bot.domain.entities.client import Client
+from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import Debt, DebtStatus
 from bot.domain.entities.payment import Payment, PaymentType
 from bot.domain.entities.report import ClientDebtSummary, ClientReport
@@ -9,6 +10,7 @@ __all__ = [
     "Client",
     "ClientDebtSummary",
     "ClientReport",
+    "Currency",
     "Debt",
     "DebtStatus",
     "Payment",

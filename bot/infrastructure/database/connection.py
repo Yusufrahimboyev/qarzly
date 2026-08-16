@@ -39,12 +39,53 @@ class Database:
         await self._connection.execute("PRAGMA journal_mode=WAL;")
         await self._connection.execute("PRAGMA foreign_keys=ON;")
         await self._init_schema()
+        await self._migrate()
         logger.info("Ma'lumotlar bazasi ulandi: %s", self._path)
 
     async def _init_schema(self) -> None:
         for ddl in SCHEMA:
             await self.connection.executescript(ddl)
         await self.connection.commit()
+
+    async def _migrate(self) -> None:
+        """Eski bazalarni yangi sxemaga ko'chiradi (ustun qo'shish).
+
+        CREATE TABLE IF NOT EXISTS mavjud jadvalni yangilamaydi — shu sababli
+        yetishmay turgan ustunlar shu yerda ALTER TABLE bilan qo'shiladi.
+        """
+        debt_migrations = await self._missing_columns(
+            "debts",
+            {
+                "product_quantity": (
+                    "ALTER TABLE debts ADD COLUMN product_quantity"
+                    " INTEGER NOT NULL DEFAULT 1"
+                ),
+                "currency": (
+                    "ALTER TABLE debts ADD COLUMN currency TEXT NOT NULL DEFAULT 'UZS'"
+                ),
+            },
+        )
+        payment_migrations = await self._missing_columns(
+            "payments",
+            {
+                "currency": (
+                    "ALTER TABLE payments ADD COLUMN currency TEXT NOT NULL DEFAULT 'UZS'"
+                ),
+            },
+        )
+
+        for statement in debt_migrations + payment_migrations:
+            await self.connection.execute(statement)
+            logger.info("Migratsiya bajarildi: %s", statement)
+        if debt_migrations or payment_migrations:
+            await self.connection.commit()
+
+    async def _missing_columns(self, table: str, wanted: dict[str, str]) -> tuple[str, ...]:
+        """Jadvalda yo'q ustunlar uchun ALTER iboralarini qaytaradi."""
+        async with self.connection.execute(f"PRAGMA table_info({table})") as cursor:
+            rows = await cursor.fetchall()
+        existing = {row[1] for row in rows}
+        return tuple(ddl for column, ddl in wanted.items() if column not in existing)
 
     async def disconnect(self) -> None:
         """Ulanishni yopadi."""

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -45,9 +46,23 @@ async def run() -> None:
     settings = get_settings()
     setup_logging(settings.log_level)
 
+    if not settings.admin_ids:
+        logger.warning(
+            "⚠️ ADMIN_IDS bo'sh — bot OCHIQ rejimda ishlaydi: botni topgan HAR QANDAY "
+            "Telegram foydalanuvchisi barcha mijozlar ma'lumotlarini ko'ra va "
+            "o'zgartira oladi. .env faylida ADMIN_IDS ni sozlang!"
+        )
+
     # --- Infrastructure: ma'lumotlar bazasi ---
     database = Database(settings.database_path)
     await database.connect()
+
+    if os.environ.get("RENDER") == "true":
+        logger.warning(
+            "⚠️ Render'da ishlayapsiz. Free tarifda disk EPHEMERAL — har "
+            "deploy/restartda SQLite fayli yo'qolishi mumkin. Persistent disk "
+            "uling yoki tashqi baza ishlating (README → 'Deploy' bo'limi)."
+        )
 
     # --- Repositories ---
     user_repository = SqliteUserRepository(database.connection)
@@ -85,10 +100,11 @@ async def run() -> None:
     register_handlers(dp)
 
     # --- Infrastructure: scheduler va web server ---
-    scheduler = create_scheduler(bot)
+    scheduler = create_scheduler(settings.render_external_url)
     web_server = WebServer(
         client_service=client_service,
         debt_service=debt_service,
+        settings=settings,
         host="0.0.0.0",
         port=settings.port,
     )

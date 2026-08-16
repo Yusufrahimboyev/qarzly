@@ -1,7 +1,7 @@
 [project]
-name = "telegram-bot-starter"
-version = "0.2.0"
-description = "Aiogram 3.x Clean Architecture Telegram bot starter"
+name = "qarzly"
+version = "1.0.0"
+description = "Qarz Daftar — Telegram qarz hisob boti (Aiogram 3.x, Clean Architecture, Mini App)"
 requires-python = ">=3.11"
 dependencies = [
     "aiogram>=3.10.0",

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from bot.domain.entities.currency import Currency
+
 
 class DebtStatus(StrEnum):
     ACTIVE = "active"
@@ -16,7 +18,11 @@ class DebtStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Debt:
-    """Qarz operatsiyasi entity'si."""
+    """Qarz operatsiyasi entity'si.
+
+    product_price — JAMI narx (bitta narx × miqdor) sifatida saqlanadi
+    va `currency` valyutasida ifodalanadi.
+    """
 
     client_id: int
     debt_date: str
@@ -24,6 +30,8 @@ class Debt:
     product_price: int
     original_debt: int
     remaining_debt: int
+    product_quantity: int = 1
+    currency: Currency = Currency.UZS
     exchange_exists: bool = False
     exchange_product_name: str | None = None
     exchange_product_price: int = 0

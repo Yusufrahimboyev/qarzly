@@ -5,7 +5,8 @@ import math
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.application.common.formatters import format_money
+from bot.application.common.formatters import format_money_map
+from bot.domain.entities.currency import Currency
 from bot.domain.entities.report import ClientDebtSummary
 
 
@@ -32,7 +33,10 @@ def get_debtors_list_keyboard(
         if client.id is None:
             continue
 
-        btn_text = f"🔴 {client.full_name} — {format_money(summary.total_remaining_debt)}"
+        btn_text = (
+            f"🔴 {client.full_name} — "
+            f"{format_money_map(summary.remaining_by_currency)}"
+        )
         keyboard.append([
             InlineKeyboardButton(
                 text=btn_text,
@@ -68,13 +72,16 @@ def get_debtors_list_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-def get_payment_type_keyboard(client_id: int, total_remaining: int) -> InlineKeyboardMarkup:
-    """Qarzni to'liq yoki qisman to'lash tanlovi."""
+def get_payment_type_keyboard(
+    client_id: int,
+    remaining_by_currency: dict[str, int],
+) -> InlineKeyboardMarkup:
+    """Qarzni to'liq yoki qisman to'lash tanlovi (valyutalar bo'yicha)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"🟢 Qarzini to'liq yopish ({format_money(total_remaining)})",
+                    text=f"🟢 Qarzini to'liq yopish ({format_money_map(remaining_by_currency)})",
                     callback_data=f"pay_mode_full:{client_id}",
                 )
             ],
@@ -88,6 +95,36 @@ def get_payment_type_keyboard(client_id: int, total_remaining: int) -> InlineKey
                 InlineKeyboardButton(
                     text="🔙 Ortga",
                     callback_data="back_to_pay_debtors",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Bekor qilish",
+                    callback_data="cancel_payment",
+                ),
+            ],
+        ]
+    )
+
+
+def get_payment_currency_keyboard(
+    client_id: int,
+    currencies: list[Currency],
+) -> InlineKeyboardMarkup:
+    """Qisman to'lov uchun valyuta tanlash (faqat qarzi bor valyutalar)."""
+    buttons = [
+        InlineKeyboardButton(
+            text="💵 So'mda" if currency == Currency.UZS else "$ Dollarda",
+            callback_data=f"pay_currency:{client_id}:{currency.value}",
+        )
+        for currency in currencies
+    ]
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            buttons,
+            [
+                InlineKeyboardButton(
+                    text="🔙 Ortga",
+                    callback_data=f"select_pay_client:{client_id}",
                 ),
                 InlineKeyboardButton(
                     text="❌ Bekor qilish",

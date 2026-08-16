@@ -6,16 +6,61 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from bot.domain.entities.currency import Currency
+
+# Server (masalan Render) UTC da ishlashi mumkin — "bugun" sanasi har doim
+# O'zbekiston vaqti bo'yicha hisoblanishi kerak.
+_TASHKENT_TZ = ZoneInfo("Asia/Tashkent")
+
+# Ko'rsatish tartibi: avval so'm, keyin dollar
+_CURRENCY_DISPLAY_ORDER: tuple[str, str] = (Currency.UZS.value, Currency.USD.value)
 
 
-def format_money(amount: int | float) -> str:
-    """Pul miqdorini minglik probellar bilan chiroyli formatlaydi.
+def now_local() -> datetime:
+    """O'zbekiston (Toshkent) vaqti bo'yicha joriy vaqtni qaytaradi."""
+    return datetime.now(_TASHKENT_TZ)
 
-    Masalan: 1500000 -> "1 500 000 so'm"
+
+def today_str() -> str:
+    """Bugungi sanani 'DD.MM.YYYY' ko'rinishida (Toshkent vaqti) qaytaradi."""
+    return now_local().strftime("%d.%m.%Y")
+
+
+def format_money(amount: int | float, currency: str | Currency = Currency.UZS) -> str:
+    """Pul miqdorini valyutasiga mos ravishda formatlaydi.
+
+    Masalan: (1500000, UZS) -> "1 500 000 so'm"; (200, USD) -> "200 $".
     """
     int_val = int(round(amount))
     formatted = f"{int_val:,}".replace(",", " ")
+    cur = str(currency)
+    if cur == Currency.USD.value:
+        return f"{formatted} $"
     return f"{formatted} so'm"
+
+
+def format_money_map(amounts: dict[str, int]) -> str:
+    """Bir nechta valyutadagi summalarni bitta qatorga yig'adi.
+
+    Masalan: {"UZS": 1500000, "USD": 200} -> "1 500 000 so'm + 200 $"
+    """
+    parts = [
+        format_money(amounts[cur], cur)
+        for cur in _CURRENCY_DISPLAY_ORDER
+        if amounts.get(cur, 0) > 0
+    ]
+    return " + ".join(parts) if parts else format_money(0)
+
+
+def aggregate_remaining(summaries) -> dict[str, int]:
+    """Bir nechta mijoz summary'larining qoldiq qarzlarini valyuta bo'yicha yig'adi."""
+    totals: dict[str, int] = {}
+    for summary in summaries:
+        for cur, amount in summary.remaining_by_currency.items():
+            totals[cur] = totals.get(cur, 0) + amount
+    return totals
 
 
 def parse_money(text: str) -> int | None:
@@ -49,7 +94,7 @@ def parse_date_input(text: str) -> str | None:
     - '16.08.26'
     """
     cleaned = text.strip().lower()
-    now = datetime.now()
+    now = now_local()
 
     if cleaned in ("bugun", "today", "hozir", "current"):
         return now.strftime("%d.%m.%Y")
@@ -86,3 +131,9 @@ def normalize_phone(phone: str) -> str:
     elif len(cleaned) == 9 and cleaned.isdigit():
         cleaned = "+998" + cleaned
     return cleaned
+
+
+def is_valid_phone(phone: str) -> bool:
+    """Tozalangan telefon raqami amaldymi (7-15 raqam) ekanini tekshiradi."""
+    digits = re.sub(r"\D", "", phone)
+    return 7 <= len(digits) <= 15

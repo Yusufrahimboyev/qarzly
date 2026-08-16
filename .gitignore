@@ -1,8 +1,12 @@
 .env
 venv/
+.venv/
 __pycache__/
 *.pyc
 *.db
 data/*.db
 .DS_Store
 *.log
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

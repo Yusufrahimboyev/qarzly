@@ -5,6 +5,9 @@ from abc import ABC, abstractmethod
 
 from bot.domain.entities.debt import Debt, DebtStatus
 
+ActiveDebtTotals = dict[int, dict[str, tuple[int, int]]]
+"""client_id -> {valyuta: (jami_qoldiq_qarz, faol_qarzlar_soni)}."""
+
 
 class DebtRepository(ABC):
     """Qarz operatsiyalari bilan ishlash bo'yicha interfeys."""
@@ -42,4 +45,13 @@ class DebtRepository(ABC):
     @abstractmethod
     async def get_all_active(self) -> list[Debt]:
         """Barcha yopilmagan faol qarzlarni qaytaradi."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_active_totals(self) -> ActiveDebtTotals:
+        """Barcha mijozlar uchun faol qarzlar yig'indisini bitta so'rovda qaytaradi.
+
+        Qaytaradi: {client_id: {valyuta: (jami_qoldiq_qarz, faol_qarzlar_soni)}}.
+        Bu har bir mijoz uchun alohida so'rov (N+1) o'rniga bitta agregat so'rov.
+        """
         raise NotImplementedError

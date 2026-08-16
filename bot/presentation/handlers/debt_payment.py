@@ -1,25 +1,41 @@
-"""Presentation qatlami: Qarz to'lovi handler'lari."""
+"""Presentation qatlami: Qarz to'lovi handler'lari (valyutalar bo'yicha)."""
 from __future__ import annotations
-
-from datetime import datetime
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from bot.application.common.formatters import format_money, parse_money
+from bot.application.common.formatters import (
+    aggregate_remaining,
+    format_money,
+    format_money_map,
+    parse_money,
+    today_str,
+)
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
+from bot.domain.entities.currency import Currency
 from bot.presentation.keyboards.main_menu_kb import get_main_menu_keyboard
 from bot.presentation.keyboards.payment_kb import (
     get_debtors_list_keyboard,
     get_payment_back_cancel_keyboard,
+    get_payment_currency_keyboard,
     get_payment_type_keyboard,
 )
 from bot.presentation.states.debt_payment import DebtPaymentStates
 
 router = Router()
+
+
+def _debtors_header(debtors) -> str:
+    total_debt = aggregate_remaining(debtors)
+    return (
+        "💰 <b>QARZ TO'LOVI (Qarzdorlar ro'yxati):</b>\n\n"
+        f"🔴 <b>Qarzdorlar soni:</b> {len(debtors)} nafar\n"
+        f"💳 <b>Jami olinishi kerak:</b> <b>{format_money_map(total_debt)}</b>\n\n"
+        "<i>To'lov qilayotgan mijozni tanlang:</i>"
+    )
 
 
 # ==========================================
@@ -65,15 +81,8 @@ async def cb_back_to_pay_debtors(
         await callback.answer()
         return
 
-    total_debt = sum(d.total_remaining_debt for d in debtors)
-    text = (
-        "💰 <b>QARZ TO'LOVI (Qarzdorlar ro'yxati):</b>\n\n"
-        f"🔴 <b>Qarzdorlar soni:</b> {len(debtors)} nafar\n"
-        f"💳 <b>Jami olinishi kerak:</b> <b>{format_money(total_debt)}</b>\n\n"
-        "<i>To'lov qilayotgan mijozni tanlang:</i>"
-    )
     await callback.message.edit_text(
-        text,
+        _debtors_header(debtors),
         reply_markup=get_debtors_list_keyboard(debtors, page=1),
     )
     await callback.answer()
@@ -101,15 +110,8 @@ async def show_debtors_payment_list(
         )
         return
 
-    total_debt = sum(d.total_remaining_debt for d in debtors)
-    text = (
-        "💰 <b>QARZ TO'LOVI (Qarzdorlar ro'yxati):</b>\n\n"
-        f"🔴 <b>Qarzdorlar soni:</b> {len(debtors)} nafar\n"
-        f"💳 <b>Jami olinishi kerak:</b> <b>{format_money(total_debt)}</b>\n\n"
-        "<i>To'lov qilayotgan mijozni tanlang:</i>"
-    )
     await message.answer(
-        text,
+        _debtors_header(debtors),
         reply_markup=get_debtors_list_keyboard(debtors, page=1),
     )
 
@@ -129,15 +131,8 @@ async def cb_pay_page(
         await callback.answer("Qarzdorlar mavjud emas.", show_alert=True)
         return
 
-    total_debt = sum(d.total_remaining_debt for d in debtors)
-    text = (
-        "💰 <b>QARZ TO'LOVI (Qarzdorlar ro'yxati):</b>\n\n"
-        f"🔴 <b>Qarzdorlar soni:</b> {len(debtors)} nafar\n"
-        f"💳 <b>Jami olinishi kerak:</b> <b>{format_money(total_debt)}</b>\n\n"
-        "<i>To'lov qilayotgan mijozni tanlang:</i>"
-    )
     await callback.message.edit_text(
-        text,
+        _debtors_header(debtors),
         reply_markup=get_debtors_list_keyboard(debtors, page=page),
     )
     await callback.answer()
@@ -164,14 +159,14 @@ async def cb_select_pay_client(
         await callback.answer("Mijoz topilmadi.", show_alert=True)
         return
 
-    # Mijozning umumiy qoldiq qarzini olish
+    # Mijozning valyutalar bo'yicha qoldiq qarzini olish
     summaries = await client_service.get_debtor_summaries()
     client_summary = next((s for s in summaries if s.client.id == client_id), None)
-    total_remaining = client_summary.total_remaining_debt if client_summary else 0
+    remaining_map = client_summary.remaining_by_currency if client_summary else {}
 
-    if total_remaining <= 0:
+    if not any(amount > 0 for amount in remaining_map.values()):
         await callback.message.edit_text(
-            f"👤 <b>{client.full_name}</b> ning hozirda qarzi yo'q (0 so'm)."
+            f"👤 <b>{client.full_name}</b> ning hozirda qarzi yo'q (0)."
         )
         await callback.answer()
         return
@@ -180,12 +175,12 @@ async def cb_select_pay_client(
     text = (
         f"👤 <b>QARZ TO'LOVI:</b> <b>{client.full_name}</b>\n"
         f"📞 <b>Telefon:</b> {client.phone}\n"
-        f"💳 <b>Joriy qarzi:</b> <b>🔴 {format_money(total_remaining)}</b>\n\n"
+        f"💳 <b>Joriy qarzi:</b> <b>🔴 {format_money_map(remaining_map)}</b>\n\n"
         "<i>To'lov turini tanlang:</i>"
     )
     await callback.message.edit_text(
         text,
-        reply_markup=get_payment_type_keyboard(client_id, total_remaining),
+        reply_markup=get_payment_type_keyboard(client_id, remaining_map),
     )
     await callback.answer()
 
@@ -198,30 +193,29 @@ async def cb_select_pay_client(
 @router.callback_query(F.data.startswith("pay_mode_full:"))
 async def cb_pay_mode_full(
     callback: CallbackQuery,
-    client_service: ClientService,
     debt_service: DebtService,
     settings: Settings,
     state: FSMContext,
 ) -> None:
-    """Qarzni to'liq yopadi."""
+    """Qarzni to'liq yopadi (barcha valyutalarda)."""
     await state.clear()
     if callback.data is None or not isinstance(callback.message, Message):
         return
 
     client_id = int(callback.data.split(":")[1])
-    today_str = datetime.now().strftime("%d.%m.%Y")
+    today = today_str()
 
     try:
-        total_paid, summary = await debt_service.pay_full_debt(
+        paid_map, summary = await debt_service.pay_full_debt(
             client_id=client_id,
-            payment_date=today_str,
+            payment_date=today,
         )
 
         success_text = (
             "✅ <b>TO'LOV MUVAFFAQIYATLI QABUL QILINDI!</b>\n\n"
             f"👤 <b>Mijoz:</b> {summary.client.full_name}\n"
-            f"💰 <b>To'langan summa:</b> {format_money(total_paid)}\n"
-            "💳 <b>Joriy qarzi:</b> <b>🟢 0 so'm (Qarzi to'liq yopildi)</b>"
+            f"💰 <b>To'langan summa:</b> {format_money_map(paid_map)}\n"
+            "💳 <b>Joriy qarzi:</b> <b>🟢 0 (Qarzi to'liq yopildi)</b>"
         )
         await callback.message.edit_text(success_text)
         await callback.message.answer(
@@ -231,12 +225,13 @@ async def cb_pay_mode_full(
         await callback.answer("Qarz to'liq yopildi!", show_alert=False)
 
     except Exception as exc:
-        await callback.message.edit_text(f"❌ <b>Xatolik yuz berdi:</b> {exc}")
+        if isinstance(callback.message, Message):
+            await callback.message.edit_text(f"❌ <b>Xatolik yuz berdi:</b> {exc}")
         await callback.answer("Xatolik yuz berdi.", show_alert=True)
 
 
 # ==========================================
-# 4. QISMAN TO'LASH
+# 4. QISMAN TO'LASH (valyuta tanlash bilan)
 # ==========================================
 
 
@@ -246,7 +241,7 @@ async def cb_pay_mode_partial(
     client_service: ClientService,
     state: FSMContext,
 ) -> None:
-    """Qisman to'lov uchun summani so'raydi."""
+    """Qisman to'lov uchun valyuta tanlaydi (bitta bo'lsa darhol summani so'raydi)."""
     if callback.data is None or not isinstance(callback.message, Message):
         return
 
@@ -258,27 +253,109 @@ async def cb_pay_mode_partial(
 
     summaries = await client_service.get_debtor_summaries()
     client_summary = next((s for s in summaries if s.client.id == client_id), None)
-    total_remaining = client_summary.total_remaining_debt if client_summary else 0
+    remaining_map = client_summary.remaining_by_currency if client_summary else {}
+    owed = [
+        Currency(cur)
+        for cur in (Currency.UZS.value, Currency.USD.value)
+        if remaining_map.get(cur, 0) > 0
+    ]
 
+    if len(owed) > 1:
+        # Ikki valyutada ham qarzi bor — avval qaysi valyutada to'layotganini so'raymiz
+        await callback.message.edit_text(
+            "🟡 <b>QISMAN QARZ TO'LOVI</b>\n\n"
+            f"👤 <b>Mijoz:</b> {client.full_name}\n"
+            f"💳 <b>Joriy qarzi:</b> <b>{format_money_map(remaining_map)}</b>\n\n"
+            "<i>Qaysi valyutada to'lov qilmoqchisiz?</i>",
+            reply_markup=get_payment_currency_keyboard(client_id, owed),
+        )
+        await callback.answer()
+        return
+
+    if not owed:
+        await callback.message.edit_text(
+            f"👤 <b>{client.full_name}</b> ning hozirda qarzi yo'q."
+        )
+        await callback.answer()
+        return
+
+    await _ask_partial_amount(
+        callback.message,
+        state,
+        client.full_name,
+        client_id,
+        owed[0],
+        remaining_map.get(owed[0].value, 0),
+        remaining_map,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pay_currency:"))
+async def cb_pay_currency(
+    callback: CallbackQuery,
+    client_service: ClientService,
+    state: FSMContext,
+) -> None:
+    """Qisman to'lov valyutasi tanlandi — summani so'raydi."""
+    if callback.data is None or not isinstance(callback.message, Message):
+        return
+
+    parts = callback.data.split(":")
+    client_id = int(parts[1])
+    currency = Currency(parts[2])
+
+    client = await client_service.get_by_id(client_id)
+    if client is None:
+        await callback.answer("Mijoz topilmadi.", show_alert=True)
+        return
+
+    summaries = await client_service.get_debtor_summaries()
+    client_summary = next((s for s in summaries if s.client.id == client_id), None)
+    remaining_map = client_summary.remaining_by_currency if client_summary else {}
+
+    await _ask_partial_amount(
+        callback.message,
+        state,
+        client.full_name,
+        client_id,
+        currency,
+        remaining_map.get(currency.value, 0),
+        remaining_map,
+    )
+    await callback.answer()
+
+
+async def _ask_partial_amount(
+    message: Message,
+    state: FSMContext,
+    client_name: str,
+    client_id: int,
+    currency: Currency,
+    total_in_currency: int,
+    remaining_map: dict[str, int],
+) -> None:
+    """Qisman to'lov summasini so'raydi va holatni saqlaydi."""
     await state.set_state(DebtPaymentStates.waiting_partial_amount)
     await state.update_data(
         client_id=client_id,
-        client_name=client.full_name,
-        total_remaining=total_remaining,
+        client_name=client_name,
+        currency=currency.value,
+        total_remaining=total_in_currency,
     )
-
+    currency_label = "So'mda" if currency == Currency.UZS else "Dollarda"
+    example = "500 000" if currency == Currency.UZS else "200"
     text = (
         f"🟡 <b>QISMAN QARZ TO'LOVI</b>\n\n"
-        f"👤 <b>Mijoz:</b> {client.full_name}\n"
-        f"💳 <b>Joriy qarz:</b> <b>{format_money(total_remaining)}</b>\n\n"
-        "💰 <b>Qancha summa to'ladi (so'mda)?</b>\n"
-        "<i>Masalan: 500 000 yoki 500000</i>"
+        f"👤 <b>Mijoz:</b> {client_name}\n"
+        f"💳 <b>Joriy qarzi:</b> <b>{format_money_map(remaining_map)}</b>\n\n"
+        f"💰 <b>{currency_label} qancha summa to'ladi?</b>\n"
+        f"<i>Masalan: {example}</i>"
     )
-    await callback.message.edit_text(
+    await message.edit_text(
         text,
         reply_markup=get_payment_back_cancel_keyboard(client_id),
     )
-    await callback.answer()
 
 
 @router.message(DebtPaymentStates.waiting_partial_amount)
@@ -293,6 +370,7 @@ async def process_partial_amount(
     data = await state.get_data()
     client_id: int = data.get("client_id", 0)
     client_name: str = data.get("client_name", "Mijoz")
+    currency = Currency(data.get("currency", Currency.UZS.value))
     total_remaining: int = data.get("total_remaining", 0)
 
     if amount is None or amount <= 0:
@@ -305,35 +383,36 @@ async def process_partial_amount(
 
     if amount > total_remaining:
         await message.answer(
-            f"⚠️ <b>To'lov summasi ({format_money(amount)}) mavjud qarzdan "
-            f"({format_money(total_remaining)}) katta bo'lishi mumkin emas!</b>\n\n"
+            f"⚠️ <b>To'lov summasi ({format_money(amount, currency)}) mavjud qarzdan "
+            f"({format_money(total_remaining, currency)}) katta bo'lishi mumkin emas!</b>\n\n"
             "Iltimos, qayta kiriting:",
             reply_markup=get_payment_back_cancel_keyboard(client_id),
         )
         return
 
     await state.clear()
-    today_str = datetime.now().strftime("%d.%m.%Y")
+    today = today_str()
 
     try:
         paid_amount, new_remaining, summary = await debt_service.pay_partial_debt(
             client_id=client_id,
             amount=amount,
-            payment_date=today_str,
+            payment_date=today,
+            currency=currency,
         )
 
-        if new_remaining == 0:
+        if not summary.has_debt:
             result_text = (
                 "✅ <b>TO'LOV MUVAFFAQIYATLI QABUL QILINDI!</b>\n\n"
-                f"👤 <b>{client_name}</b> {format_money(paid_amount)} to'ladi.\n"
-                "💳 <b>Mijoz qarzini to'liq yopdi! Qoldiq qarz: 🟢 0 so'm.</b>"
+                f"👤 <b>{client_name}</b> {format_money(paid_amount, currency)} to'ladi.\n"
+                "💳 <b>Mijoz qarzini to'liq yopdi! Qoldiq qarz: 🟢 0.</b>"
             )
         else:
             result_text = (
                 "✅ <b>TO'LOV MUVAFFAQIYATLI QABUL QILINDI!</b>\n\n"
                 f"👤 <b>Mijoz:</b> {client_name}\n"
-                f"💰 <b>To'langan summa:</b> {format_money(paid_amount)}\n"
-                f"💳 <b>Qolgan qarz:</b> <b>🔴 {format_money(new_remaining)}</b>"
+                f"💰 <b>To'langan summa:</b> {format_money(paid_amount, currency)}\n"
+                f"💳 <b>Qolgan qarz:</b> <b>🔴 {format_money_map(summary.remaining_by_currency)}</b>"
             )
 
         await message.answer(result_text)

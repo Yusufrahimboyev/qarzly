@@ -30,7 +30,9 @@ CREATE TABLE IF NOT EXISTS debts (
     client_id              INTEGER NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,
     debt_date              TEXT NOT NULL,
     product_name           TEXT NOT NULL,
+    product_quantity       INTEGER NOT NULL DEFAULT 1,
     product_price          INTEGER NOT NULL,
+    currency               TEXT NOT NULL DEFAULT 'UZS' CHECK(currency IN ('UZS', 'USD')),
     exchange_exists        INTEGER NOT NULL DEFAULT 0,
     exchange_product_name  TEXT,
     exchange_product_price INTEGER NOT NULL DEFAULT 0,
@@ -49,6 +51,7 @@ CREATE TABLE IF NOT EXISTS payments (
     client_id    INTEGER NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,
     debt_id      INTEGER REFERENCES debts(id) ON DELETE RESTRICT,
     amount       INTEGER NOT NULL,
+    currency     TEXT NOT NULL DEFAULT 'UZS' CHECK(currency IN ('UZS', 'USD')),
     payment_type TEXT NOT NULL CHECK(payment_type IN ('full', 'partial', 'initial')),
     payment_date TEXT NOT NULL,
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP

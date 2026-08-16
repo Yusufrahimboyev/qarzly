@@ -5,6 +5,7 @@ from datetime import datetime
 
 import aiosqlite
 
+from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import Debt, DebtStatus
 from bot.domain.repositories.debt_repository import DebtRepository
 
@@ -22,7 +23,9 @@ class SqliteDebtRepository(DebtRepository):
                 client_id,
                 debt_date,
                 product_name,
+                product_quantity,
                 product_price,
+                currency,
                 exchange_exists,
                 exchange_product_name,
                 exchange_product_price,
@@ -31,13 +34,15 @@ class SqliteDebtRepository(DebtRepository):
                 remaining_debt,
                 status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 debt.client_id,
                 debt.debt_date,
                 debt.product_name,
+                debt.product_quantity,
                 debt.product_price,
+                debt.currency.value if isinstance(debt.currency, Currency) else str(debt.currency),
                 1 if debt.exchange_exists else 0,
                 debt.exchange_product_name,
                 debt.exchange_product_price,
@@ -49,6 +54,8 @@ class SqliteDebtRepository(DebtRepository):
         )
         await self._connection.commit()
         debt_id = cursor.lastrowid
+        if debt_id is None:
+            raise RuntimeError("Qarz yozuvini saqlashda ID olinmadi.")
         return await self.get_by_id(debt_id)  # type: ignore[return-value]
 
     async def get_by_id(self, debt_id: int) -> Debt | None:
@@ -59,7 +66,9 @@ class SqliteDebtRepository(DebtRepository):
                 client_id,
                 debt_date,
                 product_name,
+                product_quantity,
                 product_price,
+                currency,
                 exchange_exists,
                 exchange_product_name,
                 exchange_product_price,
@@ -88,7 +97,9 @@ class SqliteDebtRepository(DebtRepository):
                 client_id,
                 debt_date,
                 product_name,
+                product_quantity,
                 product_price,
+                currency,
                 exchange_exists,
                 exchange_product_name,
                 exchange_product_price,
@@ -116,7 +127,9 @@ class SqliteDebtRepository(DebtRepository):
                 client_id,
                 debt_date,
                 product_name,
+                product_quantity,
                 product_price,
+                currency,
                 exchange_exists,
                 exchange_product_name,
                 exchange_product_price,
@@ -144,7 +157,9 @@ class SqliteDebtRepository(DebtRepository):
                 client_id,
                 debt_date,
                 product_name,
+                product_quantity,
                 product_price,
+                currency,
                 exchange_exists,
                 exchange_product_name,
                 exchange_product_price,
@@ -162,6 +177,22 @@ class SqliteDebtRepository(DebtRepository):
             rows = await cursor.fetchall()
 
         return [self._map_row(row) for row in rows]
+
+    async def get_active_totals(self) -> dict[int, dict[str, tuple[int, int]]]:
+        async with self._connection.execute(
+            """
+            SELECT client_id, currency, COALESCE(SUM(remaining_debt), 0), COUNT(*)
+            FROM debts
+            WHERE remaining_debt > 0 AND status = 'active'
+            GROUP BY client_id, currency
+            """
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+        totals: dict[int, dict[str, tuple[int, int]]] = {}
+        for row in rows:
+            totals.setdefault(row[0], {})[row[1]] = (row[2], row[3])
+        return totals
 
     async def update_remaining_debt(
         self,
@@ -207,7 +238,9 @@ class SqliteDebtRepository(DebtRepository):
             client_id=row["client_id"],
             debt_date=row["debt_date"],
             product_name=row["product_name"],
+            product_quantity=row["product_quantity"],
             product_price=row["product_price"],
+            currency=Currency(row["currency"]),
             exchange_exists=bool(row["exchange_exists"]),
             exchange_product_name=row["exchange_product_name"],
             exchange_product_price=row["exchange_product_price"],

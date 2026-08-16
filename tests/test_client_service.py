@@ -41,6 +41,27 @@ async def test_client_get_or_create(
 
 
 @pytest.mark.asyncio
+async def test_get_or_create_empty_phone_does_not_link_strangers(
+    client_repo: SqliteClientRepository,
+    debt_repo: SqliteDebtRepository,
+) -> None:
+    """Bo'sh telefonli ikki xil mijoz bir-biriga bog'lanmasligi kerak."""
+    service = ClientService(client_repo, debt_repo)
+
+    client1, is_new1 = await service.get_or_create("Aliyev Anvar", "")
+    assert is_new1 is True
+
+    client2, is_new2 = await service.get_or_create("Karimov Bobur", "")
+    assert is_new2 is True
+    assert client2.id != client1.id
+
+    # Xuddi shu ism — allaqachon mavjud mijoz qaytadi
+    client3, is_new3 = await service.get_or_create("Aliyev Anvar", "")
+    assert is_new3 is False
+    assert client3.id == client1.id
+
+
+@pytest.mark.asyncio
 async def test_alphabetical_summaries_and_debtors(
     client_repo: SqliteClientRepository,
     debt_repo: SqliteDebtRepository,
@@ -67,5 +88,5 @@ async def test_alphabetical_summaries_and_debtors(
     debtors = await client_service.get_debtor_summaries()
     debtor_names = [d.client.full_name for d in debtors]
     assert debtor_names == ["Aliyev Anvar", "Zohidov Zohid"]
-    assert debtors[0].total_remaining_debt == 1000000
-    assert debtors[1].total_remaining_debt == 500000
+    assert debtors[0].remaining_by_currency == {"UZS": 1000000}
+    assert debtors[1].remaining_by_currency == {"UZS": 500000}

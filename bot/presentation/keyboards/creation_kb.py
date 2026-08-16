@@ -1,19 +1,19 @@
 """Presentation qatlami: Qarz yaratish klaviaturalari."""
 from __future__ import annotations
 
-from datetime import datetime
-
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+from bot.application.common.formatters import today_str
 
 
 def get_date_picker_keyboard() -> InlineKeyboardMarkup:
     """Sana kiritish uchun tezkor inline klaviatura."""
-    today_str = datetime.now().strftime("%d.%m.%Y")
+    today = today_str()
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"📅 Bugun ({today_str})",
+                    text=f"📅 Bugun ({today})",
                     callback_data="create_date_today",
                 )
             ],
@@ -44,6 +44,22 @@ def get_back_cancel_keyboard(show_back: bool = True) -> InlineKeyboardMarkup:
         )
     )
     return InlineKeyboardMarkup(inline_keyboard=[buttons])
+
+
+def get_currency_choice_keyboard() -> InlineKeyboardMarkup:
+    """Valyuta tanlash klaviaturasi (so'm / dollar)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💵 So'm", callback_data="currency_uzs"),
+                InlineKeyboardButton(text="$ Dollar", callback_data="currency_usd"),
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
+                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+            ],
+        ]
+    )
 
 
 def get_exchange_choice_keyboard() -> InlineKeyboardMarkup:

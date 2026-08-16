@@ -25,6 +25,8 @@ class SqliteClientRepository(ClientRepository):
         )
         await self._connection.commit()
         client_id = cursor.lastrowid
+        if client_id is None:
+            raise RuntimeError("Mijozni saqlashda ID olinmadi.")
         return await self.get_by_id(client_id)  # type: ignore[return-value]
 
     async def get_by_id(self, client_id: int) -> Client | None:

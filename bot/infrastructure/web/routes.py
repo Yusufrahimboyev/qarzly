@@ -1,18 +1,25 @@
 """Infrastructure qatlami: aiohttp web route'lari va REST API.
 
-Telegram Mini App UI va uning backend API lari.
+Telegram Mini App UI va uning backend API lari. /api/* route'lari
+Telegram initData autentifikatsiyasidan o'tadi (server.py da ulanadi).
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from pathlib import Path
 
 from aiohttp import web
 
-from bot.application.common.formatters import normalize_phone, parse_date_input
+from bot.application.common.formatters import (
+    aggregate_remaining,
+    is_valid_phone,
+    normalize_phone,
+    parse_date_input,
+    today_str,
+)
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
+from bot.domain.entities.currency import Currency
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +50,15 @@ async def index_handler(request: web.Request) -> web.StreamResponse:
 
 
 async def api_get_stats(request: web.Request) -> web.Response:
-    """Umumiy statistikani qaytaradi."""
+    """Umumiy statistikani qaytaradi (qarzlar valyutalar bo'yicha ajratilgan)."""
     client_service: ClientService = request.app["client_service"]
     summaries = await client_service.get_all_summaries()
 
-    total_debt = sum(s.total_remaining_debt for s in summaries)
     debtors_count = sum(1 for s in summaries if s.has_debt)
     clients_count = len(summaries)
 
     return web.json_response({
-        "total_debt": total_debt,
+        "total_debt": aggregate_remaining(summaries),
         "debtors_count": debtors_count,
         "clients_count": clients_count,
     })
@@ -68,7 +74,7 @@ async def api_get_summaries(request: web.Request) -> web.Response:
             "id": s.client.id,
             "full_name": s.client.full_name,
             "phone": s.client.phone,
-            "total_remaining_debt": s.total_remaining_debt,
+            "remaining": s.remaining_by_currency,
             "active_debts_count": s.active_debts_count,
             "has_debt": s.has_debt,
         }
@@ -87,7 +93,7 @@ async def api_get_debtors(request: web.Request) -> web.Response:
             "id": s.client.id,
             "full_name": s.client.full_name,
             "phone": s.client.phone,
-            "total_remaining_debt": s.total_remaining_debt,
+            "remaining": s.remaining_by_currency,
             "active_debts_count": s.active_debts_count,
             "has_debt": True,
         }
@@ -121,7 +127,9 @@ async def api_get_client_report(request: web.Request) -> web.Response:
                 "id": d.id,
                 "debt_date": d.debt_date,
                 "product_name": d.product_name,
+                "product_quantity": d.product_quantity,
                 "product_price": d.product_price,
+                "currency": d.currency.value,
                 "exchange_exists": d.exchange_exists,
                 "exchange_product_name": d.exchange_product_name,
                 "exchange_product_price": d.exchange_product_price,
@@ -137,6 +145,7 @@ async def api_get_client_report(request: web.Request) -> web.Response:
                 "id": p.id,
                 "debt_id": p.debt_id,
                 "amount": p.amount,
+                "currency": p.currency.value,
                 "payment_type": p.payment_type.value,
                 "payment_date": p.payment_date,
             }
@@ -164,18 +173,22 @@ async def api_create_debt(request: web.Request) -> web.Response:
     client_name = str(body.get("client_name", "")).strip()
     client_phone = normalize_phone(str(body.get("client_phone", "")))
     raw_date = str(body.get("debt_date", "")).strip()
-    debt_date = parse_date_input(raw_date) or datetime.now().strftime("%d.%m.%Y")
+    debt_date = parse_date_input(raw_date) or today_str()
     product_name = str(body.get("product_name", "")).strip()
 
     try:
         product_price = int(body.get("product_price", 0))
+        product_quantity = int(body.get("product_quantity", 1))
+        currency_raw = str(body.get("currency", Currency.UZS.value)).upper()
         exchange_exists = bool(body.get("exchange_exists", False))
         exchange_product_name = (
             str(body.get("exchange_product_name", "")).strip() or None
             if exchange_exists
             else None
         )
-        exchange_product_price = int(body.get("exchange_product_price", 0)) if exchange_exists else 0
+        exchange_product_price = (
+            int(body.get("exchange_product_price", 0)) if exchange_exists else 0
+        )
         given_money = int(body.get("given_money", 0))
     except (ValueError, TypeError):
         return web.json_response({"error": "Narxlar butun son bo'lishi kerak"}, status=400)
@@ -186,6 +199,20 @@ async def api_create_debt(request: web.Request) -> web.Response:
         return web.json_response({"error": "Tovar nomi kiritilmadi"}, status=400)
     if product_price <= 0:
         return web.json_response({"error": "Tovar narxi 0 dan katta bo'lishi kerak"}, status=400)
+    if product_quantity < 1:
+        return web.json_response(
+            {"error": "Miqdor (nechta) 1 dan kichik bo'lmasligi kerak"}, status=400
+        )
+    try:
+        currency = Currency(currency_raw)
+    except ValueError:
+        return web.json_response(
+            {"error": "Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak)"}, status=400
+        )
+    if not is_valid_phone(client_phone):
+        return web.json_response(
+            {"error": "Telefon raqami noto'g'ri (masalan: +998901234567)"}, status=400
+        )
 
     try:
         client, _ = await client_service.get_or_create(
@@ -200,6 +227,8 @@ async def api_create_debt(request: web.Request) -> web.Response:
             debt_date=debt_date,
             product_name=product_name,
             product_price=product_price,
+            product_quantity=product_quantity,
+            currency=currency,
             exchange_exists=exchange_exists,
             exchange_product_name=exchange_product_name,
             exchange_product_price=exchange_product_price,
@@ -210,13 +239,17 @@ async def api_create_debt(request: web.Request) -> web.Response:
             "ok": True,
             "debt_id": saved_debt.id,
             "client_id": client.id,
+            "total_product_price": saved_debt.product_price,
             "remaining_debt": saved_debt.remaining_debt,
         })
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
-    except Exception as exc:
+    except Exception:
         logger.exception("Qarz yaratishda kutilmagan xatolik")
-        return web.json_response({"error": str(exc)}, status=500)
+        return web.json_response(
+            {"error": "Serverda kutilmagan xatolik yuz berdi. Keyinroq urinib ko'ring."},
+            status=500,
+        )
 
 
 async def api_make_payment(request: web.Request) -> web.Response:
@@ -231,50 +264,67 @@ async def api_make_payment(request: web.Request) -> web.Response:
     try:
         client_id = int(body.get("client_id", 0))
         payment_type = str(body.get("payment_type", "full")).lower()
+        currency_raw = str(body.get("currency", Currency.UZS.value)).upper()
         raw_date = str(body.get("payment_date", "")).strip()
-        payment_date = parse_date_input(raw_date) or datetime.now().strftime("%d.%m.%Y")
+        payment_date = parse_date_input(raw_date) or today_str()
     except (ValueError, TypeError):
         return web.json_response({"error": "Noto'g'ri parametrlar"}, status=400)
 
     if client_id <= 0:
         return web.json_response({"error": "Mijoz tanlanmadi"}, status=400)
+    try:
+        currency = Currency(currency_raw)
+    except ValueError:
+        return web.json_response(
+            {"error": "Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak)"}, status=400
+        )
 
     try:
         if payment_type == "full":
-            paid_amount, summary = await debt_service.pay_full_debt(
+            paid_map, summary = await debt_service.pay_full_debt(
                 client_id=client_id,
                 payment_date=payment_date,
             )
             return web.json_response({
                 "ok": True,
-                "paid_amount": paid_amount,
-                "new_remaining": summary.total_remaining_debt,
+                "paid_amount": paid_map,
+                "new_remaining": summary.remaining_by_currency,
                 "is_closed": True,
             })
         elif payment_type == "partial":
             amount = int(body.get("amount", 0))
             if amount <= 0:
-                return web.json_response({"error": "To'lov summasi 0 dan katta bo'lishi kerak"}, status=400)
+                return web.json_response(
+                    {"error": "To'lov summasi 0 dan katta bo'lishi kerak"}, status=400
+                )
 
             paid_amount, new_remaining, summary = await debt_service.pay_partial_debt(
                 client_id=client_id,
                 amount=amount,
                 payment_date=payment_date,
+                currency=currency,
             )
             return web.json_response({
                 "ok": True,
                 "paid_amount": paid_amount,
+                "currency": currency.value,
                 "new_remaining": new_remaining,
-                "is_closed": new_remaining == 0,
+                "remaining": summary.remaining_by_currency,
+                "is_closed": not summary.has_debt,
             })
         else:
-            return web.json_response({"error": "To'lov turi noto'g'ri (full yoki partial)"}, status=400)
+            return web.json_response(
+                {"error": "To'lov turi noto'g'ri (full yoki partial)"}, status=400
+            )
 
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
-    except Exception as exc:
+    except Exception:
         logger.exception("To'lov qilishda kutilmagan xatolik")
-        return web.json_response({"error": str(exc)}, status=500)
+        return web.json_response(
+            {"error": "Serverda kutilmagan xatolik yuz berdi. Keyinroq urinib ko'ring."},
+            status=500,
+        )
 
 
 def setup_routes(app: web.Application) -> None:

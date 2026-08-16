@@ -10,11 +10,19 @@ orqali veb-interfeys ham taqdim etadi.
 - **📋 Qarzlar jadvali** — barcha mijozlar va qarzdorlar ro'yxati, sahifalash
   (pagination) bilan; har bir mijoz uchun batafsil qarz va to'lovlar hisoboti.
 - **➕ Yangi qarz yaratish** — bosqichma-bosqich (wizard) interfeys: sana, mijoz
-  ismi va telefoni, tovar nomi va narxi, **ayirboshlash (exchange)** tovari,
-  **berilgan pul** (dastlabki to'lov) va avtomatik hisob-kitob.
+  ismi va telefoni, tovar nomi, **miqdori (nechta)** va bitta narxi (jami narx
+  avtomatik hisoblanadi), **valyuta (so'm yoki dollar)**, **ayirboshlash
+  (exchange)** tovari, **berilgan pul** (dastlabki to'lov) va avtomatik
+  hisob-kitob. So'm va dollar qarzlari alohida saqlanadi va hech qachon
+  qo'shib yuborilmaydi.
 - **💰 Qarz to'lovi** — mijoz qarzini **to'liq** yoki **qisman** yopish.
 - **🚀 Mini App (Web UI)** — `RENDER_EXTERNAL_URL` sozlanganida Telegram
   ichidan ochiladigan veb-ilova va uning REST API'lari.
+- **🔒 Telegram initData autentifikatsiyasi** — barcha `/api/*` so'rovlari
+  Telegram'ning HMAC imzosi bilan tekshiriladi; begona shaxs URLni bilsa ham
+  ma'lumotlarni olib bo'lmaydi.
+- **⏰ Keep-alive** — Render free tarifida uyquga ketishning oldini olish
+  uchun xizmat o'z `/health` endpointini har 10 daqiqada ping qiladi.
 - **Hisobotlar** — mijoz bo'yicha to'liq qarz tarixi, exchange, to'lovlar va
   umumiy hisob-kitob (jami qoldiq qarz, qarzdorlar soni va h.k.).
 - **Health check** — `/health` endpoint orqali xizmat holatini kuzatish.
@@ -95,14 +103,31 @@ Bot ishga tushgach, asosiy menyudan foydalanish mumkin:
 
 | Method | Yo'l | Izoh |
 |---|---|---|
-| `GET` | `/health` | Xizmat holati (monitoring / keep-alive) |
-| `GET` | `/` | Mini App bosh sahifasi (index.html) |
+| `GET` | `/health` | Xizmat holati (monitoring / keep-alive) — ochiq |
+| `GET` | `/` | Mini App bosh sahifasi (index.html) — ochiq |
 | `GET` | `/api/stats` | Umumiy statistika (jami qarz, qarzdorlar, mijozlar) |
 | `GET` | `/api/summaries` | Barcha mijozlar qarz ma'lumotlari (alifbo bo'yicha) |
 | `GET` | `/api/debtors` | Faqat faol qarzdorlar |
 | `GET` | `/api/clients/{id}/report` | Mijozning to'liq hisoboti |
 | `POST` | `/api/debts` | Yangi qarz yaratish |
 | `POST` | `/api/payments` | To'lov qilish (to'liq yoki qisman) |
+
+Barcha `/api/*` endpoint'lari **Telegram initData autentifikatsiyasini talab
+qiladi**: Mini App har bir so'rovga `X-Telegram-Init-Data` header'ini qo'shadi,
+server esa imzoni bot tokeni bilan tekshiradi (HMAC-SHA256, 24 soatlik amal
+qilish muddati). `ADMIN_IDS` sozlangan bo'lsa, faqat ro'yxatdagi
+foydalanuvchilar API'ga kira oladi; aks holda har qanday haqiqiy Telegram
+foydalanuvchisi kira oladi (bot tomonidagi qoida bilan bir xil).
+
+## Xavfsizlik qoidalari
+
+1. **`ADMIN_IDS` ni albatta sozlang** — bo'sh qoldirilsa bot ham, API ham har
+   qanday Telegram foydalanuvchisiga ochiq bo'ladi va u barcha mijozlar
+   ma'lumotlarini ko'ra oladi. Bot ishga tushganda buning haqida log'da
+   ogohlantirish chiqadi.
+2. **`.env` hech qachon gitga kiritilmaydi** (`.gitignore` da band qilingan).
+3. API 500 xatolarida ichki exception tafsilotlari mijozga yuborilmaydi —
+   faqat logga yoziladi.
 
 ## Test
 
@@ -149,5 +174,23 @@ tests/                       # pytest testlari
 1. Repository'ni Render.com ga ulang
 2. Start command: `python -m bot`
 3. Health check: `/health`
-4. `RENDER_EXTERNAL_URL` ni Render bergan URL ga sozlang (Mini App uchun)
+4. `RENDER_EXTERNAL_URL` ni Render bergan URL ga sozlang (Mini App va
+   keep-alive uchun; Render odatda bu o'zgaruvchini o'zi beradi)
 5. `BOT_TOKEN` va `ADMIN_IDS` ni Render panelidan Secrets sifatida kiriting
+
+### ⚠️ Muhim: Render free tarifi va ma'lumot saqlash
+
+Render **free** tarifida disk **ephemeral** (vaqtinchalik) — har deploy yoki
+restartda `data/bot.db` fayli **butunlay o'chib ketadi**. Real foydalanish
+uchun quyidagilardan birini qiling:
+
+- **Persistent Disk ulang** (pullik tarif talab qiladi) — `render.yaml` ga
+  `disk: { mountPath: data, sizeGB: 1 }` qo'shib, `DATABASE_PATH=data/bot.db`
+  qoldiring;
+- yoki **tashqi baza** (masalan Supabase/Neon PostgreSQL) ga o'ting;
+- yoki kamida muntazam **backup** olib turing (SQLite faylini yuklab olish).
+
+Shuningdek, free tarifda 15 daqiqa trafik kelmasa xizmat uyquga o'tadi — bot
+polling'i ham to'xtaydi. Bu loyiha o'z `/health`'ini har 10 daqiqada ping
+qilib, uyquga ketishning oldini oladi (`RENDER_EXTERNAL_URL` sozlangan bo'lsa
+avtomatik ishlaydi).

@@ -5,6 +5,7 @@ from datetime import datetime
 
 import aiosqlite
 
+from bot.domain.entities.currency import Currency
 from bot.domain.entities.payment import Payment, PaymentType
 from bot.domain.repositories.payment_repository import PaymentRepository
 
@@ -22,27 +23,33 @@ class SqlitePaymentRepository(PaymentRepository):
                 client_id,
                 debt_id,
                 amount,
+                currency,
                 payment_type,
                 payment_date
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 payment.client_id,
                 payment.debt_id,
                 payment.amount,
-                payment.payment_type.value if isinstance(payment.payment_type, PaymentType) else str(payment.payment_type),
+                payment.currency.value
+                if isinstance(payment.currency, Currency)
+                else str(payment.currency),
+                payment.payment_type.value,
                 payment.payment_date,
             ),
         )
         await self._connection.commit()
         payment_id = cursor.lastrowid
+        if payment_id is None:
+            raise RuntimeError("To'lov yozuvini saqlashda ID olinmadi.")
         return await self._get_by_id(payment_id)  # type: ignore[return-value]
 
     async def _get_by_id(self, payment_id: int) -> Payment | None:
         async with self._connection.execute(
             """
-            SELECT id, client_id, debt_id, amount, payment_type, payment_date, created_at
+            SELECT id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
             FROM payments
             WHERE id = ?
             """,
@@ -57,7 +64,7 @@ class SqlitePaymentRepository(PaymentRepository):
     async def get_by_client_id(self, client_id: int) -> list[Payment]:
         async with self._connection.execute(
             """
-            SELECT id, client_id, debt_id, amount, payment_type, payment_date, created_at
+            SELECT id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
             FROM payments
             WHERE client_id = ?
             ORDER BY payment_date ASC, id ASC
@@ -71,7 +78,7 @@ class SqlitePaymentRepository(PaymentRepository):
     async def get_by_debt_id(self, debt_id: int) -> list[Payment]:
         async with self._connection.execute(
             """
-            SELECT id, client_id, debt_id, amount, payment_type, payment_date, created_at
+            SELECT id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
             FROM payments
             WHERE debt_id = ?
             ORDER BY payment_date ASC, id ASC
@@ -97,6 +104,7 @@ class SqlitePaymentRepository(PaymentRepository):
             client_id=row["client_id"],
             debt_id=row["debt_id"],
             amount=row["amount"],
+            currency=Currency(row["currency"]),
             payment_type=PaymentType(row["payment_type"]),
             payment_date=row["payment_date"],
             created_at=created_at,

@@ -110,8 +110,32 @@
                         </div>
 
                         <div class="form-group">
-                            <label for="create-product-price">💰 Tovar narxi (so'm)</label>
+                            <label for="create-product-qty">🔢 Nechta (miqdor)</label>
+                            <input type="number" id="create-product-qty" placeholder="1" min="1" step="1" value="1" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="create-product-price">💰 Bitta tovar narxi</label>
                             <input type="number" id="create-product-price" placeholder="2500000" min="1" step="1000" required>
+                        </div>
+
+                        <!-- Valyuta tanlash -->
+                        <div class="form-group">
+                            <label>💱 Valyuta</label>
+                            <div class="radio-cards">
+                                <label class="radio-card">
+                                    <input type="radio" name="currency" value="UZS" checked>
+                                    <div class="radio-content">
+                                        <span class="radio-title">💵 So'm</span>
+                                    </div>
+                                </label>
+                                <label class="radio-card">
+                                    <input type="radio" name="currency" value="USD">
+                                    <div class="radio-content">
+                                        <span class="radio-title">$ Dollar</span>
+                                    </div>
+                                </label>
+                            </div>
                         </div>
 
                         <!-- Exchange (Ayirboshlash) Toggle -->
@@ -163,7 +187,7 @@
                         <!-- Live Calculation Summary Card -->
                         <div class="calc-summary-card">
                             <div class="calc-row">
-                                <span>Tovar narxi:</span>
+                                <span>Tovarlar narxi (jami):</span>
                                 <strong id="calc-product-price">0 so'm</strong>
                             </div>
                             <div class="calc-row" id="calc-exchange-row" style="display: none;">
@@ -235,7 +259,23 @@
                             </div>
 
                             <div id="partial-amount-group" class="form-group" style="display: none;">
-                                <label for="pay-partial-amount">To'lanayotgan summa (so'm)</label>
+                                <label>💱 To'lov valyutasi</label>
+                                <div class="radio-cards">
+                                    <label class="radio-card">
+                                        <input type="radio" name="payment_currency" value="UZS" checked>
+                                        <div class="radio-content">
+                                            <span class="radio-title">💵 So'm</span>
+                                        </div>
+                                    </label>
+                                    <label class="radio-card">
+                                        <input type="radio" name="payment_currency" value="USD">
+                                        <div class="radio-content">
+                                            <span class="radio-title">$ Dollar</span>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <label for="pay-partial-amount" style="margin-top: 10px;">To'lanayotgan summa</label>
                                 <input type="number" id="pay-partial-amount" placeholder="Masalan: 500000" min="1" step="1000">
 
                                 <div class="quick-amounts">
