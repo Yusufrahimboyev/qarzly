@@ -256,15 +256,56 @@ function startAddDebtForClient(person) {
     const dateInput = document.getElementById('create-date');
     if (dateInput) dateInput.value = getTodayFormatted();
 
+    // Mijozning eski qarzlarini ko'rsatamiz
+    loadExistingDebts(person.id);
+
     // Avto-foküs yo'q — aks holda klaviatura darrov ochilib,
     // pastki navigatsiya bar tepaga ko'tarilib qoladi
+}
+
+// Mijozning joriy (yopilmagan) qarzlarini yuklab banner ostida ko'rsatadi
+async function loadExistingDebts(clientId) {
+    const card = document.getElementById('banner-debts-card');
+    const listEl = document.getElementById('banner-debts-list');
+    const totalEl = document.getElementById('banner-client-debt');
+    if (!card || !listEl || !clientId) return;
+
+    card.style.display = 'block';
+    listEl.innerHTML = '<div class="banner-debt-loading">Yuklanmoqda...</div>';
+
+    const data = await fetchClientReport(clientId);
+    if (!data) {
+        card.style.display = 'none';
+        return;
+    }
+
+    const remaining = data.total_remaining_debt || {};
+    const hasDebt = Object.values(remaining).some(v => (Number(v) || 0) > 0);
+    totalEl.textContent = hasDebt ? formatMoneyMap(remaining) : "Qarz yo'q";
+
+    const activeDebts = (data.debts || []).filter(d => d.status === 'active');
+    if (activeDebts.length === 0) {
+        listEl.innerHTML = '<div class="banner-no-debt">🟢 Yopilmagan qarzi yo&#8217;q</div>';
+        return;
+    }
+
+    listEl.innerHTML = activeDebts.map(d => {
+        const qtyLabel = d.product_quantity > 1 ? ` — ${d.product_quantity} ta` : '';
+        return `
+            <div class="banner-debt-item">
+                <span class="banner-debt-name">📅 ${d.debt_date} — ${escapeHtml(d.product_name)}${qtyLabel}</span>
+                <span class="banner-debt-sum">${formatMoney(d.remaining_debt, d.currency)}</span>
+            </div>
+        `;
+    }).join('');
 }
 
 // Bannerdan voz kechish — boshqa (yangi) mijoz kiritish uchun maydonlarni bo'shatadi
 function clearCreateClientBanner() {
     const banner = document.getElementById('create-client-banner');
-    if (!banner) return;
-    banner.style.display = 'none';
+    const debtsCard = document.getElementById('banner-debts-card');
+    if (banner) banner.style.display = 'none';
+    if (debtsCard) debtsCard.style.display = 'none';
     const nameInput = document.getElementById('create-client-name');
     const phoneInput = document.getElementById('create-client-phone');
     if (nameInput) nameInput.value = '';
@@ -752,9 +793,11 @@ function setupCreateForm() {
                 document.querySelectorAll('#exchange-currency-chips .cur-chip, #given-currency-chips .cur-chip').forEach(chip => {
                     chip.classList.toggle('active', chip.getAttribute('data-currency') === 'UZS');
                 });
-                // Banner yashiriladi
+                // Banner va eski qarzlar ro'yxati yashiriladi
                 const banner = document.getElementById('create-client-banner');
                 if (banner) banner.style.display = 'none';
+                const debtsCard = document.getElementById('banner-debts-card');
+                if (debtsCard) debtsCard.style.display = 'none';
 
                 updateCreateCalculation();
 
