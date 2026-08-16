@@ -1,4 +1,4 @@
-"""Eski (product_quantity siz) bazani migratsiya qilish testi."""
+"""Eski (product_quantity va products_json siz) bazani migratsiya qilish testi."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,7 +8,7 @@ import pytest
 
 from bot.infrastructure.database.connection import Database
 
-# product_quantity ustuni YO'Q eski sxema
+# product_quantity, currency VA products_json ustuni YO'Q eski sxema
 OLD_SCHEMA = """
 CREATE TABLE clients (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +56,7 @@ async def test_old_database_gets_product_quantity_column(tmp_path: Path) -> None
     await database.connect()
     try:
         async with database.connection.execute(
-            "SELECT product_name, product_quantity, product_price, currency FROM debts"
+            "SELECT product_name, product_quantity, product_price, currency, products_json FROM debts"
         ) as cursor:
             rows = await cursor.fetchall()
 
@@ -66,5 +66,7 @@ async def test_old_database_gets_product_quantity_column(tmp_path: Path) -> None
         assert rows[0][1] == 1
         assert rows[0][2] == 2500000
         assert rows[0][3] == "UZS"
+        # products_json bo'sh massiv bo'lishi kerak (eski yozuvda tovarlar yo'q edi)
+        assert rows[0][4] == "[]"
     finally:
         await database.disconnect()

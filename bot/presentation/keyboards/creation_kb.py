@@ -94,6 +94,29 @@ def get_given_money_choice_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def get_more_products_keyboard() -> InlineKeyboardMarkup:
+    """'Yana tovar qo'shasizmi?' klaviaturasi."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="➕ Yana tovar qo'shish",
+                    callback_data="more_products_yes",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✅ Shu enough, keyingi",
+                    callback_data="more_products_no",
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+            ],
+        ]
+    )
+
+
 def get_creation_confirm_keyboard() -> InlineKeyboardMarkup:
     """Qarzni yakuniy tasdiqlash va saqlash klaviaturasi."""
     return InlineKeyboardMarkup(

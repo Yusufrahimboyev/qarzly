@@ -137,6 +137,7 @@ async def api_get_client_report(request: web.Request) -> web.Response:
                 "original_debt": d.original_debt,
                 "remaining_debt": d.remaining_debt,
                 "status": d.status.value,
+                "products": [p.to_dict() for p in d.products],
             }
             for d in report.debts
         ],
@@ -161,7 +162,13 @@ async def api_get_client_report(request: web.Request) -> web.Response:
 
 
 async def api_create_debt(request: web.Request) -> web.Response:
-    """Yangi qarz yaratish API handler'i."""
+    """Yangi qarz yaratish API handler'i.
+
+    'products' massivi yoki bitta tovar parametrlari (product_name/quantity/price)
+    orqali qarz yaratish mumkin.
+    """
+    from bot.domain.entities.debt import DebtProduct
+
     client_service: ClientService = request.app["client_service"]
     debt_service: DebtService = request.app["debt_service"]
 
@@ -174,11 +181,8 @@ async def api_create_debt(request: web.Request) -> web.Response:
     client_phone = normalize_phone(str(body.get("client_phone", "")))
     raw_date = str(body.get("debt_date", "")).strip()
     debt_date = parse_date_input(raw_date) or today_str()
-    product_name = str(body.get("product_name", "")).strip()
 
     try:
-        product_price = int(body.get("product_price", 0))
-        product_quantity = int(body.get("product_quantity", 1))
         currency_raw = str(body.get("currency", Currency.UZS.value)).upper()
         exchange_exists = bool(body.get("exchange_exists", False))
         exchange_product_name = (
@@ -195,13 +199,9 @@ async def api_create_debt(request: web.Request) -> web.Response:
 
     if not client_name:
         return web.json_response({"error": "Mijoz ismi kiritilmadi"}, status=400)
-    if not product_name:
-        return web.json_response({"error": "Tovar nomi kiritilmadi"}, status=400)
-    if product_price <= 0:
-        return web.json_response({"error": "Tovar narxi 0 dan katta bo'lishi kerak"}, status=400)
-    if product_quantity < 1:
+    if not is_valid_phone(client_phone):
         return web.json_response(
-            {"error": "Miqdor (nechta) 1 dan kichik bo'lmasligi kerak"}, status=400
+            {"error": "Telefon raqami noto'g'ri (masalan: +998901234567)"}, status=400
         )
     try:
         currency = Currency(currency_raw)
@@ -209,10 +209,62 @@ async def api_create_debt(request: web.Request) -> web.Response:
         return web.json_response(
             {"error": "Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak)"}, status=400
         )
-    if not is_valid_phone(client_phone):
-        return web.json_response(
-            {"error": "Telefon raqami noto'g'ri (masalan: +998901234567)"}, status=400
-        )
+
+    # --- products massivi yoki bitta tovar parametrlari ---
+    raw_products = body.get("products")
+    products: list[DebtProduct] | None = None
+    product_name = str(body.get("product_name", "")).strip()
+
+    if isinstance(raw_products, list) and len(raw_products) > 0:
+        # Ko'p tovarli: har bir element name, quantity, price_per_unit bo'lishi kerak
+        try:
+            products = []
+            for idx, p in enumerate(raw_products):
+                p_name = str(p.get("name", "")).strip()
+                p_qty = int(p.get("quantity", 1))
+                p_price = int(p.get("price_per_unit", 0))
+                if not p_name:
+                    return web.json_response(
+                        {"error": f"{idx + 1}-tovar nomi kiritilmadi"}, status=400,
+                    )
+                if p_price <= 0:
+                    return web.json_response(
+                        {"error": f"{idx + 1}-tovar narxi 0 dan katta bo'lishi kerak"},
+                        status=400,
+                    )
+                if p_qty < 1:
+                    return web.json_response(
+                        {"error": f"{idx + 1}-tovar miqdori 1 dan kichik bo'lmasligi kerak"},
+                        status=400,
+                    )
+                products.append(DebtProduct(
+                    name=p_name,
+                    quantity=p_qty,
+                    price_per_unit=p_price,
+                ))
+        except (ValueError, TypeError, AttributeError):
+            return web.json_response(
+                {"error": "Tovarlar massivi noto'g'ri formatda (name, quantity, price_per_unit)"},
+                status=400,
+            )
+    else:
+        # Bitta tovar (eski usul)
+        try:
+            product_price = int(body.get("product_price", 0))
+            product_quantity = int(body.get("product_quantity", 1))
+        except (ValueError, TypeError):
+            return web.json_response({"error": "Narxlar butun son bo'lishi kerak"}, status=400)
+
+        if not product_name:
+            return web.json_response({"error": "Tovar nomi kiritilmadi"}, status=400)
+        if product_price <= 0:
+            return web.json_response(
+                {"error": "Tovar narxi 0 dan katta bo'lishi kerak"}, status=400,
+            )
+        if product_quantity < 1:
+            return web.json_response(
+                {"error": "Miqdor (nechta) 1 dan kichik bo'lmasligi kerak"}, status=400,
+            )
 
     try:
         client, _ = await client_service.get_or_create(
@@ -222,25 +274,39 @@ async def api_create_debt(request: web.Request) -> web.Response:
         if client.id is None:
             return web.json_response({"error": "Mijoz yaratishda xatolik"}, status=500)
 
-        saved_debt = await debt_service.create_debt(
-            client_id=client.id,
-            debt_date=debt_date,
-            product_name=product_name,
-            product_price=product_price,
-            product_quantity=product_quantity,
-            currency=currency,
-            exchange_exists=exchange_exists,
-            exchange_product_name=exchange_product_name,
-            exchange_product_price=exchange_product_price,
-            given_money=given_money,
-        )
+        if products:
+            saved_debt = await debt_service.create_debt(
+                client_id=client.id,
+                debt_date=debt_date,
+                products=products,
+                currency=currency,
+                exchange_exists=exchange_exists,
+                exchange_product_name=exchange_product_name,
+                exchange_product_price=exchange_product_price,
+                given_money=given_money,
+            )
+        else:
+            saved_debt = await debt_service.create_debt(
+                client_id=client.id,
+                debt_date=debt_date,
+                product_name=product_name,
+                product_price=product_price,
+                product_quantity=product_quantity,
+                currency=currency,
+                exchange_exists=exchange_exists,
+                exchange_product_name=exchange_product_name,
+                exchange_product_price=exchange_product_price,
+                given_money=given_money,
+            )
 
+        total_product_price = sum(p.total_price for p in saved_debt.products)
         return web.json_response({
             "ok": True,
             "debt_id": saved_debt.id,
             "client_id": client.id,
-            "total_product_price": saved_debt.product_price,
+            "total_product_price": total_product_price,
             "remaining_debt": saved_debt.remaining_debt,
+            "products": [p.to_dict() for p in saved_debt.products],
         })
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)

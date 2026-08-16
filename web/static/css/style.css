@@ -606,6 +606,96 @@ input:checked + .slider:before {
     background-color: #059669;
 }
 
+/* Product Groups (Multi-product) */
+#products-container {
+    margin-bottom: 12px;
+}
+
+.product-group {
+    background-color: var(--secondary-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    margin-bottom: 10px;
+    animation: fadeIn 0.2s ease forwards;
+}
+
+.product-group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.product-group-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+.btn-remove-product {
+    background: transparent;
+    border: none;
+    color: var(--accent-red);
+    font-size: 22px;
+    font-weight: 700;
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s ease;
+}
+
+.btn-remove-product:hover {
+    background-color: rgba(239, 68, 68, 0.15);
+}
+
+.product-row {
+    display: flex;
+    gap: 10px;
+}
+
+.product-row-item {
+    flex: 1;
+}
+
+.product-subtotal {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0 0;
+    border-top: 1px dashed var(--card-border);
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.product-subtotal-val {
+    color: var(--text-color);
+    font-weight: 700;
+}
+
+.btn-outline {
+    background: transparent;
+    border: 1.5px dashed var(--card-border);
+    color: var(--primary-color);
+    width: 100%;
+    margin-bottom: 16px;
+}
+
+.btn-outline:hover {
+    border-color: var(--primary-color);
+    background: rgba(59, 130, 246, 0.05);
+}
+
+.btn-add-product {
+    font-size: 14px;
+    padding: 12px;
+}
+
 /* Payment Tab Radio Cards */
 .radio-cards {
     display: grid;

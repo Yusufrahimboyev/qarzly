@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS debts (
     given_money            INTEGER NOT NULL DEFAULT 0,
     original_debt          INTEGER NOT NULL,
     remaining_debt         INTEGER NOT NULL,
+    products_json          TEXT NOT NULL DEFAULT '[]',
     status                 TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paid')),
     created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP

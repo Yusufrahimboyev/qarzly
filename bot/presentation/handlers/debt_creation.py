@@ -1,4 +1,9 @@
-"""Presentation qatlami: Qarz yaratish (wizard) handler'lari."""
+"""Presentation qatlami: Qarz yaratish (wizard) handler'lari.
+
+Bir qarzda bir nechta tovar bo'lishi mumkin. Tovar kiritish sikli:
+    tovar nomi → nechta → narxi → "Yana tovar?" → (takrorlanadi yoki keyingi)
+Keyin: valyuta → exchange → berilgan pul → tasdiqlash.
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -19,6 +24,7 @@ from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
 from bot.domain.entities.currency import Currency
+from bot.domain.entities.debt import DebtProduct
 from bot.presentation.keyboards.creation_kb import (
     get_back_cancel_keyboard,
     get_creation_confirm_keyboard,
@@ -26,6 +32,7 @@ from bot.presentation.keyboards.creation_kb import (
     get_date_picker_keyboard,
     get_exchange_choice_keyboard,
     get_given_money_choice_keyboard,
+    get_more_products_keyboard,
 )
 from bot.presentation.keyboards.main_menu_kb import get_main_menu_keyboard
 from bot.presentation.states.debt_creation import DebtCreationStates
@@ -91,8 +98,9 @@ async def cb_create_back(callback: CallbackQuery, state: FSMContext) -> None:
 
     elif current_state == DebtCreationStates.waiting_product_quantity:
         await state.set_state(DebtCreationStates.waiting_product_name)
+        product_num = _current_product_number(data) + 1
         await callback.message.edit_text(
-            "📦 <b>4-bosqich: Tovar (mahsulot) nomini kiriting:</b>\n\n"
+            f"📦 <b>4-bosqich: {product_num}-tovar nomini kiriting:</b>\n\n"
             "<i>Masalan: Shina, Akkumulyator</i>",
             reply_markup=get_back_cancel_keyboard(show_back=True),
         )
@@ -101,17 +109,31 @@ async def cb_create_back(callback: CallbackQuery, state: FSMContext) -> None:
         await state.set_state(DebtCreationStates.waiting_product_quantity)
         await callback.message.edit_text(
             "🔢 <b>5-bosqich: Tovardan nechta olindi?</b>\n\n"
-            "<i>Masalan: 2</i>",
+            "<i>Masalan: 2 — bitta bo'lsa 1 deb yozing</i>",
+            reply_markup=get_back_cancel_keyboard(show_back=True),
+        )
+
+    elif current_state == DebtCreationStates.waiting_more_products:
+        # Tovar narxidan ortga — oxirgi tovarni olib tashlash
+        products = list(data.get("_products", []))
+        if products:
+            products.pop()
+            await state.update_data(_products=products)
+        await state.set_state(DebtCreationStates.waiting_product_price)
+        await callback.message.edit_text(
+            "💰 <b>6-bosqich: Bitta tovar narxini kiriting:</b>\n\n"
+            "<i>Masalan: 2 500 000 — jami summa o'zi hisoblanadi</i>",
             reply_markup=get_back_cancel_keyboard(show_back=True),
         )
 
     elif current_state == DebtCreationStates.waiting_currency:
-        await state.set_state(DebtCreationStates.waiting_product_price)
-        await callback.message.edit_text(
-            "💰 <b>6-bosqich: Bitta tovar narxini kiriting:</b>\n\n"
-            "<i>Masalan: 2 500 000</i>",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
+        await state.set_state(DebtCreationStates.waiting_more_products)
+        if isinstance(callback.message, Message):
+            await callback.message.edit_text(
+                "📦 <b>Tovar kiritildi!</b>\n\n➕ <b>Yana tovar qo'shasizmi?</b>\n\n"
+                "<i>Agar bir nechta turli tovar olgan bo'lsa, yana qo'shing.</i>",
+                reply_markup=get_more_products_keyboard(),
+            )
 
     elif current_state == DebtCreationStates.waiting_exchange_choice:
         await state.set_state(DebtCreationStates.waiting_currency)
@@ -140,7 +162,7 @@ async def cb_create_back(callback: CallbackQuery, state: FSMContext) -> None:
         if data.get("exchange_exists", False):
             await state.set_state(DebtCreationStates.waiting_exchange_price)
             await callback.message.edit_text(
-                "💰 <b>Ayirboshlash tovari narxini kiriting (so'mda):</b>\n\n"
+                "💰 <b>Ayirboshlash tovari narxini kiriting:</b>\n\n"
                 "<i>Masalan: 800 000</i>",
                 reply_markup=get_back_cancel_keyboard(show_back=True),
             )
@@ -166,6 +188,11 @@ async def cb_create_back(callback: CallbackQuery, state: FSMContext) -> None:
         )
 
     await callback.answer()
+
+
+def _current_product_number(data: dict) -> int:
+    """Hozirgi kiritilayotgan tovar tartib raqami (1-asosiy)."""
+    return len(data.get("_products", []))
 
 
 # ==========================================
@@ -214,7 +241,8 @@ async def process_custom_date(message: Message, state: FSMContext) -> None:
     if parsed_date is None:
         await message.answer(
             "⚠️ <b>Noto'g'ri sana formati!</b>\n\n"
-            "Iltimos, sanani <b>DD.MM.YYYY</b> ko'rinishida kiriting (masalan: <code>16.08.2026</code>) "
+            "Iltimos, sanani <b>DD.MM.YYYY</b> ko'rinishida kiriting "
+            "(masalan: <code>16.08.2026</code>) "
             "yoki quyidagi 'Bugun' tugmasini bosing:",
             reply_markup=get_date_picker_keyboard(),
         )
@@ -266,12 +294,15 @@ async def process_client_phone(message: Message, state: FSMContext) -> None:
     if not is_valid_phone(clean_phone):
         await message.answer(
             "⚠️ <b>Noto'g'ri telefon raqami!</b>\n\n"
-            "Iltimos, telefon raqamini to'g'ri formatda kiriting (masalan: <code>+998901234567</code>):",
+            "Iltimos, telefon raqamini to'g'ri formatda kiriting "
+            "(masalan: <code>+998901234567</code>):",
             reply_markup=get_back_cancel_keyboard(show_back=True),
         )
         return
 
     await state.update_data(client_phone=clean_phone)
+    # Tovarlar ro'yxatini bo'sh boshlaymiz
+    await state.update_data(_products=[])
     await state.set_state(DebtCreationStates.waiting_product_name)
     await message.answer(
         f"📞 <b>Telefon:</b> {clean_phone}\n\n"
@@ -282,7 +313,7 @@ async def process_client_phone(message: Message, state: FSMContext) -> None:
 
 
 # ==========================================
-# 3. TOVAR NOMI VA NARXI
+# 3. TOVAR KIRITISH SIKLI (nom → nechta → narxi → yana?)
 # ==========================================
 
 
@@ -331,7 +362,7 @@ async def process_product_quantity(message: Message, state: FSMContext) -> None:
 
 @router.message(DebtCreationStates.waiting_product_price)
 async def process_product_price(message: Message, state: FSMContext) -> None:
-    """Tovar narxini (bitta dona narxini) tekshiradi va qabul qiladi."""
+    """Tovar narxini qabul qiladi va tovarni ro'yxatga qo'shib, 'Yana tovar?' deb so'raydi."""
     price = parse_money(message.text or "")
     if price is None or price <= 0:
         await message.answer(
@@ -342,24 +373,75 @@ async def process_product_price(message: Message, state: FSMContext) -> None:
         return
 
     data = await state.get_data()
+    product_name: str = data.get("product_name", "")
     quantity: int = data.get("product_quantity", 1)
-    total_price = price * quantity
 
-    await state.update_data(product_price=price)
-    await state.set_state(DebtCreationStates.waiting_currency)
+    # Tovarni ro'yxatga qo'shamiz
+    products = list(data.get("_products", []))
+    products.append(DebtProduct(
+        name=product_name,
+        quantity=quantity,
+        price_per_unit=price,
+    ))
+    await state.update_data(_products=products)
+
+    # Tovar qo'shilganini ko'rsatamiz
+    total_this = price * quantity
     if quantity > 1:
-        price_line = (
-            f"💰 <b>Tovar narxi:</b> {quantity} × {format_money(price)} = "
-            f"<b>{format_money(total_price)}</b>\n\n"
+        added_line = (
+            f"✅ <b>Qo'shildi:</b> {product_name} — {quantity} × "
+            f"{format_money(price)} = {format_money(total_this)}\n\n"
         )
     else:
-        price_line = f"💰 <b>Tovar narxi:</b> {format_money(price)}\n\n"
+        added_line = f"✅ <b>Qo'shildi:</b> {product_name} — {format_money(price)}\n\n"
+
+    await state.set_state(DebtCreationStates.waiting_more_products)
     await message.answer(
-        price_line
-        + "💱 <b>7-bosqich: Qarz qaysi valyutada?</b>\n\n"
-        "<i>So'm yoki dollar tanlang</i>",
-        reply_markup=get_currency_choice_keyboard(),
+        added_line + "➕ <b>Yana tovar qo'shasizmi?</b>\n\n"
+        "<i>Agar bir nechta turli tovar olgan bo'lsa, yana qo'shing.</i>",
+        reply_markup=get_more_products_keyboard(),
     )
+
+
+@router.callback_query(DebtCreationStates.waiting_more_products, F.data == "more_products_yes")
+async def cb_more_products_yes(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    """Yana tovar kiritish — siklni qayta boshlaydi."""
+    data = await state.get_data()
+    num = _current_product_number(data) + 1
+    await state.set_state(DebtCreationStates.waiting_product_name)
+
+    if isinstance(callback.message, Message):
+        await callback.message.edit_text(
+            f"📦 <b>{num}-tovar nomini kiriting:</b>\n\n"
+            "<i>Masalan: Shina, Akkumulyator</i>",
+            reply_markup=get_back_cancel_keyboard(show_back=True),
+        )
+    await callback.answer()
+
+
+@router.callback_query(DebtCreationStates.waiting_more_products, F.data == "more_products_no")
+async def cb_more_products_no(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    """Tovarlar kiritish tugadi — valyuta tanlashga o'tadi."""
+    await state.set_state(DebtCreationStates.waiting_currency)
+
+    if isinstance(callback.message, Message):
+        await callback.message.edit_text(
+            "💱 <b>7-bosqich: Qarz qaysi valyutada?</b>\n\n"
+            "<i>So'm yoki dollar tanlang</i>",
+            reply_markup=get_currency_choice_keyboard(),
+        )
+    await callback.answer()
+
+
+# ==========================================
+# 4. VALYUTA
+# ==========================================
 
 
 @router.callback_query(DebtCreationStates.waiting_currency, F.data == "currency_uzs")
@@ -374,7 +456,11 @@ async def cb_currency_usd(callback: CallbackQuery, state: FSMContext) -> None:
     await _apply_currency(callback, state, Currency.USD)
 
 
-async def _apply_currency(callback: CallbackQuery, state: FSMContext, currency: Currency) -> None:
+async def _apply_currency(
+    callback: CallbackQuery,
+    state: FSMContext,
+    currency: Currency,
+) -> None:
     """Valyutani saqlab, exchange bosqichiga o'tadi."""
     await state.update_data(currency=currency.value)
     await state.set_state(DebtCreationStates.waiting_exchange_choice)
@@ -391,7 +477,7 @@ async def _apply_currency(callback: CallbackQuery, state: FSMContext, currency: 
 
 
 # ==========================================
-# 4. EXCHANGE (AYIRBOSHLASH)
+# 5. EXCHANGE (AYIRBOSHLASH)
 # ==========================================
 
 
@@ -446,7 +532,7 @@ async def process_exchange_name(message: Message, state: FSMContext) -> None:
     await state.set_state(DebtCreationStates.waiting_exchange_price)
     await message.answer(
         f"📦 <b>Ayirboshlash tovari:</b> {ex_name}\n\n"
-        "💰 <b>Ayirboshlash tovari narxini kiriting (so'mda):</b>\n\n"
+        "💰 <b>Ayirboshlash tovari narxini kiriting:</b>\n\n"
         "<i>Masalan: 800 000</i>",
         reply_markup=get_back_cancel_keyboard(show_back=True),
     )
@@ -457,10 +543,9 @@ async def process_exchange_price(message: Message, state: FSMContext) -> None:
     """Ayirboshlash tovari narxini tekshiradi."""
     ex_price = parse_money(message.text or "")
     data = await state.get_data()
-    product_price: int = data.get("product_price", 0)
-    quantity: int = data.get("product_quantity", 1)
     currency = Currency(data.get("currency", Currency.UZS.value))
-    total_price = product_price * quantity
+    products = _get_products(data)
+    total_price = sum(p.total_price for p in products)
 
     if ex_price is None or ex_price < 0:
         await message.answer(
@@ -472,8 +557,9 @@ async def process_exchange_price(message: Message, state: FSMContext) -> None:
 
     if ex_price > total_price:
         await message.answer(
-            f"⚠️ <b>Exchange narxi ({format_money(ex_price, currency)}) tovarlar jami narxidan "
-            f"({format_money(total_price, currency)}) katta bo'lishi mumkin emas!</b>\n\n"
+            f"⚠️ <b>Exchange narxi ({format_money(ex_price, currency)}) "
+            f"tovarlar jami narxidan ({format_money(total_price, currency)}) "
+            f"katta bo'lishi mumkin emas!</b>\n\n"
             "Iltimos, qayta kiriting:",
             reply_markup=get_back_cancel_keyboard(show_back=True),
         )
@@ -491,13 +577,13 @@ async def process_exchange_price(message: Message, state: FSMContext) -> None:
 
 
 # ==========================================
-# 5. BERILGAN PUL VA HISOB-KITOB
+# 6. BERILGAN PUL VA HISOB-KITOB
 # ==========================================
 
 
 @router.callback_query(DebtCreationStates.waiting_given_money_choice, F.data == "given_money_no")
 async def cb_given_money_no(callback: CallbackQuery, state: FSMContext) -> None:
-    """Oldindan pul berilmagan holat."""
+    """Oldindan pul berilmagan holat — preview ko'rsatadi."""
     await state.update_data(given_money=0)
     await state.set_state(DebtCreationStates.waiting_confirm)
 
@@ -520,7 +606,7 @@ async def cb_given_money_yes(callback: CallbackQuery, state: FSMContext) -> None
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
             "💵 <b>Pul berdi</b> tanlandi.\n\n"
-            "💰 <b>Qarzdan qancha pul berildi (so'mda)?</b>\n\n"
+            "💰 <b>Qarzdan qancha pul berildi?</b>\n\n"
             "<i>Masalan: 200 000</i>",
             reply_markup=get_back_cancel_keyboard(show_back=True),
         )
@@ -532,11 +618,11 @@ async def process_given_money_amount(message: Message, state: FSMContext) -> Non
     """Berilgan pul summasini tekshiradi."""
     amount = parse_money(message.text or "")
     data = await state.get_data()
-    product_price: int = data.get("product_price", 0)
-    quantity: int = data.get("product_quantity", 1)
     currency = Currency(data.get("currency", Currency.UZS.value))
+    products = _get_products(data)
+    total_price = sum(p.total_price for p in products)
     exchange_price: int = data.get("exchange_product_price", 0)
-    max_allowable = product_price * quantity - exchange_price
+    max_allowable = total_price - exchange_price
 
     if amount is None or amount < 0:
         await message.answer(
@@ -550,8 +636,8 @@ async def process_given_money_amount(message: Message, state: FSMContext) -> Non
         amount_str = format_money(amount, currency)
         allowable_str = format_money(max_allowable, currency)
         await message.answer(
-            f"⚠️ <b>Berilgan pul ({amount_str}) tovar narxi va exchange ayirmasidan "
-            f"({allowable_str}) katta bo'lishi mumkin emas!</b>\n\n"
+            f"⚠️ <b>Berilgan pul ({amount_str}) tovar narxi va exchange "
+            f"ayirmasidan ({allowable_str}) katta bo'lishi mumkin emas!</b>\n\n"
             "Iltimos, qayta kiriting:",
             reply_markup=get_back_cancel_keyboard(show_back=True),
         )
@@ -570,7 +656,7 @@ async def process_given_money_amount(message: Message, state: FSMContext) -> Non
 
 
 # ==========================================
-# 6. YAKUNIY TASDIQLASH VA SAQLASH
+# 7. YAKUNIY TASDIQLASH VA SAQLASH
 # ==========================================
 
 
@@ -589,9 +675,7 @@ async def cb_confirm_create_debt(
     debt_date: str = data["debt_date"]
     client_name: str = data["client_name"]
     client_phone: str = data["client_phone"]
-    product_name: str = data["product_name"]
-    product_price: int = data["product_price"]
-    product_quantity: int = data.get("product_quantity", 1)
+    products = _get_products(data)
     currency = Currency(data.get("currency", Currency.UZS.value))
     exchange_exists: bool = data.get("exchange_exists", False)
     exchange_product_name: str | None = data.get("exchange_product_name")
@@ -599,7 +683,6 @@ async def cb_confirm_create_debt(
     given_money: int = data.get("given_money", 0)
 
     try:
-        # 1. Mijozni olish yoki yaratish
         client, is_new = await client_service.get_or_create(
             full_name=client_name,
             phone=client_phone,
@@ -608,13 +691,10 @@ async def cb_confirm_create_debt(
         if client.id is None:
             raise RuntimeError("Mijoz ID si aniqlanmadi.")
 
-        # 2. Qarz yozuvini yaratish
         saved_debt = await debt_service.create_debt(
             client_id=client.id,
             debt_date=debt_date,
-            product_name=product_name,
-            product_price=product_price,
-            product_quantity=product_quantity,
+            products=products,
             currency=currency,
             exchange_exists=exchange_exists,
             exchange_product_name=exchange_product_name,
@@ -622,31 +702,49 @@ async def cb_confirm_create_debt(
             given_money=given_money,
         )
 
-        success_text = (
-            "✅ <b>QARZ MUVAFFAQIYATLI SAQLANDI!</b>\n\n"
-            f"👤 <b>Mijoz:</b> {client.full_name} ({client.phone})\n"
-            f"📅 <b>Sana:</b> {debt_date}\n"
-            f"📦 <b>Tovar:</b> {product_name} — {product_quantity} ta\n"
-            f"💰 <b>Jami narxi:</b> {format_money(saved_debt.product_price, currency)}\n"
+        total_price = sum(p.total_price for p in products)
+        success_lines = [
+            "✅ <b>QARZ MUVAFFAQIYATLI SAQLANDI!</b>\n",
+            f"👤 <b>Mijoz:</b> {client.full_name} ({client.phone})",
+            f"📅 <b>Sana:</b> {debt_date}",
+        ]
+
+        # Har bir tovarni ko'rsatamiz
+        for p in products:
+            if p.quantity > 1:
+                success_lines.append(
+                    f"📦 <b>{p.name}</b> — {p.quantity} × "
+                    f"{format_money(p.price_per_unit, currency)} = "
+                    f"{format_money(p.total_price, currency)}"
+                )
+            else:
+                success_lines.append(
+                    f"📦 <b>{p.name}</b> — {format_money(p.price_per_unit, currency)}"
+                )
+
+        success_lines.append(
+            f"💰 <b>Jami narxi:</b> {format_money(total_price, currency)}"
         )
+
         if exchange_exists:
-            success_text += (
+            success_lines.append(
                 f"🔄 <b>Exchange:</b> {exchange_product_name} "
-                f"({format_money(exchange_product_price, currency)})\n"
+                f"({format_money(exchange_product_price, currency)})"
             )
         if given_money > 0:
-            success_text += (
-                f"💵 <b>Boshlang'ich to'lov:</b> {format_money(given_money, currency)}\n"
+            success_lines.append(
+                f"💵 <b>Boshlang'ich to'lov:</b> "
+                f"{format_money(given_money, currency)}"
             )
 
         final_debt_str = format_money(saved_debt.remaining_debt, currency)
-        success_text += (
-            f"💳 <b>Hisoblangan qarz:</b> <b>{final_debt_str}</b>\n\n"
-            "<i>Ma'lumotlar 'Qarzlar jadvali' ga qo'shildi.</i>"
+        success_lines.append(
+            f"💳 <b>Hisoblangan qarz:</b> <b>{final_debt_str}</b>\n"
         )
+        success_lines.append("<i>Ma'lumotlar 'Qarzlar jadvali' ga qo'shildi.</i>")
 
         if isinstance(callback.message, Message):
-            await callback.message.edit_text(success_text)
+            await callback.message.edit_text("\n".join(success_lines))
             await callback.message.answer(
                 "Asosiy menyu:",
                 reply_markup=get_main_menu_keyboard(settings.web_app_url),
@@ -661,21 +759,35 @@ async def cb_confirm_create_debt(
         await callback.answer("Xatolik yuz berdi.", show_alert=True)
 
 
+# ==========================================
+# YORDAMCHI FUNKSIYALAR
+# ==========================================
+
+
+def _get_products(data: dict[str, Any]) -> list[DebtProduct]:
+    """State dan tovarlar ro'yxatini olish."""
+    raw = data.get("_products", [])
+    if isinstance(raw, list):
+        return [p if isinstance(p, DebtProduct) else DebtProduct(**p) for p in raw]
+    return []
+
+
 def _render_preview(data: dict[str, Any]) -> str:
-    """Kiritilgan qarz ma'lumotlarining chiroyli preview ko'rinishi."""
+    """Kiritilgan qarz ma'lumotlarining chiroyli preview ko'rinishi.
+
+    Ko'p tovarli holatda har bir tovar alohida ko'rsatiladi.
+    """
     debt_date = data.get("debt_date", "-")
     client_name = data.get("client_name", "-")
     client_phone = data.get("client_phone", "-")
-    product_name = data.get("product_name", "-")
-    product_price: int = data.get("product_price", 0)
-    quantity: int = data.get("product_quantity", 1)
     currency = Currency(data.get("currency", Currency.UZS.value))
     exchange_exists = data.get("exchange_exists", False)
     exchange_product_name = data.get("exchange_product_name")
     exchange_product_price: int = data.get("exchange_product_price", 0)
     given_money: int = data.get("given_money", 0)
 
-    total_price = product_price * quantity
+    products = _get_products(data)
+    total_price = sum(p.total_price for p in products)
     calculated_debt = total_price - exchange_product_price - given_money
 
     currency_label = "So'm" if currency == Currency.UZS else "Dollar"
@@ -685,11 +797,24 @@ def _render_preview(data: dict[str, Any]) -> str:
         f"📅 <b>Sana:</b> {debt_date}",
         f"👤 <b>Qarz oluvchi:</b> {client_name}",
         f"📞 <b>Telefon:</b> {client_phone}",
-        f"📦 <b>Tovar:</b> {product_name} — {quantity} ta",
-        f"💰 <b>Tovarlar narxi:</b> {quantity} × {format_money(product_price, currency)} = "
-        f"{format_money(total_price, currency)}",
-        f"💱 <b>Valyuta:</b> {currency_label}",
+        "━━━━━━━━━━ <b>TOVARLAR:</b> ━━━━━━━━━━",
     ]
+
+    for idx, p in enumerate(products, start=1):
+        if p.quantity > 1:
+            lines.append(
+                f"  {idx}. 📦 <b>{p.name}</b> — {p.quantity} × "
+                f"{format_money(p.price_per_unit, currency)} = "
+                f"{format_money(p.total_price, currency)}"
+            )
+        else:
+            lines.append(
+                f"  {idx}. 📦 <b>{p.name}</b> — "
+                f"{format_money(p.price_per_unit, currency)}"
+            )
+
+    lines.append(f"\n💰 <b>Tovarlar jami narxi:</b> {format_money(total_price, currency)}")
+    lines.append(f"💱 <b>Valyuta:</b> {currency_label}")
 
     if exchange_exists:
         lines.append(
@@ -706,7 +831,8 @@ def _render_preview(data: dict[str, Any]) -> str:
 
     lines.append("━━━━━━━━━━━━━━━━━━━━")
     lines.append(
-        f"💳 <b>HISOBLANGAN QARZ:</b> <b>{format_money(calculated_debt, currency)}</b>\n"
+        f"💳 <b>HISOBLANGAN QARZ:</b> "
+        f"<b>{format_money(calculated_debt, currency)}</b>\n"
     )
     lines.append("<i>Ma'lumotlar to'g'ri bo'lsa, 'Tasdiqlash' tugmasini bosing:</i>")
 

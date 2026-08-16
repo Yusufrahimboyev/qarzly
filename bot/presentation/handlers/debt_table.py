@@ -151,7 +151,23 @@ def _render_report(report: ClientReport) -> str:
             status_text = "Qarzdor" if d.status == DebtStatus.ACTIVE else "Yopilgan"
 
             lines.append(f"\n<b>{idx}. {d.debt_date} — {status_icon} {status_text}</b>")
-            lines.append(f"  • Tovar: <b>{d.product_name}</b> — {d.product_quantity} ta")
+
+            # Ko'p tovarli bo'lsa har bir tovarni alohida ko'rsatamiz
+            if len(d.products) > 1:
+                for p_idx, p in enumerate(d.products, start=1):
+                    if p.quantity > 1:
+                        lines.append(
+                            f"  • {p_idx}) <b>{p.name}</b> — {p.quantity} × "
+                            f"{format_money(p.price_per_unit, d.currency)} = "
+                            f"{format_money(p.total_price, d.currency)}"
+                        )
+                    else:
+                        lines.append(
+                            f"  • {p_idx}) <b>{p.name}</b> — "
+                            f"{format_money(p.price_per_unit, d.currency)}"
+                        )
+            else:
+                lines.append(f"  • Tovar: <b>{d.product_name}</b> — {d.product_quantity} ta")
             lines.append(f"  • Narxi (jami): {format_money(d.product_price, d.currency)}")
 
             if d.exchange_exists:
@@ -171,10 +187,10 @@ def _render_report(report: ClientReport) -> str:
     if actual_payments:
         lines.append("\n━━━━━━━━━━━━━━━━━━━━")
         lines.append("<b>💰 TO'LOVLAR TARIXI:</b>")
-        for idx, p in enumerate(actual_payments, start=1):
-            p_type_label = "To'liq" if p.payment_type == PaymentType.FULL else "Qisman"
+        for idx, pay in enumerate(actual_payments, start=1):
+            p_type_label = "To'liq" if pay.payment_type == PaymentType.FULL else "Qisman"
             lines.append(
-                f"{idx}. {p.payment_date}: +{format_money(p.amount, p.currency)} ({p_type_label})"
+                f"{idx}. {pay.payment_date}: +{format_money(pay.amount, pay.currency)} ({p_type_label})"
             )
 
     # Yakuniy umumiy hisob — har bir total valyutalar bo'yicha

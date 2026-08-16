@@ -76,8 +76,12 @@ async def test_alphabetical_summaries_and_debtors(
     c_bekzod, _ = await client_service.get_or_create("Bekzod Karimov", "+998902222222")
 
     # Qarzlar: Anvar (1 000 000), Zohid (500 000), Bekzod (qarz yo'q)
-    await debt_service.create_debt(c_anvar.id, "16.08.2026", "Shina", 1000000)  # type: ignore[arg-type]
-    await debt_service.create_debt(c_zohid.id, "16.08.2026", "Moy", 500000)  # type: ignore[arg-type]
+    await debt_service.create_debt(
+        c_anvar.id, "16.08.2026", product_name="Shina", product_price=1000000,  # type: ignore[arg-type]
+    )
+    await debt_service.create_debt(
+        c_zohid.id, "16.08.2026", product_name="Moy", product_price=500000,  # type: ignore[arg-type]
+    )
 
     # Barcha mijozlar alifbo tartibida
     all_summaries = await client_service.get_all_summaries()

@@ -63,6 +63,10 @@ class Database:
                 "currency": (
                     "ALTER TABLE debts ADD COLUMN currency TEXT NOT NULL DEFAULT 'UZS'"
                 ),
+                "products_json": (
+                    "ALTER TABLE debts ADD COLUMN products_json"
+                    " TEXT NOT NULL DEFAULT '[]'"
+                ),
             },
         )
         payment_migrations = await self._missing_columns(

@@ -382,3 +382,86 @@ async def test_currency_usd_debt_and_per_currency_totals(
     assert report.total_remaining_debt == {}
     assert report.total_product_price == {"UZS": 1000000, "USD": 200}
     assert report.total_paid_after == {"UZS": 1000000, "USD": 200}
+
+
+@pytest.mark.asyncio
+async def test_create_debt_with_multiple_products(
+    client_repo: SqliteClientRepository,
+    debt_repo: SqliteDebtRepository,
+    payment_repo: SqlitePaymentRepository,
+) -> None:
+    """Bir qarzda bir nechta tovar bo'lishi mumkin."""
+    from bot.domain.entities.debt import DebtProduct
+
+    client = await client_repo.add(Client(full_name="Multiproduct Mijoz", phone="+998907778899"))
+    assert client.id is not None
+
+    service = DebtService(client_repo, debt_repo, payment_repo)
+
+    products = [
+        DebtProduct(name="Shina", quantity=2, price_per_unit=500000),  # 1 000 000
+        DebtProduct(name="Akkumulyator", quantity=1, price_per_unit=800000),  # 800 000
+        DebtProduct(name="Mator moyi", quantity=3, price_per_unit=50000),  # 150 000
+    ]
+    # Jami: 1 950 000; exchange: 150 000; berilgan: 300 000 -> qarz: 1 500 000
+
+    debt = await service.create_debt(
+        client_id=client.id,
+        debt_date="16.08.2026",
+        products=products,
+        exchange_exists=True,
+        exchange_product_name="Eski shina",
+        exchange_product_price=150000,
+        given_money=300000,
+    )
+
+    assert debt.product_price == 1950000  # jami
+    assert debt.original_debt == 1500000
+    assert debt.remaining_debt == 1500000
+    assert debt.product_name == "Shina — 2 ta, Akkumulyator, Mator moyi — 3 ta"
+    assert debt.product_quantity == 6  # 2 + 1 + 3
+    assert len(debt.products) == 3
+    assert debt.products[0].name == "Shina"
+    assert debt.products[0].total_price == 1000000
+    assert debt.products[1].name == "Akkumulyator"
+    assert debt.products[2].name == "Mator moyi"
+
+    # Bazadan o'qib tekshiramiz
+    from_db = await debt_repo.get_by_id(debt.id)
+    assert from_db is not None
+    assert len(from_db.products) == 3
+    assert from_db.products[0].to_dict() == {"name": "Shina", "quantity": 2, "price_per_unit": 500000}
+
+    # Hisobotda ham ko'rinadi
+    report = await service.get_client_report(client.id)
+    assert len(report.debts) == 1
+    assert report.total_product_price == {"UZS": 1950000}
+    assert report.total_remaining_debt == {"UZS": 1500000}
+
+
+@pytest.mark.asyncio
+async def test_create_debt_single_product_via_products_param(
+    client_repo: SqliteClientRepository,
+    debt_repo: SqliteDebtRepository,
+    payment_repo: SqlitePaymentRepository,
+) -> None:
+    """products parametri bilan bitta tovar yuborish ham ishlaydi."""
+    from bot.domain.entities.debt import DebtProduct
+
+    client = await client_repo.add(Client(full_name="SingleProd Mijoz", phone="+998906667788"))
+    assert client.id is not None
+
+    service = DebtService(client_repo, debt_repo, payment_repo)
+
+    products = [DebtProduct(name="Generator", quantity=1, price_per_unit=3500000)]
+    debt = await service.create_debt(
+        client_id=client.id,
+        debt_date="16.08.2026",
+        products=products,
+    )
+
+    assert debt.product_price == 3500000
+    assert debt.remaining_debt == 3500000
+    assert debt.product_name == "Generator"
+    assert debt.product_quantity == 1
+    assert len(debt.products) == 1

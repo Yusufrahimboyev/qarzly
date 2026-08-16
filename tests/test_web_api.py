@@ -223,6 +223,105 @@ async def test_api_create_debt_requires_valid_phone(
 
 
 @pytest.mark.asyncio
+async def test_api_create_debt_with_products_array(
+    aiohttp_app: web.Application,
+) -> None:
+    """API orqali products massivi bilan qarz yaratish."""
+    from aiohttp.test_utils import TestClient, TestServer
+    server = TestServer(aiohttp_app)
+    client = TestClient(server)
+    await client.start_server()
+
+    try:
+        headers = auth_header()
+
+        # 2 ta tovar: Shina (2×500k=1M) + Akkumulyator (1×800k=800k) = 1.8M
+        # exchange: 300k, given: 200k -> qarz: 1 300 000
+        payload = {
+            "client_name": "Multiproduct Aliyev",
+            "client_phone": "+998901234567",
+            "debt_date": "16.08.2026",
+            "products": [
+                {"name": "Shina", "quantity": 2, "price_per_unit": 500000},
+                {"name": "Akkumulyator", "quantity": 1, "price_per_unit": 800000},
+            ],
+            "currency": "UZS",
+            "exchange_exists": True,
+            "exchange_product_name": "Eski shina",
+            "exchange_product_price": 300000,
+            "given_money": 200000,
+        }
+        res = await client.post("/api/debts", json=payload, headers=headers)
+        assert res.status == 200
+        data = await res.json()
+        assert data["ok"] is True
+        assert data["total_product_price"] == 1800000
+        assert data["remaining_debt"] == 1300000
+        assert "products" in data
+        assert len(data["products"]) == 2
+        assert data["products"][0]["name"] == "Shina"
+        assert data["products"][0]["quantity"] == 2
+        assert data["products"][1]["name"] == "Akkumulyator"
+
+        client_id = data["client_id"]
+
+        # Report'da products ko'rinadi
+        res_report = await client.get(
+            f"/api/clients/{client_id}/report", headers=headers,
+        )
+        assert res_report.status == 200
+        report = await res_report.json()
+        assert len(report["debts"]) == 1
+        assert len(report["debts"][0]["products"]) == 2
+        assert report["debts"][0]["product_quantity"] == 3  # 2 + 1
+        assert report["debts"][0]["product_price"] == 1800000
+        assert report["debts"][0]["products"][0]["price_per_unit"] == 500000
+
+        # Stats da ham ko'rinadi
+        res_stats = await client.get("/api/stats", headers=headers)
+        assert res_stats.status == 200
+        stats = await res_stats.json()
+        assert stats["total_debt"] == {"UZS": 1300000}
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_api_create_debt_products_validation(
+    aiohttp_app: web.Application,
+) -> None:
+    """products massividagi validation: bo'sh nom, narx 0."""
+    from aiohttp.test_utils import TestClient, TestServer
+    server = TestServer(aiohttp_app)
+    client = TestClient(server)
+    await client.start_server()
+
+    try:
+        headers = auth_header()
+
+        # Bo'sh nom
+        payload = {
+            "client_name": "Test",
+            "client_phone": "+998901234567",
+            "products": [{"name": "", "quantity": 1, "price_per_unit": 1000}],
+        }
+        res = await client.post("/api/debts", json=payload, headers=headers)
+        assert res.status == 400
+
+        # Narx 0
+        payload2 = {
+            "client_name": "Test",
+            "client_phone": "+998901234567",
+            "products": [{"name": "Tovar", "quantity": 1, "price_per_unit": 0}],
+        }
+        res2 = await client.post("/api/debts", json=payload2, headers=headers)
+        assert res2.status == 400
+
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_api_rejects_non_admin_when_admin_ids_configured(
     client_repo: SqliteClientRepository,
     debt_repo: SqliteDebtRepository,

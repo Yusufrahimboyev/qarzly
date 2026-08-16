@@ -177,7 +177,7 @@ function renderClientsList() {
     // Apply Search Query
     if (state.searchQuery.trim()) {
         const q = state.searchQuery.toLowerCase().trim();
-        list = list.filter(item => 
+        list = list.filter(item =>
             item.full_name.toLowerCase().includes(q) ||
             item.phone.toLowerCase().includes(q)
         );
@@ -248,35 +248,52 @@ async function openClientReportModal(clientId) {
     document.getElementById('modal-total-paid').textContent = formatMoneyMap(sumMaps(data.total_paid_after, data.total_given_money));
     document.getElementById('modal-total-remaining').textContent = formatMoneyMap(data.total_remaining_debt);
 
-    // Render Debts History
+    // Render Debts History — ko'p tovarli bo'lsa har bir tovarni alohida ko'rsatadi
     const debtsList = document.getElementById('modal-debts-list');
     if (data.debts.length === 0) {
         debtsList.innerHTML = '<p class="text-muted" style="font-size:13px;">Qarzlar mavjud emas</p>';
     } else {
-        debtsList.innerHTML = data.debts.map(d => `
-            <div class="history-card">
-                <div class="history-card-header">
-                    <span>${escapeHtml(d.product_name)}${d.product_quantity > 1 ? ` — ${d.product_quantity} ta` : ''}</span>
-                    <span class="${d.status === 'active' ? 'text-danger' : 'text-success'}">
-                        ${d.status === 'active' ? formatMoney(d.remaining_debt, d.currency) : '🟢 Yopilgan'}
-                    </span>
+        debtsList.innerHTML = data.debts.map(d => {
+            const products = d.products || [];
+            const hasMultiProducts = products.length > 1;
+            const productListHtml = hasMultiProducts
+                ? products.map((p, i) => `
+                    <div class="history-card-detail" style="padding-left:4px;">
+                        <span>  ${i + 1}. 📦 ${escapeHtml(p.name)}${p.quantity > 1 ? ` — ${p.quantity} × ${formatMoney(p.price_per_unit, d.currency)}` : ''}</span>
+                        <span>${formatMoney(p.quantity * p.price_per_unit, d.currency)}</span>
+                    </div>
+                `).join('')
+                : '';
+
+            const statusText = d.status === 'active'
+                ? formatMoney(d.remaining_debt, d.currency)
+                : '🟢 Yopilgan';
+            const statusClass = d.status === 'active' ? 'text-danger' : 'text-success';
+
+            return `
+                <div class="history-card">
+                    <div class="history-card-header">
+                        <span>${escapeHtml(d.product_name)}${d.product_quantity > 1 ? ` — ${d.product_quantity} ta` : ''}</span>
+                        <span class="${statusClass}">${statusText}</span>
+                    </div>
+                    ${productListHtml}
+                    <div class="history-card-detail">
+                        <span>📅 ${d.debt_date}</span>
+                        <span>Narxi: ${formatMoney(d.product_price, d.currency)}</span>
+                    </div>
+                    ${d.exchange_exists ? `
+                    <div class="history-card-detail" style="color:var(--accent-yellow); margin-top:2px;">
+                        <span>🔄 Exchange: ${escapeHtml(d.exchange_product_name || 'Tovar')}</span>
+                        <span>-${formatMoney(d.exchange_product_price, d.currency)}</span>
+                    </div>` : ''}
+                    ${d.given_money > 0 ? `
+                    <div class="history-card-detail" style="color:var(--accent-green); margin-top:2px;">
+                        <span>💵 Berilgan pul:</span>
+                        <span>-${formatMoney(d.given_money, d.currency)}</span>
+                    </div>` : ''}
                 </div>
-                <div class="history-card-detail">
-                    <span>📅 ${d.debt_date}</span>
-                    <span>Narxi: ${formatMoney(d.product_price, d.currency)}</span>
-                </div>
-                ${d.exchange_exists ? `
-                <div class="history-card-detail" style="color:var(--accent-yellow); margin-top:2px;">
-                    <span>🔄 Exchange: ${escapeHtml(d.exchange_product_name || 'Tovar')}</span>
-                    <span>-${formatMoney(d.exchange_product_price, d.currency)}</span>
-                </div>` : ''}
-                ${d.given_money > 0 ? `
-                <div class="history-card-detail" style="color:var(--accent-green); margin-top:2px;">
-                    <span>💵 Berilgan pul:</span>
-                    <span>-${formatMoney(d.given_money, d.currency)}</span>
-                </div>` : ''}
-            </div>
-        `).join('');
+            `;
+        }).join('');
     }
 
     // Render Payments History
@@ -317,14 +334,149 @@ function closeClientReportModal() {
 }
 
 // ==========================================
-// TAB 2: CREATE DEBT FORM & LIVE CALC
+// TAB 2: CREATE DEBT FORM — DINAMIK TOVARLAR
 // ==========================================
+
+function createProductGroupHTML(index) {
+    return `
+        <div class="product-group" data-product-index="${index}">
+            <div class="product-group-header">
+                <span class="product-group-title">📦 ${index + 1}-tovar</span>
+                ${index > 0 ? '<button type="button" class="btn-remove-product" title="O\'chirish">&times;</button>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Tovar nomi</label>
+                <input type="text" class="product-name" placeholder="Masalan: Shina, Akkumulyator" required>
+            </div>
+            <div class="product-row">
+                <div class="form-group product-row-item">
+                    <label>Nechta</label>
+                    <input type="number" class="product-qty" placeholder="1" min="1" step="1" value="1" required>
+                </div>
+                <div class="form-group product-row-item">
+                    <label>Narxi</label>
+                    <input type="number" class="product-price" placeholder="2500000" min="1" step="1000" required>
+                </div>
+            </div>
+            <div class="product-subtotal">
+                <span>Jami:</span>
+                <strong class="product-subtotal-val">0 so'm</strong>
+            </div>
+        </div>
+    `;
+}
+
+function getProductGroups() {
+    return document.querySelectorAll('#products-container .product-group');
+}
+
+function renumberProductGroups() {
+    const groups = getProductGroups();
+    groups.forEach((group, i) => {
+        const title = group.querySelector('.product-group-title');
+        if (title) title.textContent = `📦 ${i + 1}-tovar`;
+        group.setAttribute('data-product-index', i);
+    });
+}
+
+function getProductsData() {
+    const groups = getProductGroups();
+    const products = [];
+    groups.forEach(group => {
+        const name = group.querySelector('.product-name')?.value.trim() || '';
+        const qty = Math.max(1, Math.floor(Number(group.querySelector('.product-qty')?.value) || 1));
+        const price = Math.floor(Number(group.querySelector('.product-price')?.value) || 0);
+        if (name && price > 0) {
+            products.push({ name, quantity: qty, price_per_unit: price });
+        }
+    });
+    return products;
+}
+
+function getSelectedCurrency() {
+    return document.querySelector('input[name="currency"]:checked')?.value || 'UZS';
+}
+
+function updateCreateCalculation() {
+    const currency = getSelectedCurrency();
+    const products = getProductsData();
+    const totalProductPrice = products.reduce((sum, p) => sum + p.quantity * p.price_per_unit, 0);
+
+    // Har bir guruhning subtotal'ini yangilaymiz
+    const groups = getProductGroups();
+    groups.forEach(group => {
+        const qty = Math.max(1, Math.floor(Number(group.querySelector('.product-qty')?.value) || 1));
+        const price = Math.floor(Number(group.querySelector('.product-price')?.value) || 0);
+        const subtotal = qty * price;
+        const subtotalEl = group.querySelector('.product-subtotal-val');
+        if (subtotalEl) {
+            subtotalEl.textContent = qty > 1
+                ? `${qty} × ${formatMoney(price, currency)} = ${formatMoney(subtotal, currency)}`
+                : formatMoney(price, currency);
+        }
+    });
+
+    const exchangeToggle = document.getElementById('create-exchange-toggle');
+    const exchangePriceInput = document.getElementById('create-exchange-price');
+    const givenToggle = document.getElementById('create-given-toggle');
+    const givenAmountInput = document.getElementById('create-given-amount');
+
+    const hasExchange = exchangeToggle?.checked;
+    const exchangePrice = hasExchange ? (Number(exchangePriceInput?.value) || 0) : 0;
+    const hasGiven = givenToggle?.checked;
+    const givenAmount = hasGiven ? (Number(givenAmountInput?.value) || 0) : 0;
+
+    const productCalcEl = document.getElementById('calc-product-price');
+    if (productCalcEl) {
+        if (products.length === 1) {
+            const p = products[0];
+            productCalcEl.textContent = p.quantity > 1
+                ? `${p.quantity} × ${formatMoney(p.price_per_unit, currency)} = ${formatMoney(totalProductPrice, currency)}`
+                : formatMoney(p.price_per_unit, currency);
+        } else {
+            productCalcEl.textContent = `${products.length} ta tovar = ${formatMoney(totalProductPrice, currency)}`;
+        }
+    }
+
+    const exRow = document.getElementById('calc-exchange-row');
+    if (exRow) {
+        exRow.style.display = hasExchange ? 'flex' : 'none';
+        document.getElementById('calc-exchange-price').textContent = `-${formatMoney(exchangePrice, currency)}`;
+    }
+
+    const givenRow = document.getElementById('calc-given-row');
+    if (givenRow) {
+        givenRow.style.display = hasGiven ? 'flex' : 'none';
+        document.getElementById('calc-given-price').textContent = `-${formatMoney(givenAmount, currency)}`;
+    }
+
+    const totalDebt = Math.max(0, totalProductPrice - exchangePrice - givenAmount);
+    document.getElementById('calc-total-debt').textContent = formatMoney(totalDebt, currency);
+}
+
+function attachProductGroupListeners(container) {
+    // Narx/miqdor o'zgarganda subtotal + grand total yangilanadi
+    container.querySelectorAll('.product-qty, .product-price, .product-name').forEach(el => {
+        el.addEventListener('input', updateCreateCalculation);
+    });
+    // O'chirish tugmasi
+    container.querySelectorAll('.btn-remove-product').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const group = btn.closest('.product-group');
+            if (group) {
+                group.remove();
+                renumberProductGroups();
+                updateCreateCalculation();
+                hapticImpact();
+            }
+        });
+    });
+}
 
 function setupCreateForm() {
     const dateInput = document.getElementById('create-date');
     const btnToday = document.getElementById('btn-set-today');
-    const productPriceInput = document.getElementById('create-product-price');
-    const productQtyInput = document.getElementById('create-product-qty');
+    const btnAddProduct = document.getElementById('btn-add-product');
     const exchangeToggle = document.getElementById('create-exchange-toggle');
     const exchangeFields = document.getElementById('exchange-fields');
     const exchangePriceInput = document.getElementById('create-exchange-price');
@@ -339,6 +491,30 @@ function setupCreateForm() {
         btnToday.addEventListener('click', () => {
             if (dateInput) dateInput.value = getTodayFormatted();
             hapticImpact();
+        });
+    }
+
+    // Boshlang'ich tovar guruhiga listenerlar qo'shamiz
+    const container = document.getElementById('products-container');
+    if (container) attachProductGroupListeners(container);
+
+    // "➕ Yana tovar qo'shish" tugmasi
+    if (btnAddProduct) {
+        btnAddProduct.addEventListener('click', () => {
+            const groups = getProductGroups();
+            const newIndex = groups.length;
+            const html = createProductGroupHTML(newIndex);
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = html;
+            const newGroup = wrapper.firstElementChild;
+            container.appendChild(newGroup);
+            attachProductGroupListeners(newGroup);
+            updateCreateCalculation();
+            hapticImpact();
+
+            // Yangi tovar nomi maydoniga foküs
+            const nameInput = newGroup.querySelector('.product-name');
+            if (nameInput) nameInput.focus();
         });
     }
 
@@ -362,11 +538,6 @@ function setupCreateForm() {
         });
     }
 
-    // Input changes for live calculation
-    [productPriceInput, productQtyInput, exchangePriceInput, givenAmountInput].forEach(el => {
-        if (el) el.addEventListener('input', updateCreateCalculation);
-    });
-
     // Valyuta tanlanganda live hisob yangilanadi
     document.querySelectorAll('input[name="currency"]').forEach(radio => {
         radio.addEventListener('change', () => {
@@ -375,42 +546,10 @@ function setupCreateForm() {
         });
     });
 
-    function getSelectedCurrency() {
-        return document.querySelector('input[name="currency"]:checked')?.value || 'UZS';
-    }
-
-    function updateCreateCalculation() {
-        const currency = getSelectedCurrency();
-        const qty = Math.max(1, Math.floor(Number(productQtyInput?.value) || 1));
-        const productPrice = Number(productPriceInput?.value) || 0;
-        const totalProductPrice = qty * productPrice;
-        const hasExchange = exchangeToggle?.checked;
-        const exchangePrice = hasExchange ? (Number(exchangePriceInput?.value) || 0) : 0;
-        const hasGiven = givenToggle?.checked;
-        const givenAmount = hasGiven ? (Number(givenAmountInput?.value) || 0) : 0;
-
-        const productCalcEl = document.getElementById('calc-product-price');
-        if (productCalcEl) {
-            productCalcEl.textContent = qty > 1
-                ? `${qty} × ${formatMoney(productPrice, currency)} = ${formatMoney(totalProductPrice, currency)}`
-                : formatMoney(productPrice, currency);
-        }
-
-        const exRow = document.getElementById('calc-exchange-row');
-        if (exRow) {
-            exRow.style.display = hasExchange ? 'flex' : 'none';
-            document.getElementById('calc-exchange-price').textContent = `-${formatMoney(exchangePrice, currency)}`;
-        }
-
-        const givenRow = document.getElementById('calc-given-row');
-        if (givenRow) {
-            givenRow.style.display = hasGiven ? 'flex' : 'none';
-            document.getElementById('calc-given-price').textContent = `-${formatMoney(givenAmount, currency)}`;
-        }
-
-        const totalDebt = Math.max(0, totalProductPrice - exchangePrice - givenAmount);
-        document.getElementById('calc-total-debt').textContent = formatMoney(totalDebt, currency);
-    }
+    // Exchange/given input'lari
+    [exchangePriceInput, givenAmountInput].forEach(el => {
+        if (el) el.addEventListener('input', updateCreateCalculation);
+    });
 
     // Submit New Debt
     if (submitBtn) {
@@ -418,9 +557,8 @@ function setupCreateForm() {
             const clientName = document.getElementById('create-client-name')?.value.trim();
             const clientPhone = document.getElementById('create-client-phone')?.value.trim();
             const debtDate = dateInput?.value.trim() || getTodayFormatted();
-            const productName = document.getElementById('create-product-name')?.value.trim();
-            const productQty = Math.floor(Number(productQtyInput?.value)) || 0;
-            const productPrice = Number(productPriceInput?.value) || 0;
+
+            const products = getProductsData();
 
             const hasExchange = exchangeToggle?.checked || false;
             const exchangeName = document.getElementById('create-exchange-name')?.value.trim() || null;
@@ -437,19 +575,18 @@ function setupCreateForm() {
                 showToast('Telefon raqamini kiriting');
                 return;
             }
-            if (!productName) {
-                showToast('Tovar nomini kiriting');
+            if (products.length === 0) {
+                showToast('Kamida bitta tovar kiriting');
                 return;
             }
-            if (productQty < 1) {
-                showToast('Miqdorni kiriting (kamida 1)');
-                return;
+            for (let i = 0; i < products.length; i++) {
+                if (!products[i].name) {
+                    showToast(`${i + 1}-tovar nomini kiriting`);
+                    return;
+                }
             }
-            if (productPrice <= 0) {
-                showToast('Tovar narxini kiriting');
-                return;
-            }
-            if (exchangePrice + givenMoney > productQty * productPrice) {
+            const totalProductPrice = products.reduce((s, p) => s + p.quantity * p.price_per_unit, 0);
+            if (exchangePrice + givenMoney > totalProductPrice) {
                 showToast('Exchange va berilgan pul tovarlar jami narxidan oshmasligi kerak');
                 return;
             }
@@ -458,22 +595,22 @@ function setupCreateForm() {
             submitBtn.textContent = 'Saqlanmoqda...';
 
             try {
+                const payload = {
+                    client_name: clientName,
+                    client_phone: clientPhone,
+                    debt_date: debtDate,
+                    products: products,
+                    currency: getSelectedCurrency(),
+                    exchange_exists: hasExchange,
+                    exchange_product_name: exchangeName,
+                    exchange_product_price: exchangePrice,
+                    given_money: givenMoney,
+                };
+
                 const res = await apiFetch('/api/debts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        client_name: clientName,
-                        client_phone: clientPhone,
-                        debt_date: debtDate,
-                        product_name: productName,
-                        product_quantity: productQty,
-                        product_price: productPrice,
-                        currency: getSelectedCurrency(),
-                        exchange_exists: hasExchange,
-                        exchange_product_name: exchangeName,
-                        exchange_product_price: exchangePrice,
-                        given_money: givenMoney,
-                    })
+                    body: JSON.stringify(payload),
                 });
 
                 const json = await res.json();
@@ -484,11 +621,24 @@ function setupCreateForm() {
                 hapticSuccess();
                 showToast('✅ Qarz muvaffaqiyatli saqlandi!');
 
-                // Reset form
-                document.getElementById('create-debt-form').reset();
+                // Reset form — bitta tovar guruhigacha qisqartiramiz
+                const productsContainer = document.getElementById('products-container');
+                if (productsContainer) {
+                    productsContainer.innerHTML = createProductGroupHTML(0);
+                    attachProductGroupListeners(productsContainer);
+                }
+
+                document.getElementById('create-client-name').value = '';
+                document.getElementById('create-client-phone').value = '';
+                if (dateInput) dateInput.value = getTodayFormatted();
                 if (exchangeFields) exchangeFields.style.display = 'none';
                 if (givenFields) givenFields.style.display = 'none';
-                if (dateInput) dateInput.value = getTodayFormatted();
+                if (exchangeToggle) exchangeToggle.checked = false;
+                if (givenToggle) givenToggle.checked = false;
+                // Valyutani UZSga qaytarish
+                const uzsRadio = document.querySelector('input[name="currency"][value="UZS"]');
+                if (uzsRadio) uzsRadio.checked = true;
+
                 updateCreateCalculation();
 
                 // Refresh data and switch to tab 1

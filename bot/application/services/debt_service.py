@@ -2,7 +2,8 @@
 
 Qarzlar hisob-kitobi, yaratish, to'liq va qisman to'lovlar (FIFO), hisobotlar
 generatsiyasi. Har bir qarz o'z valyutasida (so'm yoki dollar) saqlanadi —
-summalar valyutalar bo'yicha aralashtirilmaydi.
+summalar valyutalar bo'yicha aralashtirilmaydi. Bir qarzda bir nechta tovar
+bo'lishi mumkin.
 """
 from __future__ import annotations
 
@@ -10,7 +11,12 @@ import asyncio
 
 from bot.application.common.formatters import format_money
 from bot.domain.entities.currency import Currency
-from bot.domain.entities.debt import Debt, DebtStatus
+from bot.domain.entities.debt import (
+    Debt,
+    DebtProduct,
+    DebtStatus,
+    build_summary_name,
+)
 from bot.domain.entities.payment import Payment, PaymentType
 from bot.domain.entities.report import ClientDebtSummary, ClientReport
 from bot.domain.repositories.client_repository import ClientRepository
@@ -39,17 +45,15 @@ class DebtService:
         self._clients = clients
         self._debts = debts
         self._payments = payments
-        # O'zgartiruvchi operatsiyalar (yaratish/to'lash) ketma-ket bajarilishi
-        # uchun lock — aks holda bir vaqtda kelgan ikki to'lov (bot va Mini App)
-        # bir xil qarzni ikki marta hisoblab yuborishi mumkin.
         self._mutation_lock = asyncio.Lock()
 
     async def create_debt(
         self,
         client_id: int,
         debt_date: str,
-        product_name: str,
-        product_price: int,
+        products: list[DebtProduct] | None = None,
+        product_name: str = "",
+        product_price: int = 0,
         product_quantity: int = 1,
         currency: Currency = Currency.UZS,
         exchange_exists: bool = False,
@@ -59,28 +63,58 @@ class DebtService:
     ) -> Debt:
         """Yangi qarz yozuvini hisoblab bazaga kiritadi.
 
-        product_price — BIR DONA narxi; jami narx miqdorga ko'paytiriladi.
-        Butun yozuv (narx, exchange, berilgan pul, qarz) bitta valyutada.
-
-        Formula:
-        original_debt = (product_price * product_quantity)
-                        - exchange_product_price - given_money
+        Agar `products` berilgan bo'lsa, jami narx va miqdor tovarlar ro'yxatidan
+        hisoblanadi. Aks holda eski single-product parametrlar ishlatiladi
+        (bot va eski API uchun).
         """
         async with self._mutation_lock:
-            if product_price <= 0:
-                raise ValueError("Tovar narxi 0 dan katta bo'lishi shart.")
-            if product_quantity < 1:
-                raise ValueError("Miqdor (nechta) 1 dan kichik bo'lishi mumkin emas.")
             if not isinstance(currency, Currency):
                 raise ValueError("Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak).")
 
-            total_product_price = product_price * product_quantity
+            # Tovarlar ro'yxatini aniqlash
+            if products:
+                # Ko'p tovarli rejim
+                final_products = products
+                total_product_price = sum(p.total_price for p in final_products)
+                total_quantity = sum(p.quantity for p in final_products)
+                summary_name = build_summary_name(final_products)
+            else:
+                # Single-product rejim (eski bot/API)
+                if product_price <= 0:
+                    raise ValueError("Tovar narxi 0 dan katta bo'lishi shart.")
+                if product_quantity < 1:
+                    raise ValueError(
+                        "Miqdor (nechta) 1 dan kichik bo'lishi mumkin emas."
+                    )
+                final_products = [
+                    DebtProduct(
+                        name=product_name.strip(),
+                        quantity=product_quantity,
+                        price_per_unit=product_price,
+                    )
+                ]
+                total_product_price = product_price * product_quantity
+                total_quantity = product_quantity
+                summary_name = (
+                    build_summary_name(final_products)
+                    if product_name.strip()
+                    else ""
+                )
 
-            actual_exchange_price = exchange_product_price if exchange_exists else 0
-            actual_exchange_name = exchange_product_name if exchange_exists else None
+            if total_product_price <= 0:
+                raise ValueError("Tovarlar jami narxi 0 dan katta bo'lishi shart.")
+
+            actual_exchange_price = (
+                exchange_product_price if exchange_exists else 0
+            )
+            actual_exchange_name = (
+                exchange_product_name if exchange_exists else None
+            )
 
             if actual_exchange_price < 0 or given_money < 0:
-                raise ValueError("Exchange narxi yoki berilgan pul manfiy bo'lishi mumkin emas.")
+                raise ValueError(
+                    "Exchange narxi yoki berilgan pul manfiy bo'lishi mumkin emas."
+                )
 
             total_deductions = actual_exchange_price + given_money
             if total_deductions > total_product_price:
@@ -93,13 +127,15 @@ class DebtService:
 
             original_debt = total_product_price - total_deductions
             remaining_debt = original_debt
-            status = DebtStatus.ACTIVE if remaining_debt > 0 else DebtStatus.PAID
+            status = (
+                DebtStatus.ACTIVE if remaining_debt > 0 else DebtStatus.PAID
+            )
 
             debt = Debt(
                 client_id=client_id,
                 debt_date=debt_date,
-                product_name=product_name.strip(),
-                product_quantity=product_quantity,
+                product_name=summary_name,
+                product_quantity=total_quantity,
                 product_price=total_product_price,
                 currency=currency,
                 exchange_exists=exchange_exists,
@@ -108,11 +144,11 @@ class DebtService:
                 given_money=given_money,
                 original_debt=original_debt,
                 remaining_debt=remaining_debt,
+                products=tuple(final_products),
                 status=status,
             )
             saved_debt = await self._debts.add(debt)
 
-            # Agar boshlang'ich pul berilgan bo'lsa, to'lovlar tarixiga INITIAL sifatida yozamiz
             if given_money > 0 and saved_debt.id is not None:
                 await self._payments.add(
                     Payment(
@@ -166,7 +202,9 @@ class DebtService:
                         )
                     )
                     key = debt.currency.value
-                    paid_by_currency[key] = paid_by_currency.get(key, 0) + pay_amount
+                    paid_by_currency[key] = (
+                        paid_by_currency.get(key, 0) + pay_amount
+                    )
 
             client = await self._clients.get_by_id(client_id)
             if client is None:
@@ -184,30 +222,38 @@ class DebtService:
     ) -> tuple[int, int, ClientDebtSummary]:
         """Mijozning tanlangan valyutadagi qarzidan ma'lum miqdorni to'laydi.
 
-        FIFO: shu valyutadagi eng eski qarzdan boshlab yopadi. Boshqa valyutadagi
-        qarzlarga ta'sir qilmaydi.
+        FIFO: shu valyutadagi eng eski qarzdan boshlab yopadi. Boshqa
+        valyutadagi qarzlarga ta'sir qilmaydi.
 
-        Qaytaradi: (to'langan_summa, shu_valyutadagi_qolgan, yangilangan_summary)
+        Qaytaradi: (to'langan_summa, shu_valyutadagi_qolgan, summary)
         """
         async with self._mutation_lock:
             if amount <= 0:
                 raise ValueError("To'lov summasi 0 dan katta bo'lishi shart.")
             if not isinstance(currency, Currency):
-                raise ValueError("Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak).")
+                raise ValueError(
+                    "Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak)."
+                )
 
             active_debts = await self._debts.get_active_by_client_id(client_id)
-            currency_debts = [d for d in active_debts if d.currency == currency]
+            currency_debts = [
+                d for d in active_debts if d.currency == currency
+            ]
             total_remaining = sum(d.remaining_debt for d in currency_debts)
 
             if total_remaining == 0:
-                currency_label = "so'mda" if currency == Currency.UZS else "dollarda"
+                currency_label = (
+                    "so'mda" if currency == Currency.UZS else "dollarda"
+                )
                 raise ValueError(
-                    f"Ushbu mijozda {currency_label} to'lanishi kerak bo'lgan faol qarz yo'q."
+                    f"Ushbu mijozda {currency_label} to'lanishi kerak"
+                    " bo'lgan faol qarz yo'q."
                 )
 
             if amount > total_remaining:
                 raise ValueError(
-                    f"To'lov summasi mavjud qarzdan ({format_money(total_remaining, currency)}) "
+                    f"To'lov summasi mavjud qarzdan "
+                    f"({format_money(total_remaining, currency)}) "
                     f"katta bo'lishi mumkin emas."
                 )
 
@@ -217,18 +263,25 @@ class DebtService:
                     break
 
                 pay_for_this = min(remaining_to_allocate, debt.remaining_debt)
-                new_debt_remaining = debt.remaining_debt - pay_for_this
-                new_status = DebtStatus.PAID if new_debt_remaining == 0 else DebtStatus.ACTIVE
+                new_remaining = debt.remaining_debt - pay_for_this
+                new_status = (
+                    DebtStatus.PAID
+                    if new_remaining == 0
+                    else DebtStatus.ACTIVE
+                )
 
                 await self._debts.update_remaining_debt(
                     debt_id=debt.id,
-                    remaining_debt=new_debt_remaining,
+                    remaining_debt=new_remaining,
                     status=new_status,
                 )
 
                 p_type = (
                     PaymentType.FULL
-                    if (new_debt_remaining == 0 and pay_for_this == debt.remaining_debt)
+                    if (
+                        new_remaining == 0
+                        and pay_for_this == debt.remaining_debt
+                    )
                     else PaymentType.PARTIAL
                 )
 
@@ -246,7 +299,9 @@ class DebtService:
                 remaining_to_allocate -= pay_for_this
 
             new_total_remaining = total_remaining - amount
-            new_active_debts = await self._debts.get_active_by_client_id(client_id)
+            new_active_debts = await self._debts.get_active_by_client_id(
+                client_id
+            )
             client = await self._clients.get_by_id(client_id)
             if client is None:
                 raise ValueError("Mijoz topilmadi.")
@@ -255,14 +310,14 @@ class DebtService:
             summary = ClientDebtSummary(
                 client=client,
                 remaining_by_currency={
-                    cur: value for cur, value in remaining_map.items() if value > 0
+                    cur: v for cur, v in remaining_map.items() if v > 0
                 },
                 active_debts_count=len(new_active_debts),
             )
             return amount, new_total_remaining, summary
 
     async def get_client_report(self, client_id: int) -> ClientReport:
-        """Mijozning barcha qarz va to'lovlari bo'yicha to'liq hisobotini shakllantiradi."""
+        """Mijozning barcha qarz va to'lovlari bo'yicha to'liq hisoboti."""
         client = await self._clients.get_by_id(client_id)
         if client is None:
             raise ValueError("Mijoz topilmadi.")
@@ -270,9 +325,10 @@ class DebtService:
         debts = await self._debts.get_all_by_client_id(client_id)
         payments = await self._payments.get_by_client_id(client_id)
 
-        # Qarz olingandan keyingi to'lovlar (INITIAL bo'lmaganlar)
         paid_after = [
-            p for p in payments if p.payment_type in (PaymentType.FULL, PaymentType.PARTIAL)
+            p
+            for p in payments
+            if p.payment_type in (PaymentType.FULL, PaymentType.PARTIAL)
         ]
         active_debts = [d for d in debts if d.status == DebtStatus.ACTIVE]
 

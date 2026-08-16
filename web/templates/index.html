@@ -103,21 +103,33 @@
                             <input type="tel" id="create-client-phone" placeholder="+998901234567" required>
                         </div>
 
-                        <!-- Tovar Ma'lumotlari -->
-                        <div class="form-group">
-                            <label for="create-product-name">📦 Tovar (Mahsulot) nomi</label>
-                            <input type="text" id="create-product-name" placeholder="Masalan: Shina, Akkumulyator" required>
+                        <!-- Tovarlar ro'yxati (dinamik) -->
+                        <div id="products-container">
+                            <div class="product-group" data-product-index="0">
+                                <div class="form-group">
+                                    <label>📦 <span class="product-label-num">1</span>-tovar nomi</label>
+                                    <input type="text" class="product-name" placeholder="Masalan: Shina, Akkumulyator" required>
+                                </div>
+                                <div class="product-row">
+                                    <div class="form-group product-row-item">
+                                        <label>🔢 Nechta</label>
+                                        <input type="number" class="product-qty" placeholder="1" min="1" step="1" value="1" required>
+                                    </div>
+                                    <div class="form-group product-row-item">
+                                        <label>💰 Narxi</label>
+                                        <input type="number" class="product-price" placeholder="2500000" min="1" step="1000" required>
+                                    </div>
+                                </div>
+                                <div class="product-subtotal">
+                                    <span>Jami:</span>
+                                    <strong class="product-subtotal-val">0 so'm</strong>
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="form-group">
-                            <label for="create-product-qty">🔢 Nechta (miqdor)</label>
-                            <input type="number" id="create-product-qty" placeholder="1" min="1" step="1" value="1" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="create-product-price">💰 Bitta tovar narxi</label>
-                            <input type="number" id="create-product-price" placeholder="2500000" min="1" step="1000" required>
-                        </div>
+                        <button type="button" id="btn-add-product" class="btn btn-outline btn-add-product">
+                            ➕ Yana tovar qo'shish
+                        </button>
 
                         <!-- Valyuta tanlash -->
                         <div class="form-group">
