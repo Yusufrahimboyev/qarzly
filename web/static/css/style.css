@@ -982,6 +982,12 @@ input:checked + .slider:before {
     font-weight: 600;
 }
 
+/* Klaviatura ochilganda pastki nav yashirinadi —
+   klaviatura uni ekranning o'rtasiga ko'tarib qo'ymaydi */
+.bottom-nav.nav-keyboard-hidden {
+    display: none;
+}
+
 /* ===================================================
    MODAL DIALOG (CLIENT REPORT)
    =================================================== */

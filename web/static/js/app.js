@@ -252,9 +252,12 @@ function startAddDebtForClient(person) {
         banner.style.display = 'flex';
     }
 
-    // Birinchi tovar nomiga foküs
-    const firstProduct = document.querySelector('#products-container .product-name');
-    if (firstProduct) setTimeout(() => firstProduct.focus(), 200);
+    // Sana har doim bugunga tenglanadi — keyingi qarz to'g'ri sanada yoziladi
+    const dateInput = document.getElementById('create-date');
+    if (dateInput) dateInput.value = getTodayFormatted();
+
+    // Avto-foküs yo'q — aks holda klaviatura darrov ochilib,
+    // pastki navigatsiya bar tepaga ko'tarilib qoladi
 }
 
 // Bannerdan voz kechish — boshqa (yangi) mijoz kiritish uchun maydonlarni bo'shatadi
@@ -605,9 +608,11 @@ function setupCreateForm() {
             updateCreateCalculation();
             hapticImpact();
 
-            // Yangi tovar nomi maydoniga foküs
-            const nameInput = newGroup.querySelector('.product-name');
-            if (nameInput) nameInput.focus();
+            // Yangi tovar kartini ko'rinadigan joyga silliq suramiz —
+            // fokus qo'ymaymiz, klaviatura o'z-o'zidan ochilib yuborilmaydi
+            setTimeout(() => {
+                newGroup.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 50);
         });
     }
 
@@ -1091,6 +1096,25 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup forms
     setupCreateForm();
     setupPaymentForm();
+
+    // Klaviatura xulq-atvori: input'ga foküs qilinganda (klaviatura ochilganda)
+    // pastki navigatsiya bar ekranning o'rtasiga ko'tarilib qolmasligi uchun
+    // yashiriladi, foküs ketganda qaytib chiqadi
+    const bottomNav = document.querySelector('.bottom-nav');
+    const isFormField = (el) => !!el && ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName);
+    if (bottomNav) {
+        document.addEventListener('focusin', (e) => {
+            if (isFormField(e.target)) bottomNav.classList.add('nav-keyboard-hidden');
+        });
+        document.addEventListener('focusout', () => {
+            // Fokus boshqa input'ga o'tgan bo'lishi mumkin — biroz kutib tekshiramiz
+            setTimeout(() => {
+                if (!isFormField(document.activeElement)) {
+                    bottomNav.classList.remove('nav-keyboard-hidden');
+                }
+            }, 150);
+        });
+    }
 
     // Initial Fetch
     fetchStats();
