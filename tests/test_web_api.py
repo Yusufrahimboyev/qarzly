@@ -322,6 +322,63 @@ async def test_api_create_debt_products_validation(
 
 
 @pytest.mark.asyncio
+async def test_api_create_debt_mixed_currencies(
+    aiohttp_app: web.Application,
+) -> None:
+    """1-tovar dollar, 2-tovar so'm — 2 ta qarz yaratiladi, qoldiq valyutalar bo'yicha."""
+    from aiohttp.test_utils import TestClient, TestServer
+    server = TestServer(aiohttp_app)
+    client = TestClient(server)
+    await client.start_server()
+
+    try:
+        headers = auth_header()
+
+        # Shina 120 $ + Moy 450 000 so'm; exchange 20 $; berilgan pul 50 000 so'm
+        # Dollar qarz: 100 $; So'm qarz: 400 000
+        payload = {
+            "client_name": "Aralash Valyuta Mijoz",
+            "client_phone": "+998905554433",
+            "debt_date": "17.08.2026",
+            "products": [
+                {"name": "Shina", "quantity": 1, "price_per_unit": 120, "currency": "USD"},
+                {"name": "Moy", "quantity": 1, "price_per_unit": 450000, "currency": "UZS"},
+            ],
+            "exchange_exists": True,
+            "exchange_product_name": "Eski shina",
+            "exchange_product_price": 20,
+            "exchange_currency": "USD",
+            "given_money": 50000,
+            "given_currency": "UZS",
+        }
+        res = await client.post("/api/debts", json=payload, headers=headers)
+        assert res.status == 200
+        data = await res.json()
+        assert data["ok"] is True
+        assert len(data["debts"]) == 2
+        assert data["remaining_by_currency"] == {"UZS": 400000, "USD": 100}
+
+        # Stats umumiy qarzni valyutalar bo'yicha ko'rsatadi
+        res_stats = await client.get("/api/stats", headers=headers)
+        stats = await res_stats.json()
+        assert stats["total_debt"] == {"UZS": 400000, "USD": 100}
+
+        # Faqat dollar qarzni dollarda qisman to'lash
+        res_pay = await client.post("/api/payments", json={
+            "client_id": data["client_id"],
+            "payment_type": "partial",
+            "amount": 100,
+            "currency": "USD",
+            "payment_date": "18.08.2026",
+        }, headers=headers)
+        assert res_pay.status == 200
+        pay = await res_pay.json()
+        assert pay["remaining"] == {"UZS": 400000}
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_api_rejects_non_admin_when_admin_ids_configured(
     client_repo: SqliteClientRepository,
     debt_repo: SqliteDebtRepository,

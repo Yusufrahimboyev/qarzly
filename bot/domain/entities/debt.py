@@ -20,11 +20,16 @@ class DebtStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class DebtProduct:
-    """Bitta tovar yozuvi (qarz tarkibidagi har bir tovar)."""
+    """Bitta tovar yozuvi (qarz tarkibidagi har bir tovar).
+
+    Har bir tovarning o'z valyutasi bor ("UZS" yoki "USD") — bir xaridda
+    ba'zi tovarlar so'mda, ba'zilari dollarda bo'lishi mumkin.
+    """
 
     name: str
     quantity: int = 1
     price_per_unit: int = 0
+    currency: str = Currency.UZS.value
 
     @property
     def total_price(self) -> int:
@@ -35,6 +40,7 @@ class DebtProduct:
             "name": self.name,
             "quantity": self.quantity,
             "price_per_unit": self.price_per_unit,
+            "currency": self.currency,
         }
 
     @classmethod
@@ -43,6 +49,8 @@ class DebtProduct:
             name=str(d.get("name", "")),
             quantity=int(d.get("quantity", 1)),
             price_per_unit=int(d.get("price_per_unit", 0)),
+            # Eski yozuvlarda currency yo'q — UZS deb olamiz
+            currency=str(d.get("currency", Currency.UZS.value)).upper(),
         )
 
     def to_json(self) -> str:

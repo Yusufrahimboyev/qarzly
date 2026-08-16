@@ -804,6 +804,47 @@ input:checked + .slider:before {
     padding: 12px;
 }
 
+/* Valyuta chips (har tovar / exchange / given uchun) */
+.product-currency-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.product-currency-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.currency-chips {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+}
+
+.cur-chip {
+    flex: 1;
+    padding: 7px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--card-border);
+    background-color: var(--card-bg);
+    color: var(--text-muted);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+}
+
+.cur-chip.active {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: #fff;
+}
+
 /* Payment Tab Radio Cards */
 .radio-cards {
     display: grid;

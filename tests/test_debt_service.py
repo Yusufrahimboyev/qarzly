@@ -5,7 +5,7 @@ import pytest
 
 from bot.application.services.debt_service import DebtService
 from bot.domain.entities.client import Client
-from bot.domain.entities.debt import DebtStatus
+from bot.domain.entities.debt import DebtProduct, DebtStatus
 from bot.domain.entities.payment import PaymentType
 from bot.infrastructure.database.repositories.client_repository import (
     SqliteClientRepository,
@@ -430,7 +430,9 @@ async def test_create_debt_with_multiple_products(
     from_db = await debt_repo.get_by_id(debt.id)
     assert from_db is not None
     assert len(from_db.products) == 3
-    assert from_db.products[0].to_dict() == {"name": "Shina", "quantity": 2, "price_per_unit": 500000}
+    assert from_db.products[0].to_dict() == {
+        "name": "Shina", "quantity": 2, "price_per_unit": 500000, "currency": "UZS",
+    }
 
     # Hisobotda ham ko'rinadi
     report = await service.get_client_report(client.id)
@@ -465,3 +467,103 @@ async def test_create_debt_single_product_via_products_param(
     assert debt.product_name == "Generator"
     assert debt.product_quantity == 1
     assert len(debt.products) == 1
+
+
+@pytest.mark.asyncio
+async def test_create_debts_mixed_currencies(
+    client_repo: SqliteClientRepository,
+    debt_repo: SqliteDebtRepository,
+    payment_repo: SqlitePaymentRepository,
+) -> None:
+    """1-tovar dollar, 2-tovar so'm — ikkita alohida qarz yaratiladi.
+
+    Exchange va berilgan pul faqat o'z valyutasidagi guruhdan chegiriladi.
+    """
+    from bot.domain.entities.currency import Currency
+
+    client = await client_repo.add(Client(full_name="Aralash Mijoz", phone="+998904443322"))
+    assert client.id is not None
+
+    service = DebtService(client_repo, debt_repo, payment_repo)
+
+    products = [
+        DebtProduct(name="Shina", quantity=1, price_per_unit=120, currency="USD"),  # 120 $
+        DebtProduct(name="Moy", quantity=1, price_per_unit=450000, currency="UZS"),  # 450 000
+    ]
+    # Exchange 20 $ (dollardan), berilgan pul 50 000 so'm (so'mdan)
+    # Dollar qarz: 120 - 20 = 100 $; So'm qarz: 450 000 - 50 000 = 400 000
+
+    debts = await service.create_debts(
+        client_id=client.id,
+        debt_date="17.08.2026",
+        products=products,
+        exchange_exists=True,
+        exchange_product_name="Eski shina",
+        exchange_product_price=20,
+        exchange_currency=Currency.USD,
+        given_money=50000,
+        given_currency=Currency.UZS,
+    )
+
+    assert len(debts) == 2
+
+    usd_debt = next(d for d in debts if d.currency == Currency.USD)
+    uzs_debt = next(d for d in debts if d.currency == Currency.UZS)
+
+    assert usd_debt.product_price == 120
+    assert usd_debt.original_debt == 100
+    assert usd_debt.remaining_debt == 100
+    assert usd_debt.exchange_exists is True
+    assert usd_debt.given_money == 0
+    assert usd_debt.products[0].currency == "USD"
+
+    assert uzs_debt.product_price == 450000
+    assert uzs_debt.original_debt == 400000
+    assert uzs_debt.remaining_debt == 400000
+    assert uzs_debt.exchange_exists is False  # exchange dollarda edi
+    assert uzs_debt.given_money == 50000
+    assert uzs_debt.products[0].currency == "UZS"
+
+    # Summary valyutalar bo'yicha alohida ko'rsatadi
+    from bot.application.services.client_service import ClientService
+    client_service = ClientService(client_repo, debt_repo)
+    summaries = await client_service.get_debtor_summaries()
+    s = next(x for x in summaries if x.client.id == client.id)
+    assert s.remaining_by_currency == {"UZS": 400000, "USD": 100}
+
+    # Dollar qarzini dollarda yopish so'm qarziga ta'sir qilmaydi
+    paid_map, summary = await service.pay_full_debt(client.id, "18.08.2026")
+    assert paid_map == {"UZS": 400000, "USD": 100}
+    assert summary.has_debt is False
+
+
+@pytest.mark.asyncio
+async def test_create_debts_exchange_bigger_than_group_error(
+    client_repo: SqliteClientRepository,
+    debt_repo: SqliteDebtRepository,
+    payment_repo: SqlitePaymentRepository,
+) -> None:
+    """Exchange o'z valyutasidagi tovarlar jami narxidan katta bo'lsa xatolik."""
+    from bot.domain.entities.currency import Currency
+
+    client = await client_repo.add(Client(full_name="Xato Mijoz", phone="+998904443399"))
+    assert client.id is not None
+
+    service = DebtService(client_repo, debt_repo, payment_repo)
+
+    products = [
+        DebtProduct(name="Shina", quantity=1, price_per_unit=100, currency="USD"),
+        DebtProduct(name="Moy", quantity=1, price_per_unit=1000000, currency="UZS"),
+    ]
+
+    # 500 $ exchange — dollar tovarlari jami 100 $ dan katta
+    with pytest.raises(ValueError, match="katta bo'lishi mumkin emas"):
+        await service.create_debts(
+            client_id=client.id,
+            debt_date="17.08.2026",
+            products=products,
+            exchange_exists=True,
+            exchange_product_name="Eski shina",
+            exchange_product_price=500,
+            exchange_currency=Currency.USD,
+        )

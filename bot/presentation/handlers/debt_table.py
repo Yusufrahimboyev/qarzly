@@ -12,6 +12,7 @@ from bot.application.common.formatters import (
 )
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
+from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import DebtStatus
 from bot.domain.entities.payment import PaymentType
 from bot.domain.entities.report import ClientReport
@@ -155,16 +156,17 @@ def _render_report(report: ClientReport) -> str:
             # Ko'p tovarli bo'lsa har bir tovarni alohida ko'rsatamiz
             if len(d.products) > 1:
                 for p_idx, p in enumerate(d.products, start=1):
+                    p_cur = Currency(p.currency)
                     if p.quantity > 1:
                         lines.append(
                             f"  • {p_idx}) <b>{p.name}</b> — {p.quantity} × "
-                            f"{format_money(p.price_per_unit, d.currency)} = "
-                            f"{format_money(p.total_price, d.currency)}"
+                            f"{format_money(p.price_per_unit, p_cur)} = "
+                            f"{format_money(p.total_price, p_cur)}"
                         )
                     else:
                         lines.append(
                             f"  • {p_idx}) <b>{p.name}</b> — "
-                            f"{format_money(p.price_per_unit, d.currency)}"
+                            f"{format_money(p.price_per_unit, p_cur)}"
                         )
             else:
                 lines.append(f"  • Tovar: <b>{d.product_name}</b> — {d.product_quantity} ta")

@@ -46,13 +46,45 @@ def get_back_cancel_keyboard(show_back: bool = True) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[buttons])
 
 
-def get_currency_choice_keyboard() -> InlineKeyboardMarkup:
-    """Valyuta tanlash klaviaturasi (so'm / dollar)."""
+def get_product_currency_keyboard() -> InlineKeyboardMarkup:
+    """Tovar valyutasi tanlash klaviaturasi (har tovar alohida)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="💵 So'm", callback_data="currency_uzs"),
-                InlineKeyboardButton(text="$ Dollar", callback_data="currency_usd"),
+                InlineKeyboardButton(text="💵 So'm", callback_data="prodcur_uzs"),
+                InlineKeyboardButton(text="$ Dollar", callback_data="prodcur_usd"),
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
+                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+            ],
+        ]
+    )
+
+
+def get_exchange_currency_keyboard() -> InlineKeyboardMarkup:
+    """Exchange tovari valyutasi tanlash klaviaturasi."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💵 So'm", callback_data="excur_uzs"),
+                InlineKeyboardButton(text="$ Dollar", callback_data="excur_usd"),
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
+                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+            ],
+        ]
+    )
+
+
+def get_given_currency_keyboard() -> InlineKeyboardMarkup:
+    """Berilgan pul valyutasi tanlash klaviaturasi."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💵 So'm", callback_data="gcur_uzs"),
+                InlineKeyboardButton(text="$ Dollar", callback_data="gcur_usd"),
             ],
             [
                 InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),

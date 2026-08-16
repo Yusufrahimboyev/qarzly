@@ -113,7 +113,7 @@
                             <button type="button" id="banner-clear-btn" class="banner-clear" title="Boshqa mijoz kiriting">&times;</button>
                         </div>
 
-                        <!-- Tovarlar ro'yxati (dinamik) -->
+                        <!-- Tovarlar ro'yxati (dinamik, har biri o'z valyutasida) -->
                         <div id="products-container">
                             <div class="product-group" data-product-index="0">
                                 <div class="form-group">
@@ -130,6 +130,13 @@
                                         <input type="number" class="product-price" placeholder="2500000" min="1" step="1000" required>
                                     </div>
                                 </div>
+                                <div class="product-currency-row">
+                                    <span class="product-currency-label">💱 Valyuta:</span>
+                                    <div class="currency-chips">
+                                        <button type="button" class="cur-chip active" data-currency="UZS">💵 So'm</button>
+                                        <button type="button" class="cur-chip" data-currency="USD">$ Dollar</button>
+                                    </div>
+                                </div>
                                 <div class="product-subtotal">
                                     <span>Jami:</span>
                                     <strong class="product-subtotal-val">0 so'm</strong>
@@ -140,25 +147,6 @@
                         <button type="button" id="btn-add-product" class="btn btn-outline btn-add-product">
                             ➕ Yana tovar qo'shish
                         </button>
-
-                        <!-- Valyuta tanlash -->
-                        <div class="form-group">
-                            <label>💱 Valyuta</label>
-                            <div class="radio-cards">
-                                <label class="radio-card">
-                                    <input type="radio" name="currency" value="UZS" checked>
-                                    <div class="radio-content">
-                                        <span class="radio-title">💵 So'm</span>
-                                    </div>
-                                </label>
-                                <label class="radio-card">
-                                    <input type="radio" name="currency" value="USD">
-                                    <div class="radio-content">
-                                        <span class="radio-title">$ Dollar</span>
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
 
                         <!-- Exchange (Ayirboshlash) Toggle -->
                         <div class="toggle-card">
@@ -179,8 +167,15 @@
                                     <input type="text" id="create-exchange-name" placeholder="Masalan: Eski shina">
                                 </div>
                                 <div class="form-group">
-                                    <label for="create-exchange-price">Exchange tovar narxi (so'm)</label>
+                                    <label for="create-exchange-price">Exchange tovar narxi</label>
                                     <input type="number" id="create-exchange-price" placeholder="800000" min="0" step="1000">
+                                </div>
+                                <div class="product-currency-row">
+                                    <span class="product-currency-label">💱 Valyuta:</span>
+                                    <div class="currency-chips" id="exchange-currency-chips">
+                                        <button type="button" class="cur-chip active" data-currency="UZS">💵 So'm</button>
+                                        <button type="button" class="cur-chip" data-currency="USD">$ Dollar</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -200,8 +195,15 @@
 
                             <div id="given-money-fields" class="toggle-body" style="display: none;">
                                 <div class="form-group">
-                                    <label for="create-given-amount">Berilgan pul summasi (so'm)</label>
+                                    <label for="create-given-amount">Berilgan pul summasi</label>
                                     <input type="number" id="create-given-amount" placeholder="200000" min="0" step="1000">
+                                </div>
+                                <div class="product-currency-row">
+                                    <span class="product-currency-label">💱 Valyuta:</span>
+                                    <div class="currency-chips" id="given-currency-chips">
+                                        <button type="button" class="cur-chip active" data-currency="UZS">💵 So'm</button>
+                                        <button type="button" class="cur-chip" data-currency="USD">$ Dollar</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

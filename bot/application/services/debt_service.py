@@ -163,6 +163,65 @@ class DebtService:
 
             return saved_debt
 
+    async def create_debts(
+        self,
+        client_id: int,
+        debt_date: str,
+        products: list[DebtProduct],
+        exchange_exists: bool = False,
+        exchange_product_name: str | None = None,
+        exchange_product_price: int = 0,
+        exchange_currency: Currency = Currency.UZS,
+        given_money: int = 0,
+        given_currency: Currency = Currency.UZS,
+    ) -> list[Debt]:
+        """Aralash valyutadagi tovarlardan qarzlar yaratadi.
+
+        Har bir tovarning o'z valyutasi bo'lishi mumkin — tovarlar valyuta
+        bo'yicha guruhlanadi va har bir valyuta uchun alohida qarz yozuvi
+        yaratiladi. Exchange va berilgan pul faqat o'z valyutasidagi
+        guruhdan chegiriladi.
+
+        Qaytaradi: yaratilgan qarzlar ro'yxati (valyutalar bo'yicha).
+        """
+        if not products:
+            raise ValueError("Kamida bitta tovar kiritilishi shart.")
+
+        # Tovarlarni valyuta bo'yicha guruhlaymiz
+        groups: dict[Currency, list[DebtProduct]] = {}
+        for p in products:
+            try:
+                cur = Currency(p.currency)
+            except ValueError:
+                raise ValueError(
+                    f"Tovar valyutasi noto'g'ri: {p.currency} (UZS yoki USD bo'lishi kerak)."
+                )
+            groups.setdefault(cur, []).append(p)
+
+        created: list[Debt] = []
+        for cur, group in groups.items():
+            # Exchange faqat o'z valyutasidagi guruhga ta'sir qiladi
+            group_exchange_exists = exchange_exists and cur == exchange_currency
+            group_exchange_price = exchange_product_price if group_exchange_exists else 0
+            group_exchange_name = exchange_product_name if group_exchange_exists else None
+
+            # Berilgan pul ham faqat o'z valyutasidagi guruhdan chegiriladi
+            group_given = given_money if cur == given_currency else 0
+
+            debt = await self.create_debt(
+                client_id=client_id,
+                debt_date=debt_date,
+                products=group,
+                currency=cur,
+                exchange_exists=group_exchange_exists,
+                exchange_product_name=group_exchange_name,
+                exchange_product_price=group_exchange_price,
+                given_money=group_given,
+            )
+            created.append(debt)
+
+        return created
+
     async def pay_full_debt(
         self,
         client_id: int,
