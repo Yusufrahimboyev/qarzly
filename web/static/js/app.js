@@ -89,26 +89,38 @@ function showToast(message) {
     setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
+function showUnauthorizedState(message = "Ushbu tizimga faqat ruxsat berilgan Telegram foydalanuvchilari kira oladi.") {
+    const app = document.getElementById('app') || document.body;
+    app.innerHTML = `
+        <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; background: #0f172a; color: #f8fafc;">
+            <div style="background: #1e293b; border: 1px solid #334155; border-radius: 20px; padding: 36px 24px; max-width: 380px; width: 100%; box-shadow: 0 12px 32px rgba(0,0,0,0.3);">
+                <div style="font-size: 3.5rem; margin-bottom: 16px;">⛔️</div>
+                <h2 style="font-size: 1.35rem; font-weight: 800; color: #f1f5f9; margin-bottom: 12px;">Kirish Cheklangan</h2>
+                <p style="color: #94a3b8; font-size: 0.95rem; line-height: 1.6; margin-bottom: 20px;">
+                    ${message}
+                </p>
+                <div style="font-size: 0.85rem; color: #64748b; border-top: 1px solid #334155; padding-top: 16px;">
+                    Ilovani faqat vakolatli Telegram akkauntingizdagi bot orqali oching.
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 // Barcha API so'rovlarini Telegram initData imzosi bilan yuboradi.
 // Server imzoni tekshiradi — begona shaxs URLni bilsa ham ma'lumot ololmaydi.
-function apiFetch(url, options = {}) {
+async function apiFetch(url, options = {}) {
     const headers = { ...(options.headers || {}) };
     if (tg && tg.initData) {
         headers['X-Telegram-Init-Data'] = tg.initData;
     }
-    return fetch(url, { ...options, headers });
-}
-
-function showUnauthorizedState() {
-    const container = document.getElementById('clients-list');
-    if (container) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">🔒</div>
-                <p>Ma'lumotlarni ko'rish uchun ilovani Telegram ichida oching</p>
-            </div>
-        `;
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401) {
+        showUnauthorizedState("Ruxsat berilmagan. Ilovani Telegram boti ichida oching.");
+    } else if (res.status === 403) {
+        showUnauthorizedState("⛔️ Sizning Telegram ID'ingizga ushbu tizimdan foydalanish huquqi berilmagan.");
     }
+    return res;
 }
 
 // ==========================================
@@ -1065,6 +1077,12 @@ function switchTab(tabId) {
 // ==========================================
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Agar Telegram Mini App ichida ochilmagan bo'lsa (URL orqali brauzerdan kirilsa)
+    if (!tg || !tg.initData) {
+        showUnauthorizedState("Ilovadan foydalanish uchun uni Telegram bot orqali oching.");
+        return;
+    }
+
     // Bottom Nav Tabs
     document.querySelectorAll('.nav-item').forEach(btn => {
         btn.addEventListener('click', () => {
