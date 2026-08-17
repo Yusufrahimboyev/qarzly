@@ -219,6 +219,34 @@ async def test_api_create_debt_requires_valid_phone(
 
 
 @pytest.mark.asyncio
+async def test_api_create_debt_without_phone_succeeds(
+    aiohttp_app: web.Application,
+) -> None:
+    """Telefon raqamisiz ham qarz muvaffaqiyatli yaratilishi kerak."""
+    from aiohttp.test_utils import TestClient, TestServer
+    server = TestServer(aiohttp_app)
+    client = TestClient(server)
+    await client.start_server()
+
+    try:
+        headers = auth_header()
+        payload = {
+            "client_name": "Telefonsiz Mijoz",
+            "client_phone": "",
+            "debt_date": "16.08.2026",
+            "product_name": "Moy",
+            "product_price": 400000,
+        }
+        res = await client.post("/api/debts", json=payload, headers=headers)
+        assert res.status == 200
+        data = await res.json()
+        assert data["ok"] is True
+        assert data["remaining_debt"] == 400000
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_api_create_debt_with_products_array(
     aiohttp_app: web.Application,
 ) -> None:

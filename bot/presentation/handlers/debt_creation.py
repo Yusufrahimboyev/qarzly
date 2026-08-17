@@ -36,6 +36,7 @@ from bot.presentation.keyboards.creation_kb import (
     get_given_currency_keyboard,
     get_given_money_choice_keyboard,
     get_more_products_keyboard,
+    get_phone_keyboard,
     get_product_currency_keyboard,
 )
 from bot.presentation.keyboards.main_menu_kb import get_main_menu_keyboard
@@ -135,8 +136,11 @@ async def cb_create_back(callback: CallbackQuery, state: FSMContext) -> None:
             reply_markup=get_back_cancel_keyboard(show_back=True),
         )
 
-    elif current_state == DebtCreationStates.waiting_product_name:
-        if data.get("client_name") and data.get("client_phone"):
+        if (
+            data.get("client_name")
+            and "client_phone" in data
+            and not data.get("_manual_flow", True)
+        ):
             # Mavjud mijozga qarz qo'shilmoqda — sanaga qaytamiz
             await state.set_state(DebtCreationStates.waiting_date)
             await callback.message.edit_text(
@@ -147,9 +151,9 @@ async def cb_create_back(callback: CallbackQuery, state: FSMContext) -> None:
         else:
             await state.set_state(DebtCreationStates.waiting_client_phone)
             await callback.message.edit_text(
-                "📞 <b>3-bosqich: Telefon raqamini kiriting:</b>\n\n"
-                "<i>Masalan: +998901234567</i>",
-                reply_markup=get_back_cancel_keyboard(show_back=True),
+                "📞 <b>3-bosqich: Telefon raqamini kiriting (ixtiyoriy):</b>\n\n"
+                "<i>Masalan: +998901234567 yoki 'O'tkazib yuborish'ni bosing:</i>",
+                reply_markup=get_phone_keyboard(),
             )
 
     elif current_state == DebtCreationStates.waiting_product_quantity:
@@ -375,33 +379,59 @@ async def process_client_name(message: Message, state: FSMContext) -> None:
     await state.set_state(DebtCreationStates.waiting_client_phone)
     await message.answer(
         f"👤 <b>Qarz oluvchi:</b> {esc_html(name)}\n\n"
-        "📞 <b>3-bosqich: Telefon raqamini kiriting:</b>\n\n"
-        "<i>Masalan: +998901234567 yoki 901234567</i>",
+        "📞 <b>3-bosqich: Telefon raqamini kiriting (ixtiyoriy):</b>\n\n"
+        "<i>Masalan: +998901234567 yoki telefon bo'lmasa 'O'tkazib yuborish' tugmasini bosing:</i>",
+        reply_markup=get_phone_keyboard(),
+    )
+
+
+@router.callback_query(F.data == "skip_client_phone")
+async def cb_skip_client_phone(callback: CallbackQuery, state: FSMContext) -> None:
+    """Telefon raqami kiritishni o'tkazib yuboradi."""
+    if not isinstance(callback.message, Message):
+        await callback.answer()
+        return
+
+    await state.update_data(client_phone="")
+    await state.update_data(_products=[])
+    await state.set_state(DebtCreationStates.waiting_product_name)
+    await callback.message.edit_text(
+        "📞 <b>Telefon:</b> <i>Kiritilmadi</i>\n\n"
+        "📦 <b>4-bosqich: Tovar (mahsulot) nomini kiriting:</b>\n\n"
+        "<i>Masalan: Shina, Akkumulyator, Generator</i>",
         reply_markup=get_back_cancel_keyboard(show_back=True),
     )
+    await callback.answer()
 
 
 @router.message(DebtCreationStates.waiting_client_phone)
 async def process_client_phone(message: Message, state: FSMContext) -> None:
-    """Telefon raqamini qabul qiladi."""
+    """Telefon raqamini qabul qiladi yoki o'tkazib yuborishni qayta ishlaydi."""
     phone_raw = (message.text or "").strip()
-    clean_phone = normalize_phone(phone_raw)
 
-    if not is_valid_phone(clean_phone):
-        await message.answer(
-            "⚠️ <b>Noto'g'ri telefon raqami!</b>\n\n"
-            "Iltimos, telefon raqamini to'g'ri formatda kiriting "
-            "(masalan: <code>+998901234567</code>):",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-        return
+    # O'tkazib yuborish so'zlari
+    skip_keywords = ("-", "yo'q", "yoq", "skip", "otkazish", "o'tkazish", "none", "0")
+    if phone_raw.lower() in skip_keywords:
+        clean_phone = ""
+    else:
+        clean_phone = normalize_phone(phone_raw)
+        if not is_valid_phone(clean_phone):
+            await message.answer(
+                "⚠️ <b>Noto'g'ri telefon raqami!</b>\n\n"
+                "Iltimos, telefon raqamini to'g'ri formatda kiriting "
+                "(masalan: <code>+998901234567</code>) yoki telefon bo'lmasa "
+                "<b>'O'tkazib yuborish'</b> tugmasini bosing:",
+                reply_markup=get_phone_keyboard(),
+            )
+            return
 
     await state.update_data(client_phone=clean_phone)
     # Tovarlar ro'yxatini bo'sh boshlaymiz
     await state.update_data(_products=[])
     await state.set_state(DebtCreationStates.waiting_product_name)
+    phone_display = clean_phone if clean_phone else "<i>Kiritilmadi</i>"
     await message.answer(
-        f"📞 <b>Telefon:</b> {clean_phone}\n\n"
+        f"📞 <b>Telefon:</b> {phone_display}\n\n"
         "📦 <b>4-bosqich: Tovar (mahsulot) nomini kiriting:</b>\n\n"
         "<i>Masalan: Shina, Akkumulyator, Generator</i>",
         reply_markup=get_back_cancel_keyboard(show_back=True),

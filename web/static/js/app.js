@@ -714,14 +714,12 @@ function setupCreateForm() {
                 showToast('Mijoz ismini kiriting');
                 return;
             }
-            if (!clientPhone) {
-                showToast('Telefon raqamini kiriting');
-                return;
-            }
-            const phoneDigits = clientPhone.replace(/\D/g, '');
-            if (phoneDigits.length < 7 || phoneDigits.length > 15) {
-                showToast('Telefon raqami noto\'g\'ri (masalan: +998901234567)');
-                return;
+            if (clientPhone) {
+                const phoneDigits = clientPhone.replace(/\D/g, '');
+                if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+                    showToast('Telefon raqami noto\'g\'ri (masalan: +998901234567)');
+                    return;
+                }
             }
             if (!isValidDateString(debtDate)) {
                 showToast('Sana noto\'g\'ri: DD.MM.YYYY ko\'rinishida kiriting');

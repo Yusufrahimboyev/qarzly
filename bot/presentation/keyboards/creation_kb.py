@@ -46,6 +46,24 @@ def get_back_cancel_keyboard(show_back: bool = True) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[buttons])
 
 
+def get_phone_keyboard() -> InlineKeyboardMarkup:
+    """Telefon raqami kiritish (ixtiyoriy, o'tkazib yuborish imkoni bilan) klaviaturasi."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⏭ O'tkazib yuborish (Telefon yo'q)",
+                    callback_data="skip_client_phone",
+                )
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
+                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+            ],
+        ]
+    )
+
+
 def get_product_currency_keyboard() -> InlineKeyboardMarkup:
     """Tovar valyutasi tanlash klaviaturasi (har tovar alohida)."""
     return InlineKeyboardMarkup(

@@ -45,7 +45,7 @@ class ProductItemDTO(BaseModel):
 
 class CreateDebtDTO(BaseModel):
     client_name: str = Field(..., min_length=1, max_length=80)
-    client_phone: str = Field(..., min_length=7, max_length=20)
+    client_phone: str = Field(default="")
     debt_date: str = Field(default="")
     products: list[ProductItemDTO] | None = None
     product_name: str = Field(default="")
@@ -248,9 +248,9 @@ async def api_create_debt(request: web.Request) -> web.Response:
         )
 
     client_name = dto.client_name.strip()
-    client_phone = normalize_phone(dto.client_phone)
+    client_phone = normalize_phone(dto.client_phone) if dto.client_phone.strip() else ""
 
-    if not is_valid_phone(client_phone):
+    if client_phone and not is_valid_phone(client_phone):
         return web.json_response(
             {"error": "Telefon raqami noto'g'ri (masalan: +998901234567)"},
             status=400,
