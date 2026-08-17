@@ -1,6 +1,6 @@
 """Composition root: barcha qatlamlarni ulaydi va bot hayot siklini boshqaradi.
 
-Bu — dasturning yagona joyi bo'lib, konkret implementatsiyalarni (SQLite repo,
+Bu — dasturning yagona joyi bo'lib, konkret implementatsiyalarni (PostgreSQL repo,
 scheduler, web server) yaratadi va bir-biriga bog'laydi (dependency injection).
 Boshqa hech bir qatlam bu ulanishlar haqida bilmaydi.
 """
@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -22,16 +21,16 @@ from bot.core.config import get_settings
 from bot.core.logging import setup_logging
 from bot.infrastructure.database.connection import Database
 from bot.infrastructure.database.repositories.client_repository import (
-    SqliteClientRepository,
+    PgClientRepository,
 )
 from bot.infrastructure.database.repositories.debt_repository import (
-    SqliteDebtRepository,
+    PgDebtRepository,
 )
 from bot.infrastructure.database.repositories.payment_repository import (
-    SqlitePaymentRepository,
+    PgPaymentRepository,
 )
 from bot.infrastructure.database.repositories.user_repository import (
-    SqliteUserRepository,
+    PgUserRepository,
 )
 from bot.infrastructure.scheduler.scheduler import create_scheduler
 from bot.infrastructure.web.server import WebServer
@@ -53,22 +52,15 @@ async def run() -> None:
             "o'zgartira oladi. .env faylida ADMIN_IDS ni sozlang!"
         )
 
-    # --- Infrastructure: ma'lumotlar bazasi ---
-    database = Database(settings.database_path)
+    # --- Infrastructure: ma'lumotlar bazasi (Supabase PostgreSQL) ---
+    database = Database(settings.database_url)
     await database.connect()
 
-    if os.environ.get("RENDER") == "true":
-        logger.warning(
-            "⚠️ Render'da ishlayapsiz. Free tarifda disk EPHEMERAL — har "
-            "deploy/restartda SQLite fayli yo'qolishi mumkin. Persistent disk "
-            "uling yoki tashqi baza ishlating (README → 'Deploy' bo'limi)."
-        )
-
     # --- Repositories ---
-    user_repository = SqliteUserRepository(database.connection)
-    client_repository = SqliteClientRepository(database.connection)
-    debt_repository = SqliteDebtRepository(database.connection)
-    payment_repository = SqlitePaymentRepository(database.connection)
+    user_repository = PgUserRepository(database.pool)
+    client_repository = PgClientRepository(database.pool)
+    debt_repository = PgDebtRepository(database.pool)
+    payment_repository = PgPaymentRepository(database.pool)
 
     # --- Application Services ---
     user_service = UserService(user_repository)

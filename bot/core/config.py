@@ -5,7 +5,6 @@ yuklanadi. Majburiy qiymatlar (masalan BOT_TOKEN) bo'lmasa, ilova ishga
 tushishida aniq xatolik beradi — noto'g'ri holatda jimgina ishlab ketmaydi.
 """
 from functools import lru_cache
-from pathlib import Path
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,7 +35,7 @@ class Settings(BaseSettings):
     )
 
     # --- Ma'lumotlar bazasi ---
-    database_path: Path = Field(default=Path("data/bot.db"))
+    database_url: str
 
     # --- Logging ---
     log_level: str = Field(default="INFO")

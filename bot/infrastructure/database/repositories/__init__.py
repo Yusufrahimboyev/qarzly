@@ -1,20 +1,20 @@
 """Infrastructure database repositories paketi."""
 from bot.infrastructure.database.repositories.client_repository import (
-    SqliteClientRepository,
+    PgClientRepository,
 )
 from bot.infrastructure.database.repositories.debt_repository import (
-    SqliteDebtRepository,
+    PgDebtRepository,
 )
 from bot.infrastructure.database.repositories.payment_repository import (
-    SqlitePaymentRepository,
+    PgPaymentRepository,
 )
 from bot.infrastructure.database.repositories.user_repository import (
-    SqliteUserRepository,
+    PgUserRepository,
 )
 
 __all__ = [
-    "SqliteClientRepository",
-    "SqliteDebtRepository",
-    "SqlitePaymentRepository",
-    "SqliteUserRepository",
+    "PgClientRepository",
+    "PgDebtRepository",
+    "PgPaymentRepository",
+    "PgUserRepository",
 ]

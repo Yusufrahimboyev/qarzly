@@ -1,104 +1,93 @@
-"""Infrastructure qatlami: PaymentRepository SQLite implementatsiyasi."""
+"""Infrastructure qatlami: PaymentRepository PostgreSQL implementatsiyasi."""
 from __future__ import annotations
 
 from datetime import datetime
 
-import aiosqlite
+import asyncpg
 
 from bot.domain.entities.currency import Currency
 from bot.domain.entities.payment import Payment, PaymentType
 from bot.domain.repositories.payment_repository import PaymentRepository
 
 
-class SqlitePaymentRepository(PaymentRepository):
-    """PaymentRepository ning aiosqlite orqali amalga oshirilishi."""
+class PgPaymentRepository(PaymentRepository):
+    """PaymentRepository ning asyncpg orqali amalga oshirilishi."""
 
-    def __init__(self, connection: aiosqlite.Connection) -> None:
-        self._connection = connection
+    def __init__(self, pool: asyncpg.Pool) -> None:
+        self._pool = pool
 
     async def add(self, payment: Payment) -> Payment:
-        cursor = await self._connection.execute(
-            """
-            INSERT INTO payments (
-                client_id,
-                debt_id,
-                amount,
-                currency,
-                payment_type,
-                payment_date
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO payments (
+                    client_id,
+                    debt_id,
+                    amount,
+                    currency,
+                    payment_type,
+                    payment_date
+                )
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id
+                """,
                 payment.client_id,
                 payment.debt_id,
                 payment.amount,
-                payment.currency.value
-                if isinstance(payment.currency, Currency)
-                else str(payment.currency),
+                payment.currency.value if isinstance(payment.currency, Currency) else str(payment.currency),
                 payment.payment_type.value,
                 payment.payment_date,
-            ),
-        )
-        await self._connection.commit()
-        payment_id = cursor.lastrowid
-        if payment_id is None:
-            raise RuntimeError("To'lov yozuvini saqlashda ID olinmadi.")
-        return await self._get_by_id(payment_id)  # type: ignore[return-value]
+            )
+            payment_id = row["id"] if row else None
+            if payment_id is None:
+                raise RuntimeError("To'lov yozuvini saqlashda ID olinmadi.")
+            return await self._get_by_id(payment_id)  # type: ignore[return-value]
 
     async def _get_by_id(self, payment_id: int) -> Payment | None:
-        async with self._connection.execute(
-            """
-            SELECT id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
-            FROM payments
-            WHERE id = ?
-            """,
-            (payment_id,),
-        ) as cursor:
-            row = await cursor.fetchone()
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
+                FROM payments
+                WHERE id = $1
+                """,
+                payment_id,
+            )
 
         if row is None:
             return None
         return self._map_row(row)
 
     async def get_by_client_id(self, client_id: int) -> list[Payment]:
-        async with self._connection.execute(
-            """
-            SELECT id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
-            FROM payments
-            WHERE client_id = ?
-            ORDER BY payment_date ASC, id ASC
-            """,
-            (client_id,),
-        ) as cursor:
-            rows = await cursor.fetchall()
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
+                FROM payments
+                WHERE client_id = $1
+                ORDER BY payment_date ASC, id ASC
+                """,
+                client_id,
+            )
 
         return [self._map_row(row) for row in rows]
 
     async def get_by_debt_id(self, debt_id: int) -> list[Payment]:
-        async with self._connection.execute(
-            """
-            SELECT id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
-            FROM payments
-            WHERE debt_id = ?
-            ORDER BY payment_date ASC, id ASC
-            """,
-            (debt_id,),
-        ) as cursor:
-            rows = await cursor.fetchall()
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
+                FROM payments
+                WHERE debt_id = $1
+                ORDER BY payment_date ASC, id ASC
+                """,
+                debt_id,
+            )
 
         return [self._map_row(row) for row in rows]
 
     @staticmethod
-    def _map_row(row: aiosqlite.Row) -> Payment:
-        created_at_raw = row["created_at"]
-        created_at = None
-        if created_at_raw:
-            try:
-                created_at = datetime.fromisoformat(str(created_at_raw))
-            except Exception:
-                created_at = None
-
+    def _map_row(row: asyncpg.Record) -> Payment:
         return Payment(
             id=row["id"],
             client_id=row["client_id"],
@@ -107,5 +96,5 @@ class SqlitePaymentRepository(PaymentRepository):
             currency=Currency(row["currency"]),
             payment_type=PaymentType(row["payment_type"]),
             payment_date=row["payment_date"],
-            created_at=created_at,
+            created_at=row["created_at"],
         )

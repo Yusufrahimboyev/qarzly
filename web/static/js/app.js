@@ -224,13 +224,12 @@ function renderClientsList() {
         </div>
     `).join('');
 
-    // Karta ustiga bosilganda — o'sha mijozga yangi qarz qo'shish formasi ochiladi
+    // Karta ustiga bosilganda — mijoz hisoboti (report modal) ochiladi
     container.querySelectorAll('.client-item-card').forEach(card => {
         card.addEventListener('click', (e) => {
             if (e.target.closest('.client-history-btn')) return;
             const clientId = card.getAttribute('data-client-id');
-            const item = state.summaries.find(s => String(s.id) === clientId);
-            if (item) startAddDebtForClient(item);
+            if (clientId) openClientReportModal(clientId);
         });
     });
 
