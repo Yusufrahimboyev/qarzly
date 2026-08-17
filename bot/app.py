@@ -97,6 +97,7 @@ async def run() -> None:
         client_service=client_service,
         debt_service=debt_service,
         settings=settings,
+        database=database,
         host="0.0.0.0",
         port=settings.port,
     )

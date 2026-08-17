@@ -1,74 +1,52 @@
-"""Eski (product_quantity va products_json siz) bazani migratsiya qilish testi."""
+"""PostgreSQL DDL sxemasi va DTO'lar uchun testlar."""
 from __future__ import annotations
 
-from pathlib import Path
-
-import aiosqlite
-import pytest
-
-from bot.infrastructure.database.connection import Database
-
-# product_quantity, currency VA products_json ustuni YO'Q eski sxema
-OLD_SCHEMA = """
-CREATE TABLE clients (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    full_name   TEXT NOT NULL,
-    phone       TEXT NOT NULL,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE debts (
-    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_id              INTEGER NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,
-    debt_date              TEXT NOT NULL,
-    product_name           TEXT NOT NULL,
-    product_price          INTEGER NOT NULL,
-    exchange_exists        INTEGER NOT NULL DEFAULT 0,
-    exchange_product_name  TEXT,
-    exchange_product_price INTEGER NOT NULL DEFAULT 0,
-    given_money            INTEGER NOT NULL DEFAULT 0,
-    original_debt          INTEGER NOT NULL,
-    remaining_debt         INTEGER NOT NULL,
-    status                 TEXT NOT NULL DEFAULT 'active',
-    created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-"""
+from bot.infrastructure.database.schema import SCHEMA
+from bot.infrastructure.web.routes import CreateDebtDTO, MakePaymentDTO
 
 
-@pytest.mark.asyncio
-async def test_old_database_gets_product_quantity_column(tmp_path: Path) -> None:
-    db_path = tmp_path / "bot.db"
+def test_schema_ddl_contains_all_required_tables() -> None:
+    """Sxemada barcha 4 ta asosiy jadval va indekslar mavjudligini tekshiradi."""
+    joined_schema = "\n".join(SCHEMA)
 
-    # Eski formatdagi baza yaratamiz vaunga ma'lumot kiritamiz
-    conn = await aiosqlite.connect(db_path)
-    await conn.executescript(OLD_SCHEMA)
-    await conn.execute(
-        "INSERT INTO debts (client_id, debt_date, product_name, product_price,"
-        " original_debt, remaining_debt, status)"
-        " VALUES (1, '16.08.2026', 'Shina', 2500000, 2500000, 2500000, 'active')"
-    )
-    await conn.commit()
-    await conn.close()
+    assert "CREATE TABLE IF NOT EXISTS users" in joined_schema
+    assert "CREATE TABLE IF NOT EXISTS clients" in joined_schema
+    assert "CREATE TABLE IF NOT EXISTS debts" in joined_schema
+    assert "CREATE TABLE IF NOT EXISTS payments" in joined_schema
 
-    # Database.connect() migratsiyani bajarishi kerak
-    database = Database(db_path)
-    await database.connect()
-    try:
-        select_sql = (
-            "SELECT product_name, product_quantity, product_price, currency,"
-            " products_json FROM debts"
-        )
-        async with database.connection.execute(select_sql) as cursor:
-            rows = await cursor.fetchall()
+    # BIGINT qo'llanilganligini tekshirish
+    assert "product_price          BIGINT" in joined_schema
+    assert "remaining_debt         BIGINT" in joined_schema
+    assert "amount       BIGINT" in joined_schema
 
-        assert len(rows) == 1
-        # Eski yozuvlar miqdori 1, valyutasi UZS deb belgilanadi, narxi o'zgarmaydi
-        assert rows[0][0] == "Shina"
-        assert rows[0][1] == 1
-        assert rows[0][2] == 2500000
-        assert rows[0][3] == "UZS"
-        # products_json bo'sh massiv bo'lishi kerak (eski yozuvda tovarlar yo'q edi)
-        assert rows[0][4] == "[]"
-    finally:
-        await database.disconnect()
+    # Indekslar
+    assert "idx_clients_full_name" in joined_schema
+    assert "idx_debts_client_id" in joined_schema
+    assert "idx_payments_client_id" in joined_schema
+
+
+def test_create_debt_dto_validation() -> None:
+    """CreateDebtDTO validatsiyasi."""
+    valid_data = {
+        "client_name": "Toshmat",
+        "client_phone": "+998901234567",
+        "products": [
+            {"name": "Shina", "quantity": 2, "price_per_unit": 500000, "currency": "UZS"}
+        ],
+    }
+    dto = CreateDebtDTO.model_validate(valid_data)
+    assert dto.client_name == "Toshmat"
+    assert len(dto.products or []) == 1
+
+
+def test_payment_dto_validation() -> None:
+    """MakePaymentDTO validatsiyasi."""
+    valid_data = {
+        "client_id": 5,
+        "payment_type": "partial",
+        "amount": 250000,
+        "currency": "UZS",
+    }
+    dto = MakePaymentDTO.model_validate(valid_data)
+    assert dto.client_id == 5
+    assert dto.amount == 250000

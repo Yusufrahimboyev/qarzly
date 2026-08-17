@@ -1,8 +1,6 @@
 """Infrastructure qatlami: ClientRepository PostgreSQL implementatsiyasi."""
 from __future__ import annotations
 
-from datetime import datetime
-
 import asyncpg
 
 from bot.domain.entities.client import Client
@@ -23,7 +21,8 @@ class PgClientRepository(ClientRepository):
                 VALUES ($1, $2)
                 RETURNING id
                 """,
-                client.full_name, client.phone,
+                client.full_name,
+                client.phone,
             )
             client_id = row["id"] if row else None
             if client_id is None:

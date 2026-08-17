@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from bot.domain.entities.currency import Currency
 
 
-def esc_html(text: str) -> str:
+def esc_html(text: object) -> str:
     """Foydalanuvchi kiritgan matnni Telegram HTML rejimi uchun xavfsiz qiladi.
 
     Ism yoki tovar nomida "<", ">", "&" bo'lsa, escape qilinmasa Telegram

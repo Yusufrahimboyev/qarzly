@@ -13,6 +13,7 @@ from aiohttp import web
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
+from bot.infrastructure.database.connection import Database
 from bot.infrastructure.web.routes import setup_routes
 from bot.infrastructure.web.telegram_auth import (
     create_auth_middleware,
@@ -30,12 +31,14 @@ class WebServer:
         client_service: ClientService,
         debt_service: DebtService,
         settings: Settings,
+        database: Database | None = None,
         host: str = "0.0.0.0",
         port: int = 8080,
     ) -> None:
         self._client_service = client_service
         self._debt_service = debt_service
         self._settings = settings
+        self._database = database
         self._host = host
         self._port = port
         self._runner: web.AppRunner | None = None
@@ -50,6 +53,7 @@ class WebServer:
         )
         app["client_service"] = self._client_service
         app["debt_service"] = self._debt_service
+        app["database"] = self._database
 
         setup_routes(app)
 

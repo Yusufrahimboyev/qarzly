@@ -5,21 +5,17 @@ import pytest
 
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
-from bot.infrastructure.database.repositories.client_repository import (
-    SqliteClientRepository,
-)
-from bot.infrastructure.database.repositories.debt_repository import (
-    SqliteDebtRepository,
-)
-from bot.infrastructure.database.repositories.payment_repository import (
-    SqlitePaymentRepository,
+from tests.conftest import (
+    FakeClientRepository,
+    FakeDebtRepository,
+    FakePaymentRepository,
 )
 
 
 @pytest.mark.asyncio
 async def test_client_get_or_create(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
 ) -> None:
     service = ClientService(client_repo, debt_repo)
 
@@ -42,8 +38,8 @@ async def test_client_get_or_create(
 
 @pytest.mark.asyncio
 async def test_get_or_create_empty_phone_does_not_link_strangers(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
 ) -> None:
     """Bo'sh telefonli ikki xil mijoz bir-biriga bog'lanmasligi kerak."""
     service = ClientService(client_repo, debt_repo)
@@ -63,9 +59,9 @@ async def test_get_or_create_empty_phone_does_not_link_strangers(
 
 @pytest.mark.asyncio
 async def test_alphabetical_summaries_and_debtors(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     client_service = ClientService(client_repo, debt_repo)
     debt_service = DebtService(client_repo, debt_repo, payment_repo)

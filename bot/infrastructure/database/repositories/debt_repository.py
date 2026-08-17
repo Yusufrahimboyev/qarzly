@@ -1,8 +1,6 @@
 """Infrastructure qatlami: DebtRepository PostgreSQL implementatsiyasi."""
 from __future__ import annotations
 
-from datetime import datetime
-
 import asyncpg
 
 from bot.domain.entities.currency import Currency
@@ -42,6 +40,16 @@ class PgDebtRepository(DebtRepository):
         self._pool = pool
 
     async def add(self, debt: Debt) -> Debt:
+        currency_val = (
+            debt.currency.value
+            if isinstance(debt.currency, Currency)
+            else str(debt.currency)
+        )
+        status_val = (
+            debt.status.value
+            if isinstance(debt.status, DebtStatus)
+            else str(debt.status)
+        )
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -69,7 +77,7 @@ class PgDebtRepository(DebtRepository):
                 debt.product_name,
                 debt.product_quantity,
                 debt.product_price,
-                debt.currency.value if isinstance(debt.currency, Currency) else str(debt.currency),
+                currency_val,
                 1 if debt.exchange_exists else 0,
                 debt.exchange_product_name,
                 debt.exchange_product_price,
@@ -77,7 +85,7 @@ class PgDebtRepository(DebtRepository):
                 debt.original_debt,
                 debt.remaining_debt,
                 serialize_products_json(list(debt.products)),
-                debt.status.value if isinstance(debt.status, DebtStatus) else str(debt.status),
+                status_val,
             )
             debt_id = row["id"] if row else None
             if debt_id is None:
@@ -149,6 +157,9 @@ class PgDebtRepository(DebtRepository):
         remaining_debt: int,
         status: DebtStatus,
     ) -> None:
+        status_val = (
+            status.value if isinstance(status, DebtStatus) else str(status)
+        )
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
@@ -158,7 +169,7 @@ class PgDebtRepository(DebtRepository):
                 WHERE id = $3
                 """,
                 remaining_debt,
-                status.value if isinstance(status, DebtStatus) else str(status),
+                status_val,
                 debt_id,
             )
 

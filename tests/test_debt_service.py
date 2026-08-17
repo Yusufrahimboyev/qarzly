@@ -7,22 +7,18 @@ from bot.application.services.debt_service import DebtService
 from bot.domain.entities.client import Client
 from bot.domain.entities.debt import DebtProduct, DebtStatus
 from bot.domain.entities.payment import PaymentType
-from bot.infrastructure.database.repositories.client_repository import (
-    SqliteClientRepository,
-)
-from bot.infrastructure.database.repositories.debt_repository import (
-    SqliteDebtRepository,
-)
-from bot.infrastructure.database.repositories.payment_repository import (
-    SqlitePaymentRepository,
+from tests.conftest import (
+    FakeClientRepository,
+    FakeDebtRepository,
+    FakePaymentRepository,
 )
 
 
 @pytest.mark.asyncio
 async def test_create_debt_oddiy(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     client = await client_repo.add(Client(full_name="Aliyev Anvar", phone="+998901234567"))
     assert client.id is not None
@@ -46,9 +42,9 @@ async def test_create_debt_oddiy(
 
 @pytest.mark.asyncio
 async def test_create_debt_with_quantity(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     """Miqdor: jami narx = bitta narx × miqdor."""
     client = await client_repo.add(Client(full_name="Aliyev Anvar", phone="+998901234567"))
@@ -78,9 +74,9 @@ async def test_create_debt_with_quantity(
 
 @pytest.mark.asyncio
 async def test_create_debt_with_exchange_and_given_money(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     client = await client_repo.add(Client(full_name="Aliyev Anvar", phone="+998901234567"))
     assert client.id is not None
@@ -116,9 +112,9 @@ async def test_create_debt_with_exchange_and_given_money(
 
 @pytest.mark.asyncio
 async def test_create_debt_validation_errors(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     client = await client_repo.add(Client(full_name="Aliyev Anvar", phone="+998901234567"))
     assert client.id is not None
@@ -159,9 +155,9 @@ async def test_create_debt_validation_errors(
 
 @pytest.mark.asyncio
 async def test_pay_full_debt(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     client = await client_repo.add(Client(full_name="Karimov Bekzod", phone="+998909876543"))
     assert client.id is not None
@@ -196,9 +192,9 @@ async def test_pay_full_debt(
 
 @pytest.mark.asyncio
 async def test_pay_partial_debt_fifo(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     client = await client_repo.add(Client(full_name="Rasulov Sardor", phone="+998901112233"))
     assert client.id is not None
@@ -245,9 +241,9 @@ async def test_pay_partial_debt_fifo(
 
 @pytest.mark.asyncio
 async def test_pay_partial_debt_overpayment_error(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     client = await client_repo.add(Client(full_name="Eshmat", phone="+998901234500"))
     assert client.id is not None
@@ -271,9 +267,9 @@ async def test_pay_partial_debt_overpayment_error(
 
 @pytest.mark.asyncio
 async def test_get_client_report(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     client = await client_repo.add(Client(full_name="Toshmat", phone="+998901234599"))
     assert client.id is not None
@@ -317,9 +313,9 @@ async def test_get_client_report(
 
 @pytest.mark.asyncio
 async def test_currency_usd_debt_and_per_currency_totals(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     """Dollar qarzi so'm qarzidan alohida saqlanadi va yopiladi."""
     from bot.domain.entities.currency import Currency
@@ -386,9 +382,9 @@ async def test_currency_usd_debt_and_per_currency_totals(
 
 @pytest.mark.asyncio
 async def test_create_debt_with_multiple_products(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     """Bir qarzda bir nechta tovar bo'lishi mumkin."""
     from bot.domain.entities.debt import DebtProduct
@@ -427,6 +423,7 @@ async def test_create_debt_with_multiple_products(
     assert debt.products[2].name == "Mator moyi"
 
     # Bazadan o'qib tekshiramiz
+    assert debt.id is not None
     from_db = await debt_repo.get_by_id(debt.id)
     assert from_db is not None
     assert len(from_db.products) == 3
@@ -443,9 +440,9 @@ async def test_create_debt_with_multiple_products(
 
 @pytest.mark.asyncio
 async def test_create_debt_single_product_via_products_param(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     """products parametri bilan bitta tovar yuborish ham ishlaydi."""
     from bot.domain.entities.debt import DebtProduct
@@ -471,9 +468,9 @@ async def test_create_debt_single_product_via_products_param(
 
 @pytest.mark.asyncio
 async def test_create_debts_mixed_currencies(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     """1-tovar dollar, 2-tovar so'm — ikkita alohida qarz yaratiladi.
 
@@ -539,9 +536,9 @@ async def test_create_debts_mixed_currencies(
 
 @pytest.mark.asyncio
 async def test_create_debts_exchange_bigger_than_group_error(
-    client_repo: SqliteClientRepository,
-    debt_repo: SqliteDebtRepository,
-    payment_repo: SqlitePaymentRepository,
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
 ) -> None:
     """Exchange o'z valyutasidagi tovarlar jami narxidan katta bo'lsa xatolik."""
     from bot.domain.entities.currency import Currency

@@ -10,6 +10,6 @@ def setup_logging(level: str = "INFO") -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     # Kutubxonalarning ortiqcha "shovqin"ini kamaytiramiz.
-    logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+    logging.getLogger("asyncpg").setLevel(logging.WARNING)
     logging.getLogger("apscheduler").setLevel(logging.WARNING)
     logging.getLogger("aiohttp.access").setLevel(logging.WARNING)

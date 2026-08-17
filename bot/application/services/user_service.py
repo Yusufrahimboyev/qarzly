@@ -25,7 +25,7 @@ class UserService:
         """Foydalanuvchini ro'yxatdan o'tkazadi (idempotent).
 
         Agar foydalanuvchi allaqachon mavjud bo'lsa — mavjudini qaytaradi,
-        aks holda yangisini yaratib saqlaydi.
+        aks holda yangisini yaratib saqlaydi va saqlangan obyektni qaytaradi.
         """
         existing = await self._users.get_by_telegram_id(telegram_id)
         if existing is not None:
@@ -37,7 +37,8 @@ class UserService:
             username=username,
         )
         await self._users.add(user)
-        return user
+        saved = await self._users.get_by_telegram_id(telegram_id)
+        return saved if saved is not None else user
 
     async def get(self, telegram_id: int) -> User | None:
         """Telegram ID bo'yicha foydalanuvchini qaytaradi yoki None."""

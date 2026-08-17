@@ -1,13 +1,15 @@
 """Infrastructure qatlami: PaymentRepository PostgreSQL implementatsiyasi."""
 from __future__ import annotations
 
-from datetime import datetime
-
 import asyncpg
 
 from bot.domain.entities.currency import Currency
 from bot.domain.entities.payment import Payment, PaymentType
 from bot.domain.repositories.payment_repository import PaymentRepository
+
+_SELECT_PAYMENT_COLS = """
+    id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
+"""
 
 
 class PgPaymentRepository(PaymentRepository):
@@ -17,6 +19,11 @@ class PgPaymentRepository(PaymentRepository):
         self._pool = pool
 
     async def add(self, payment: Payment) -> Payment:
+        currency_val = (
+            payment.currency.value
+            if isinstance(payment.currency, Currency)
+            else str(payment.currency)
+        )
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -34,7 +41,7 @@ class PgPaymentRepository(PaymentRepository):
                 payment.client_id,
                 payment.debt_id,
                 payment.amount,
-                payment.currency.value if isinstance(payment.currency, Currency) else str(payment.currency),
+                currency_val,
                 payment.payment_type.value,
                 payment.payment_date,
             )
@@ -46,8 +53,8 @@ class PgPaymentRepository(PaymentRepository):
     async def _get_by_id(self, payment_id: int) -> Payment | None:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
-                """
-                SELECT id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
+                f"""
+                SELECT {_SELECT_PAYMENT_COLS}
                 FROM payments
                 WHERE id = $1
                 """,
@@ -61,8 +68,8 @@ class PgPaymentRepository(PaymentRepository):
     async def get_by_client_id(self, client_id: int) -> list[Payment]:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                """
-                SELECT id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
+                f"""
+                SELECT {_SELECT_PAYMENT_COLS}
                 FROM payments
                 WHERE client_id = $1
                 ORDER BY payment_date ASC, id ASC
@@ -75,8 +82,8 @@ class PgPaymentRepository(PaymentRepository):
     async def get_by_debt_id(self, debt_id: int) -> list[Payment]:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                """
-                SELECT id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
+                f"""
+                SELECT {_SELECT_PAYMENT_COLS}
                 FROM payments
                 WHERE debt_id = $1
                 ORDER BY payment_date ASC, id ASC
