@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     # --- Telegram ---
     bot_token: SecretStr = Field(..., description="BotFather'dan olingan token")
-    admin_ids: list[int] = Field(
+    admin_ids: list[int] | str = Field(
         default_factory=list,
         description="Bot adminlarining Telegram ID lari (vergul bilan ajratilgan)",
     )
@@ -53,9 +53,18 @@ class Settings(BaseSettings):
     @classmethod
     def _parse_admin_ids(cls, value: object) -> list[int]:
         if isinstance(value, str):
-            if not value.strip():
+            val = value.strip()
+            if not val:
                 return []
-            return [int(item.strip()) for item in value.split(",") if item.strip()]
+            if val.startswith("[") and val.endswith("]"):
+                try:
+                    import json
+                    parsed = json.loads(val)
+                    if isinstance(parsed, list):
+                        return [int(item) for item in parsed]
+                except Exception:
+                    pass
+            return [int(item.strip()) for item in val.split(",") if item.strip()]
         if isinstance(value, (list, tuple, set)):
             return [int(item) for item in value]
         if isinstance(value, int):

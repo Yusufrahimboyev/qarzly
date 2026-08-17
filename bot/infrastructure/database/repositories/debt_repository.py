@@ -148,7 +148,11 @@ class PgDebtRepository(DebtRepository):
 
         totals: dict[int, dict[str, tuple[int, int]]] = {}
         for row in rows:
-            totals.setdefault(row[0], {})[row[1]] = (row[2], row[3])
+            client_id = int(row[0])
+            currency_code = str(row[1])
+            rem_amount = int(row[2])
+            count = int(row[3])
+            totals.setdefault(client_id, {})[currency_code] = (rem_amount, count)
         return totals
 
     async def update_remaining_debt(

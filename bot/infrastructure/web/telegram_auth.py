@@ -66,14 +66,19 @@ def validate_init_data(
         return None
 
 
-def create_auth_middleware(bot_token: str, admin_ids: list[int]):
+def create_auth_middleware(bot_token: str, admin_ids: list[int] | str | None = None):
     """/api/* route'lari uchun Telegram initData autentifikatsiya middleware'i.
 
-    - Imszosiz/eskirgan initData yoki Telegram ichidan ochilmagan sahifa → 401.
+    - Imzosiz/eskirgan initData yoki Telegram ichidan ochilmagan sahifa → 401.
     - ADMIN_IDS sozlangan bo'lsa, ro'yxatdagi foydalanuvchigina kiradi (403).
     - ADMIN_IDS bo'sh bo'lsa har qanday haqiqiy Telegram foydalanuvchisi kiradi
       (bot tomonidagi AdminMiddleware bilan bir xil qoida).
     """
+    allowed_ids: set[int] = set()
+    if isinstance(admin_ids, str):
+        allowed_ids = {int(x.strip()) for x in admin_ids.split(",") if x.strip().isdigit()}
+    elif admin_ids:
+        allowed_ids = {int(x) for x in admin_ids}
 
     @web.middleware
     async def telegram_auth_middleware(
@@ -96,7 +101,7 @@ def create_auth_middleware(bot_token: str, admin_ids: list[int]):
                 status=401,
             )
 
-        if admin_ids and user.get("id") not in admin_ids:
+        if allowed_ids and user.get("id") not in allowed_ids:
             logger.warning("API'ga admin bo'lmagan foydalanuvchi urindi: %s", user.get("id"))
             return web.json_response(
                 {"error": "Sizga bu ma'lumotlarga kirish huquqi berilmagan."},
