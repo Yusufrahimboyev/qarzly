@@ -11,11 +11,16 @@ services:
         value: 3.11.9
       - key: PORT
         value: 8080
-      - key: DATABASE_PATH
-        value: data/bot.db
+      - key: DATABASE_URL
+        sync: false
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_IDS
         sync: false
+      - key: RENDER_EXTERNAL_URL
+        fromService:
+          type: web
+          name: qarzly
+          property: host
       - key: LOG_LEVEL
         value: INFO
