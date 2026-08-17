@@ -322,6 +322,54 @@ async def test_api_create_debt_products_validation(
 
 
 @pytest.mark.asyncio
+async def test_api_rejects_invalid_date(
+    aiohttp_app: web.Application,
+) -> None:
+    """Noto'g'ri sana jimlik bilan 'bugun'ga aylanmasligi kerak — 400 qaytadi."""
+    from aiohttp.test_utils import TestClient, TestServer
+    server = TestServer(aiohttp_app)
+    client = TestClient(server)
+    await client.start_server()
+
+    try:
+        headers = auth_header()
+
+        # Noto'g'ri sana bilan qarz yaratish
+        payload = {
+            "client_name": "Sana Test",
+            "client_phone": "+998901234567",
+            "debt_date": "32.13.2026",
+            "products": [{"name": "Shina", "quantity": 1, "price_per_unit": 1000}],
+        }
+        res = await client.post("/api/debts", json=payload, headers=headers)
+        assert res.status == 400
+        data = await res.json()
+        assert "sana" in data["error"].lower() or "Sana" in data["error"]
+
+        # Noto'g'ri sana bilan to'lov
+        pay_payload = {
+            "client_id": 1,
+            "payment_type": "partial",
+            "amount": 500,
+            "payment_date": "not-a-date",
+        }
+        res2 = await client.post("/api/payments", json=pay_payload, headers=headers)
+        assert res2.status == 400
+
+        # Bo'sh sana yuborilsa — bugun ishlatiladi (400 emas)
+        payload_ok = {
+            "client_name": "Sana Test",
+            "client_phone": "+998901234567",
+            "debt_date": "",
+            "products": [{"name": "Shina", "quantity": 1, "price_per_unit": 1000}],
+        }
+        res3 = await client.post("/api/debts", json=payload_ok, headers=headers)
+        assert res3.status == 200
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_api_create_debt_rejects_too_long_name(
     aiohttp_app: web.Application,
 ) -> None:

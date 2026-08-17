@@ -64,6 +64,15 @@ function sumMaps(a, b) {
     return result;
 }
 
+// Sana matnini tekshiradi: DD.MM.YYYY va haqiqiy sana bo'lishi shart
+function isValidDateString(str) {
+    if (!/^\d{2}\.\d{2}\.\d{4}$/.test(str)) return false;
+    const [d, m, y] = str.split('.').map(Number);
+    if (m < 1 || m > 12) return false;
+    const dt = new Date(y, m - 1, d);
+    return dt.getDate() === d && dt.getMonth() === m - 1 && dt.getFullYear() === y;
+}
+
 function getTodayFormatted() {
     const now = new Date();
     const d = String(now.getDate()).padStart(2, '0');
@@ -708,6 +717,15 @@ function setupCreateForm() {
             }
             if (!clientPhone) {
                 showToast('Telefon raqamini kiriting');
+                return;
+            }
+            const phoneDigits = clientPhone.replace(/\D/g, '');
+            if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+                showToast('Telefon raqami noto\'g\'ri (masalan: +998901234567)');
+                return;
+            }
+            if (!isValidDateString(debtDate)) {
+                showToast('Sana noto\'g\'ri: DD.MM.YYYY ko\'rinishida kiriting');
                 return;
             }
             if (products.length === 0) {

@@ -9,22 +9,32 @@ orqali veb-interfeys ham taqdim etadi.
 
 - **📋 Qarzlar jadvali** — barcha mijozlar va qarzdorlar ro'yxati, sahifalash
   (pagination) bilan; har bir mijoz uchun batafsil qarz va to'lovlar hisoboti.
-- **➕ Yangi qarz yaratish** — bosqichma-bosqich (wizard) interfeys: sana, mijoz
-  ismi va telefoni, tovar nomi, **miqdori (nechta)** va bitta narxi (jami narx
-  avtomatik hisoblanadi), **valyuta (so'm yoki dollar)**, **ayirboshlash
-  (exchange)** tovari, **berilgan pul** (dastlabki to'lov) va avtomatik
-  hisob-kitob. So'm va dollar qarzlari alohida saqlanadi va hech qachon
-  qo'shib yuborilmaydi.
-- **💰 Qarz to'lovi** — mijoz qarzini **to'liq** yoki **qisman** yopish.
+- **➕ Yangi qarz yaratish** — bosqichma-bosqich (wizard) interfeys:
+  - sana, mijoz ismi va telefoni;
+  - **bir nechta tovar** — har bir tovar uchun nom, miqdor (nechta) va narx,
+    "➕ Yana tovar" bilan cheksiz qo'shish;
+  - **har bir tovar o'z valyutasida** (so'm yoki dollar) — aralash valyutadagi
+    xarid avtomatik alohida qarzlarga bo'linadi;
+  - **ayirboshlash (exchange)** tovari va **berilgan pul** (dastlabki to'lov) —
+    har biri o'z valyutasidagi qarzdan chegiriladi;
+  - avtomatik hisob-kitob va tasdiqlash preview'si.
+- **🔁 Mavjud mijozga qarz qo'shish** — jadvaldan (yoki hisobotdan) mijozni
+  tanlab, ism/telefonsiz to'g'ridan-to'g'ri yangi qarz kiritish; Mini App'da
+  mijozning eski qarzlari ham ko'rinadi (dublikat mijoz yaratilmaydi).
+- **💰 Qarz to'lovi** — mijoz qarzini **to'liq** yoki **qisman** yopish
+  (valyutalar bo'yicha alohida, FIFO tartibida).
 - **🚀 Mini App (Web UI)** — `RENDER_EXTERNAL_URL` sozlanganida Telegram
-  ichidan ochiladigan veb-ilova va uning REST API'lari.
+  ichidan ochiladigan veb-ilova: jadval (qidiruv/filtr), dinamik ko'p tovarli
+  yaratish formasi, to'lovlar, mijoz hisoboti modal oynasi.
 - **🔒 Telegram initData autentifikatsiyasi** — barcha `/api/*` so'rovlari
   Telegram'ning HMAC imzosi bilan tekshiriladi; begona shaxs URLni bilsa ham
   ma'lumotlarni olib bo'lmaydi.
 - **⏰ Keep-alive** — Render free tarifida uyquga ketishning oldini olish
   uchun xizmat o'z `/health` endpointini har 10 daqiqada ping qiladi.
-- **Hisobotlar** — mijoz bo'yicha to'liq qarz tarixi, exchange, to'lovlar va
-  umumiy hisob-kitob (jami qoldiq qarz, qarzdorlar soni va h.k.).
+- **🧾 Audit-trail loglari** — qarz yaratish va to'lovlar server logida
+  `AUDIT ...` yozuvlari sifatida qoladi.
+- **Hisobotlar** — mijoz bo'yicha to'liq qarz tarixi (tovarlar, exchange,
+  to'lovlar) va umumiy hisob-kitob valyutalar bo'yicha ajratilgan.
 - **Health check** — `/health` endpoint orqali xizmat holatini kuzatish.
 
 ## Arxitektura
@@ -108,9 +118,9 @@ Bot ishga tushgach, asosiy menyudan foydalanish mumkin:
 | `GET` | `/api/stats` | Umumiy statistika (jami qarz, qarzdorlar, mijozlar) |
 | `GET` | `/api/summaries` | Barcha mijozlar qarz ma'lumotlari (alifbo bo'yicha) |
 | `GET` | `/api/debtors` | Faqat faol qarzdorlar |
-| `GET` | `/api/clients/{id}/report` | Mijozning to'liq hisoboti |
-| `POST` | `/api/debts` | Yangi qarz yaratish |
-| `POST` | `/api/payments` | To'lov qilish (to'liq yoki qisman) |
+| `GET` | `/api/clients/{id}/report` | Mijozning to'liq hisoboti (tovarlar bilan) |
+| `POST` | `/api/debts` | Yangi qarz: `products` massivi (har birida `name`, `quantity`, `price_per_unit`, `currency`) yoki eski single-product parametrlari |
+| `POST` | `/api/payments` | To'lov qilish (to'liq yoki qisman, valyuta bilan) |
 
 Barcha `/api/*` endpoint'lari **Telegram initData autentifikatsiyasini talab
 qiladi**: Mini App har bir so'rovga `X-Telegram-Init-Data` header'ini qo'shadi,

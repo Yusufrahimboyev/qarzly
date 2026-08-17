@@ -181,7 +181,15 @@ async def api_create_debt(request: web.Request) -> web.Response:
     client_name = str(body.get("client_name", "")).strip()
     client_phone = normalize_phone(str(body.get("client_phone", "")))
     raw_date = str(body.get("debt_date", "")).strip()
-    debt_date = parse_date_input(raw_date) or today_str()
+    if raw_date:
+        debt_date = parse_date_input(raw_date)
+        if debt_date is None:
+            return web.json_response(
+                {"error": "Sana formati noto'g'ri (DD.MM.YYYY, masalan: 17.08.2026)"},
+                status=400,
+            )
+    else:
+        debt_date = today_str()
 
     if not client_name:
         return web.json_response({"error": "Mijoz ismi kiritilmadi"}, status=400)
@@ -383,7 +391,15 @@ async def api_make_payment(request: web.Request) -> web.Response:
         payment_type = str(body.get("payment_type", "full")).lower()
         currency_raw = str(body.get("currency", Currency.UZS.value)).upper()
         raw_date = str(body.get("payment_date", "")).strip()
-        payment_date = parse_date_input(raw_date) or today_str()
+        if raw_date:
+            payment_date = parse_date_input(raw_date)
+            if payment_date is None:
+                return web.json_response(
+                    {"error": "To'lov sanasi noto'g'ri (DD.MM.YYYY)"},
+                    status=400,
+                )
+        else:
+            payment_date = today_str()
     except (ValueError, TypeError):
         return web.json_response({"error": "Noto'g'ri parametrlar"}, status=400)
 

@@ -8,6 +8,7 @@ bo'lishi mumkin.
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from bot.application.common.formatters import format_money
 from bot.domain.entities.currency import Currency
@@ -22,6 +23,8 @@ from bot.domain.entities.report import ClientDebtSummary, ClientReport
 from bot.domain.repositories.client_repository import ClientRepository
 from bot.domain.repositories.debt_repository import DebtRepository
 from bot.domain.repositories.payment_repository import PaymentRepository
+
+logger = logging.getLogger(__name__)
 
 
 def _sum_by(items, attr: str) -> dict[str, int]:
@@ -161,6 +164,18 @@ class DebtService:
                     )
                 )
 
+            logger.info(
+                "AUDIT debt_created client_id=%s debt_id=%s currency=%s "
+                "total=%s exchange=%s given=%s original=%s date=%s",
+                client_id,
+                saved_debt.id,
+                currency.value,
+                total_product_price,
+                actual_exchange_price,
+                given_money,
+                original_debt,
+                debt_date,
+            )
             return saved_debt
 
     async def create_debts(
@@ -220,6 +235,12 @@ class DebtService:
             )
             created.append(debt)
 
+        logger.info(
+            "AUDIT debts_created_multi client_id=%s debts=%s date=%s",
+            client_id,
+            [(d.id, d.currency.value, d.remaining_debt) for d in created],
+            debt_date,
+        )
         return created
 
     async def pay_full_debt(
@@ -268,6 +289,13 @@ class DebtService:
             client = await self._clients.get_by_id(client_id)
             if client is None:
                 raise ValueError("Mijoz topilmadi.")
+
+            logger.info(
+                "AUDIT payment_full client_id=%s paid=%s date=%s",
+                client_id,
+                paid_by_currency,
+                payment_date,
+            )
 
             summary = ClientDebtSummary(client=client)
             return paid_by_currency, summary
@@ -372,6 +400,16 @@ class DebtService:
                     cur: v for cur, v in remaining_map.items() if v > 0
                 },
                 active_debts_count=len(new_active_debts),
+            )
+
+            logger.info(
+                "AUDIT payment_partial client_id=%s amount=%s currency=%s "
+                "new_remaining=%s date=%s",
+                client_id,
+                amount,
+                currency.value,
+                new_total_remaining,
+                payment_date,
             )
             return amount, new_total_remaining, summary
 
