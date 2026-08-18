@@ -1225,6 +1225,22 @@ const paidState = {
     selected: new Set(),
 };
 
+function togglePaidItem(id) {
+    if (paidState.selected.has(id)) {
+        paidState.selected.delete(id);
+    } else {
+        paidState.selected.add(id);
+    }
+    // Checkboxni yangilaymiz
+    const cb = document.querySelector(`.paid-cb[data-id="${id}"]`);
+    const card = document.querySelector(`#paid-debts-list .trash-item[data-id="${id}"]`);
+    if (cb) cb.checked = paidState.selected.has(id);
+    if (card) card.classList.toggle('selected', paidState.selected.has(id));
+    updatePaidToolbar();
+    updatePaidSelectAllCheckbox();
+    hapticImpact();
+}
+
 function renderPaidDebts() {
     const container = document.getElementById('paid-debts-list');
     if (!container) return;
@@ -1256,6 +1272,17 @@ function renderPaidDebts() {
         </div>
     `).join('');
 
+    // Butun kartani bosib ham tanlash mumkin
+    container.querySelectorAll('.trash-item').forEach(card => {
+        card.addEventListener('click', (e) => {
+            // Agar to'g'ridan-to'g'ri checkboxga bosilsa, ikki marta ishlamasligi uchun
+            if (e.target.classList.contains('paid-cb')) return;
+            const id = Number(card.getAttribute('data-id'));
+            togglePaidItem(id);
+        });
+    });
+
+    // Checkbox o'zgarganda ham ishlaydi
     container.querySelectorAll('.paid-cb').forEach(cb => {
         cb.addEventListener('change', () => {
             const id = Number(cb.getAttribute('data-id'));
@@ -1299,6 +1326,7 @@ async function fetchAndRenderPaidDebts() {
         paidState.items = await res.json();
         paidState.selected.clear();
         renderPaidDebts();
+        updatePaidToolbar();
         updatePaidSelectAllCheckbox();
     } catch (err) {
         container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${err.message}</p></div>`;
@@ -1326,11 +1354,9 @@ function setupPaidTab() {
             const ids = [...paidState.selected];
             if (ids.length === 0) return;
 
-            const confirmed = window.confirm(`${ids.length} ta yopilgan qarzni korzinaga yuborasizmi?`);
-            if (!confirmed) return;
-
+            // window.confirm Telegram WebApp'da ishlamaydi — to'g'ridan-to'g'ri yuboramiz
             moveBtn.disabled = true;
-            moveBtn.textContent = 'Ko\'chirilmoqda...';
+            moveBtn.textContent = 'Yuborilmoqda...';
 
             try {
                 const res = await apiFetch('/api/trash/move', {
@@ -1341,10 +1367,9 @@ function setupPaidTab() {
                 const json = await res.json();
                 if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
                 hapticSuccess();
-                showToast(`✅ ${json.moved} ta korzinaga yuborildi`);
+                showToast(`🗑 ${json.moved} ta korzinaga yuborildi`);
                 paidState.selected.clear();
                 await fetchAndRenderPaidDebts();
-                // Korzina ham yangilanadi agar ochiq bo'lsa
                 await fetchAndRenderTrash();
             } catch (err) {
                 hapticError();
@@ -1366,10 +1391,28 @@ const trashState = {
     selected: new Set(),
 };
 
+function toggleTrashItem(id) {
+    if (trashState.selected.has(id)) {
+        trashState.selected.delete(id);
+    } else {
+        trashState.selected.add(id);
+    }
+    const cb = document.querySelector(`.trash-cb[data-id="${id}"]`);
+    const card = document.querySelector(`#trash-list .trash-item[data-id="${id}"]`);
+    if (cb) cb.checked = trashState.selected.has(id);
+    if (card) card.classList.toggle('selected', trashState.selected.has(id));
+    updateTrashToolbar();
+    updateTrashSelectAllCheckbox();
+    hapticImpact();
+}
+
 function renderTrash() {
     const container = document.getElementById('trash-list');
     const purgeBar = document.getElementById('trash-purge-bar');
     if (!container) return;
+
+    // Inline confirm panelini yashiramiz (har safar re-render qilganda)
+    hidePurgeConfirm();
 
     if (trashState.items.length === 0) {
         container.innerHTML = `
@@ -1400,6 +1443,15 @@ function renderTrash() {
             <div class="trash-item-price" style="color: var(--text-muted);">🗑</div>
         </div>
     `).join('');
+
+    // Butun kartani bosib ham tanlash mumkin
+    container.querySelectorAll('.trash-item').forEach(card => {
+        card.addEventListener('click', (e) => {
+            if (e.target.classList.contains('trash-cb')) return;
+            const id = Number(card.getAttribute('data-id'));
+            toggleTrashItem(id);
+        });
+    });
 
     container.querySelectorAll('.trash-cb').forEach(cb => {
         cb.addEventListener('change', () => {
@@ -1444,9 +1496,56 @@ async function fetchAndRenderTrash() {
         trashState.items = await res.json();
         trashState.selected.clear();
         renderTrash();
+        updateTrashToolbar();
         updateTrashSelectAllCheckbox();
     } catch (err) {
         container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${err.message}</p></div>`;
+    }
+}
+
+// Korzinani tozalash uchun inline confirm paneli
+function showPurgeConfirm() {
+    const bar = document.getElementById('trash-purge-bar');
+    if (!bar) return;
+    bar.innerHTML = `
+        <span class="purge-bar-text">⚠️ Ishonchingiz komilmi? Bu amalni bekor qilib bo'lmaydi!</span>
+        <div style="display:flex;gap:8px;">
+            <button id="btn-purge-cancel" class="btn btn-secondary btn-sm">Bekor</button>
+            <button id="btn-purge-confirm" class="btn btn-danger btn-sm">Ha, tozala</button>
+        </div>
+    `;
+    document.getElementById('btn-purge-cancel')?.addEventListener('click', hidePurgeConfirm);
+    document.getElementById('btn-purge-confirm')?.addEventListener('click', executePurge);
+}
+
+function hidePurgeConfirm() {
+    const bar = document.getElementById('trash-purge-bar');
+    if (!bar) return;
+    bar.innerHTML = `
+        <span class="purge-bar-text">⚠️ Tozalangandan so'ng qayta tiklab bo'lmaydi</span>
+        <button id="btn-purge-trash" class="btn btn-danger btn-sm">🗑 Korzinani Tozalash</button>
+    `;
+    document.getElementById('btn-purge-trash')?.addEventListener('click', showPurgeConfirm);
+}
+
+async function executePurge() {
+    const bar = document.getElementById('trash-purge-bar');
+    if (bar) bar.innerHTML = '<span class="purge-bar-text">Tozalanmoqda...</span>';
+    try {
+        const res = await apiFetch('/api/trash/purge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        const json = await res.json();
+        if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
+        hapticSuccess();
+        showToast(`🗑 ${json.deleted} ta yozuv butunlay o'chirildi`);
+        trashState.selected.clear();
+        await fetchAndRenderTrash();
+    } catch (err) {
+        hapticError();
+        showToast(`❌ ${err.message}`);
+        hidePurgeConfirm();
     }
 }
 
@@ -1496,35 +1595,8 @@ function setupTrashTab() {
         });
     }
 
-    const purgeBtn = document.getElementById('btn-purge-trash');
-    if (purgeBtn) {
-        purgeBtn.addEventListener('click', async () => {
-            const confirmed = window.confirm(
-                '⚠️ Korzinani BUTUNLAY tozalaysizmi?\n\nBu amalni qaytarib bo\'lmaydi.\nMa\'lumotlar statistika uchun Supabase\'da saqlanib qoladi.'
-            );
-            if (!confirmed) return;
-
-            purgeBtn.disabled = true;
-            purgeBtn.textContent = 'Tozalanmoqda...';
-            try {
-                const res = await apiFetch('/api/trash/purge', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                });
-                const json = await res.json();
-                if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
-                hapticSuccess();
-                showToast(`🗑 ${json.deleted} ta yozuv butunlay o'chirildi`);
-                trashState.selected.clear();
-                await fetchAndRenderTrash();
-            } catch (err) {
-                hapticError();
-                showToast(`❌ ${err.message}`);
-            } finally {
-                purgeBtn.disabled = false;
-                purgeBtn.textContent = '🗑 Korzinani Tozalash';
-            }
-        });
-    }
+    // Purge tugmasi — inline confirm orqali
+    document.getElementById('btn-purge-trash')?.addEventListener('click', showPurgeConfirm);
 }
+
 
