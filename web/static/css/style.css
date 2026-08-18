@@ -1240,109 +1240,150 @@ input:checked + .slider:before {
 }
 
 /* ===================================================
-   YOPILGANLAR & KORZINA TABS
+   YOPILGANLAR & KORZINA TABS (SELECTION MODE & UI)
    =================================================== */
 
-.trash-toolbar {
+.tab-sub-toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 16px;
+    padding: 12px 16px;
     background: var(--secondary-bg);
     border-bottom: 1px solid var(--card-border);
     position: sticky;
     top: 0;
     z-index: 10;
+    transition: all 0.25s ease;
 }
 
-.trash-toolbar-left {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.select-all-label {
+.sub-toolbar-info {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-muted);
-    cursor: pointer;
-    user-select: none;
 }
 
-.select-all-label input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--primary-color);
-    cursor: pointer;
+.sub-toolbar-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-color);
 }
 
-.selected-count {
-    font-size: 12px;
+.sub-toolbar-badge {
+    font-size: 11px;
     font-weight: 700;
     color: var(--primary-color);
     background: rgba(59, 130, 246, 0.12);
-    padding: 2px 10px;
-    border-radius: 20px;
+    padding: 2px 8px;
+    border-radius: 12px;
 }
 
-.btn-sm {
-    padding: 7px 14px;
+.btn-outline-sm {
+    background: transparent;
+    border: 1px solid var(--card-border);
+    color: var(--text-color);
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
+    padding: 6px 12px;
     border-radius: var(--radius-sm);
-    border: none;
     cursor: pointer;
     transition: all 0.2s;
 }
 
-.btn-sm:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
+.btn-outline-sm:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--primary-color);
 }
 
-.btn-danger {
-    background: var(--accent-red);
-    color: #fff;
+/* Selection Mode Active Header Bar */
+.selection-bar {
+    background: #1e3a8a !important;
+    border-bottom-color: #2563eb !important;
 }
 
-.btn-danger:hover:not(:disabled) {
-    background: #dc2626;
-    transform: translateY(-1px);
+.btn-cancel-select {
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.2s;
 }
 
+.btn-cancel-select:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.selection-count-label {
+    font-size: 13px;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: 0.2px;
+}
+
+.btn-select-all-toggle {
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-select-all-toggle:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+/* List Items */
 .trash-list {
-    padding: 12px 16px;
+    padding: 12px 16px 100px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
 }
 
 .trash-item {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px;
     background: var(--card-bg);
     border: 1px solid var(--card-border);
     border-radius: var(--radius-md);
     padding: 12px 14px;
-    transition: border-color 0.2s, background 0.2s;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    position: relative;
+}
+
+.trash-item:active {
+    transform: scale(0.985);
 }
 
 .trash-item.selected {
     border-color: var(--primary-color);
-    background: rgba(59, 130, 246, 0.06);
+    background: rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 1px var(--primary-color);
 }
 
+/* Checkbox with smooth expand in selection mode */
 .trash-item-checkbox {
-    margin-top: 2px;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     accent-color: var(--primary-color);
     cursor: pointer;
     flex-shrink: 0;
+    transition: transform 0.2s;
+}
+
+.trash-item.selected .trash-item-checkbox {
+    transform: scale(1.15);
 }
 
 .trash-item-body {
@@ -1363,7 +1404,7 @@ input:checked + .slider:before {
     font-size: 12px;
     font-weight: 600;
     color: var(--primary-color);
-    margin-top: 1px;
+    margin-top: 2px;
 }
 
 .trash-item-meta {
@@ -1372,31 +1413,72 @@ input:checked + .slider:before {
     margin-top: 4px;
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
 }
 
 .trash-item-price {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--accent-green);
     flex-shrink: 0;
     align-self: center;
 }
 
-/* Purge bottom bar */
+/* Floating Bottom Action Bar */
+.floating-action-bar {
+    position: fixed;
+    bottom: 74px;
+    left: 0;
+    right: 0;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 10px 16px;
+    background: rgba(15, 23, 42, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--card-border);
+    z-index: 90;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+    animation: slideUpFloat 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUpFloat {
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.btn-action-lg {
+    padding: 13px 18px;
+    font-size: 14px;
+    font-weight: 800;
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    transition: all 0.2s;
+}
+
+.btn-action-lg:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* Purge bar at bottom of Korzina tab */
 .purge-bar {
-    position: sticky;
-    bottom: 68px;
-    margin: 8px 16px 0;
+    margin: 12px 16px 24px;
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);
     border-radius: var(--radius-md);
-    padding: 10px 14px;
+    padding: 12px 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    z-index: 5;
+    gap: 12px;
 }
 
 .purge-bar-text {
@@ -1405,4 +1487,5 @@ input:checked + .slider:before {
     font-weight: 600;
     line-height: 1.4;
 }
+
 

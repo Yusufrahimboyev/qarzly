@@ -342,46 +342,86 @@
 
             <!-- TAB: YOPILGANLAR (CLOSED DEBTS) -->
             <section id="tab-paid" class="tab-pane">
-                <div class="trash-toolbar">
-                    <div class="trash-toolbar-left">
-                        <label class="select-all-label">
-                            <input type="checkbox" id="paid-select-all">
-                            <span>Barchasini tanlash</span>
-                        </label>
-                        <span id="paid-selected-count" class="selected-count" style="display:none;">0 ta tanlandi</span>
+                <!-- Normal Mode Toolbar -->
+                <div id="paid-normal-bar" class="tab-sub-toolbar">
+                    <div class="sub-toolbar-info">
+                        <span class="sub-toolbar-title">🟢 Yopilgan Qarzlar</span>
+                        <span id="paid-total-badge" class="sub-toolbar-badge">0 ta</span>
                     </div>
-                    <button id="btn-move-to-trash" class="btn btn-danger btn-sm" disabled>
-                        🗑 Korzinaga
+                    <button id="btn-paid-enter-select" class="btn btn-outline-sm">
+                        🔘 Tanlash
                     </button>
                 </div>
+
+                <!-- Selection Mode Toolbar (Active when selecting) -->
+                <div id="paid-select-bar" class="tab-sub-toolbar selection-bar" style="display:none;">
+                    <button id="btn-paid-cancel-select" class="btn-cancel-select">
+                        ✕ Bekor
+                    </button>
+                    <span id="paid-selected-count-label" class="selection-count-label">0 ta tanlandi</span>
+                    <button id="btn-paid-select-all-toggle" class="btn-select-all-toggle">
+                        ☑️ Barchasi
+                    </button>
+                </div>
+
+                <!-- List container -->
                 <div id="paid-debts-list" class="trash-list">
                     <div class="empty-state">
                         <div class="empty-state-icon">🟢</div>
                         <p>Yopilgan qarzlar yo'q</p>
                     </div>
                 </div>
+
+                <!-- Floating Bottom Action Bar in Selection Mode -->
+                <div id="paid-floating-action-bar" class="floating-action-bar" style="display:none;">
+                    <button id="btn-move-to-trash" class="btn btn-danger btn-block btn-action-lg" disabled>
+                        🗑 Tanlanganlarni Korzinaga Yuborish
+                    </button>
+                </div>
             </section>
 
             <!-- TAB: KORZINA (TRASH) -->
             <section id="tab-trash" class="tab-pane">
-                <div class="trash-toolbar">
-                    <div class="trash-toolbar-left">
-                        <label class="select-all-label">
-                            <input type="checkbox" id="trash-select-all">
-                            <span>Barchasini tanlash</span>
-                        </label>
-                        <span id="trash-selected-count" class="selected-count" style="display:none;">0 ta tanlandi</span>
+                <!-- Normal Mode Toolbar -->
+                <div id="trash-normal-bar" class="tab-sub-toolbar">
+                    <div class="sub-toolbar-info">
+                        <span class="sub-toolbar-title">🗑 Korzina</span>
+                        <span id="trash-total-badge" class="sub-toolbar-badge">0 ta</span>
                     </div>
-                    <button id="btn-restore-from-trash" class="btn btn-secondary btn-sm" disabled>
-                        ↩️ Qaytarish
+                    <div style="display:flex;gap:8px;">
+                        <button id="btn-trash-enter-select" class="btn btn-outline-sm">
+                            🔘 Tanlash
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Selection Mode Toolbar -->
+                <div id="trash-select-bar" class="tab-sub-toolbar selection-bar" style="display:none;">
+                    <button id="btn-trash-cancel-select" class="btn-cancel-select">
+                        ✕ Bekor
+                    </button>
+                    <span id="trash-selected-count-label" class="selection-count-label">0 ta tanlandi</span>
+                    <button id="btn-trash-select-all-toggle" class="btn-select-all-toggle">
+                        ☑️ Barchasi
                     </button>
                 </div>
+
+                <!-- List container -->
                 <div id="trash-list" class="trash-list">
                     <div class="empty-state">
                         <div class="empty-state-icon">🗑</div>
                         <p>Korzina bo'sh</p>
                     </div>
                 </div>
+
+                <!-- Floating Bottom Action Bar for Restore -->
+                <div id="trash-floating-action-bar" class="floating-action-bar" style="display:none;">
+                    <button id="btn-restore-from-trash" class="btn btn-primary btn-block btn-action-lg" disabled>
+                        ↩️ Tanlanganlarni Yopilganga Qaytarish
+                    </button>
+                </div>
+
+                <!-- Purge section at bottom of Korzina -->
                 <div id="trash-purge-bar" class="purge-bar" style="display:none;">
                     <span class="purge-bar-text">⚠️ Tozalangandan so'ng qayta tiklab bo'lmaydi</span>
                     <button id="btn-purge-trash" class="btn btn-danger btn-sm">

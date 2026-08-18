@@ -1217,13 +1217,113 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ==========================================
+// UTILITY: LONG-PRESS & TAP GESTURE HANDLER
+// ==========================================
+
+function attachCardGesture(card, onLongPress, onClick) {
+    let timer = null;
+    let isLong = false;
+    let startX = 0;
+    let startY = 0;
+
+    const startTouch = (e) => {
+        if (e.target.closest('input[type="checkbox"], button, a')) return;
+        isLong = false;
+        if (e.touches && e.touches.length > 0) {
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+        }
+        timer = setTimeout(() => {
+            isLong = true;
+            hapticImpact();
+            onLongPress(e);
+        }, 400);
+    };
+
+    const cancelTouch = () => {
+        if (timer) {
+            clearTimeout(timer);
+            timer = null;
+        }
+    };
+
+    const moveTouch = (e) => {
+        if (e.touches && e.touches.length > 0) {
+            const dx = Math.abs(e.touches[0].clientX - startX);
+            const dy = Math.abs(e.touches[0].clientY - startY);
+            if (dx > 10 || dy > 10) {
+                cancelTouch();
+            }
+        }
+    };
+
+    card.addEventListener('touchstart', startTouch, { passive: true });
+    card.addEventListener('touchend', (e) => {
+        cancelTouch();
+        if (!isLong && onClick) {
+            onClick(e);
+        }
+    });
+    card.addEventListener('touchmove', moveTouch, { passive: true });
+    card.addEventListener('touchcancel', cancelTouch);
+
+    // Mouse support for desktop testing
+    card.addEventListener('mousedown', (e) => {
+        if (e.button !== 0 || e.target.closest('input[type="checkbox"], button, a')) return;
+        isLong = false;
+        timer = setTimeout(() => {
+            isLong = true;
+            onLongPress(e);
+        }, 400);
+    });
+    card.addEventListener('mouseup', (e) => {
+        cancelTouch();
+        if (!isLong && onClick) {
+            onClick(e);
+        }
+    });
+    card.addEventListener('mouseleave', cancelTouch);
+}
+
+// ==========================================
 // TAB: YOPILGANLAR (CLOSED DEBTS)
 // ==========================================
 
 const paidState = {
     items: [],
     selected: new Set(),
+    isSelecting: false,
 };
+
+function enterPaidSelection(initialId = null) {
+    paidState.isSelecting = true;
+    if (initialId) {
+        paidState.selected.add(initialId);
+    }
+    const normalBar = document.getElementById('paid-normal-bar');
+    const selectBar = document.getElementById('paid-select-bar');
+    const floatingBar = document.getElementById('paid-floating-action-bar');
+    if (normalBar) normalBar.style.display = 'none';
+    if (selectBar) selectBar.style.display = 'flex';
+    if (floatingBar) floatingBar.style.display = 'block';
+
+    renderPaidDebts();
+    updatePaidToolbar();
+}
+
+function exitPaidSelection() {
+    paidState.isSelecting = false;
+    paidState.selected.clear();
+
+    const normalBar = document.getElementById('paid-normal-bar');
+    const selectBar = document.getElementById('paid-select-bar');
+    const floatingBar = document.getElementById('paid-floating-action-bar');
+    if (normalBar) normalBar.style.display = 'flex';
+    if (selectBar) selectBar.style.display = 'none';
+    if (floatingBar) floatingBar.style.display = 'none';
+
+    renderPaidDebts();
+}
 
 function togglePaidItem(id) {
     if (paidState.selected.has(id)) {
@@ -1231,19 +1331,21 @@ function togglePaidItem(id) {
     } else {
         paidState.selected.add(id);
     }
-    // Checkboxni yangilaymiz
-    const cb = document.querySelector(`.paid-cb[data-id="${id}"]`);
     const card = document.querySelector(`#paid-debts-list .trash-item[data-id="${id}"]`);
-    if (cb) cb.checked = paidState.selected.has(id);
-    if (card) card.classList.toggle('selected', paidState.selected.has(id));
+    const cb = document.querySelector(`.paid-cb[data-id="${id}"]`);
+    const isSelected = paidState.selected.has(id);
+    if (card) card.classList.toggle('selected', isSelected);
+    if (cb) cb.checked = isSelected;
     updatePaidToolbar();
-    updatePaidSelectAllCheckbox();
     hapticImpact();
 }
 
 function renderPaidDebts() {
     const container = document.getElementById('paid-debts-list');
+    const badge = document.getElementById('paid-total-badge');
     if (!container) return;
+
+    if (badge) badge.textContent = `${paidState.items.length} ta`;
 
     if (paidState.items.length === 0) {
         container.innerHTML = `
@@ -1252,68 +1354,84 @@ function renderPaidDebts() {
                 <p>Yopilgan qarzlar yo'q</p>
             </div>
         `;
-        updatePaidToolbar();
+        exitPaidSelection();
         return;
     }
 
-    container.innerHTML = paidState.items.map(item => `
-        <div class="trash-item ${paidState.selected.has(item.id) ? 'selected' : ''}" data-id="${item.id}">
-            <input type="checkbox" class="trash-item-checkbox paid-cb"
-                   data-id="${item.id}" ${paidState.selected.has(item.id) ? 'checked' : ''}>
-            <div class="trash-item-body">
-                <div class="trash-item-name">${escapeHtml(item.product_name)}${item.product_quantity > 1 ? ` — ${item.product_quantity} ta` : ''}</div>
-                <div class="trash-item-client">👤 ${escapeHtml(item.client_name)}</div>
-                <div class="trash-item-meta">
-                    <span>📅 ${item.debt_date}</span>
-                    <span>💰 ${formatMoney(item.original_debt, item.currency)}</span>
+    container.innerHTML = paidState.items.map(item => {
+        const isSelected = paidState.selected.has(item.id);
+        const checkboxStyle = paidState.isSelecting ? 'display:inline-block;' : 'display:none;';
+        return `
+            <div class="trash-item ${isSelected ? 'selected' : ''}" data-id="${item.id}">
+                <input type="checkbox" class="trash-item-checkbox paid-cb"
+                       data-id="${item.id}" ${isSelected ? 'checked' : ''} style="${checkboxStyle}">
+                <div class="trash-item-body">
+                    <div class="trash-item-name">${escapeHtml(item.product_name)}${item.product_quantity > 1 ? ` — ${item.product_quantity} ta` : ''}</div>
+                    <div class="trash-item-client">👤 ${escapeHtml(item.client_name)}</div>
+                    <div class="trash-item-meta">
+                        <span>📅 ${item.debt_date}</span>
+                        <span>💰 ${formatMoney(item.original_debt, item.currency)}</span>
+                    </div>
                 </div>
+                <div class="trash-item-price">🟢 Yopilgan</div>
             </div>
-            <div class="trash-item-price">🟢 Yopilgan</div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 
-    // Butun kartani bosib ham tanlash mumkin
+    // Har bir kartochkaga gesture (bosib turish yoki bosish) ulaymiz
     container.querySelectorAll('.trash-item').forEach(card => {
-        card.addEventListener('click', (e) => {
-            // Agar to'g'ridan-to'g'ri checkboxga bosilsa, ikki marta ishlamasligi uchun
-            if (e.target.classList.contains('paid-cb')) return;
-            const id = Number(card.getAttribute('data-id'));
-            togglePaidItem(id);
-        });
+        const id = Number(card.getAttribute('data-id'));
+
+        attachCardGesture(
+            card,
+            // Long press (bosib turganda)
+            () => {
+                if (!paidState.isSelecting) {
+                    enterPaidSelection(id);
+                } else {
+                    togglePaidItem(id);
+                }
+            },
+            // Regular Tap (bosganda)
+            () => {
+                if (paidState.isSelecting) {
+                    togglePaidItem(id);
+                } else {
+                    // Agar tanlash rejimida bo'lmasa, bosganda ham tanlash rejimiga kirishi mumkin
+                    enterPaidSelection(id);
+                }
+            }
+        );
     });
 
-    // Checkbox o'zgarganda ham ishlaydi
+    // Checkbox o'ziga to'g'ridan-to'g'ri bosilganda
     container.querySelectorAll('.paid-cb').forEach(cb => {
         cb.addEventListener('change', () => {
             const id = Number(cb.getAttribute('data-id'));
-            if (cb.checked) paidState.selected.add(id);
-            else paidState.selected.delete(id);
-            const card = cb.closest('.trash-item');
-            if (card) card.classList.toggle('selected', cb.checked);
-            updatePaidToolbar();
-            updatePaidSelectAllCheckbox();
-            hapticImpact();
+            togglePaidItem(id);
         });
     });
 }
 
 function updatePaidToolbar() {
-    const btn = document.getElementById('btn-move-to-trash');
-    const countEl = document.getElementById('paid-selected-count');
+    const countLabel = document.getElementById('paid-selected-count-label');
+    const moveBtn = document.getElementById('btn-move-to-trash');
+    const allBtn = document.getElementById('btn-paid-select-all-toggle');
     const cnt = paidState.selected.size;
-    if (btn) btn.disabled = cnt === 0;
-    if (countEl) {
-        countEl.style.display = cnt > 0 ? 'inline-block' : 'none';
-        countEl.textContent = `${cnt} ta tanlandi`;
-    }
-}
 
-function updatePaidSelectAllCheckbox() {
-    const allCb = document.getElementById('paid-select-all');
-    if (!allCb) return;
-    if (paidState.items.length === 0) { allCb.checked = false; return; }
-    allCb.checked = paidState.selected.size === paidState.items.length;
-    allCb.indeterminate = paidState.selected.size > 0 && paidState.selected.size < paidState.items.length;
+    if (countLabel) {
+        countLabel.textContent = `${cnt} ta tanlandi`;
+    }
+    if (moveBtn) {
+        moveBtn.disabled = cnt === 0;
+        moveBtn.textContent = cnt > 0
+            ? `🗑 Tanlanganlarni Korzinaga Yuborish (${cnt})`
+            : `🗑 Tanlanganlarni Korzinaga Yuborish`;
+    }
+    if (allBtn) {
+        const allSelected = paidState.items.length > 0 && cnt === paidState.items.length;
+        allBtn.textContent = allSelected ? '◻️ Bekor' : '☑️ Barchasi';
+    }
 }
 
 async function fetchAndRenderPaidDebts() {
@@ -1325,36 +1443,45 @@ async function fetchAndRenderPaidDebts() {
         if (!res.ok) throw new Error('Yuklab bo\'lmadi');
         paidState.items = await res.json();
         paidState.selected.clear();
+        paidState.isSelecting = false;
         renderPaidDebts();
-        updatePaidToolbar();
-        updatePaidSelectAllCheckbox();
     } catch (err) {
         container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${err.message}</p></div>`;
     }
 }
 
 function setupPaidTab() {
-    const selectAll = document.getElementById('paid-select-all');
-    if (selectAll) {
-        selectAll.addEventListener('change', () => {
-            if (selectAll.checked) {
-                paidState.items.forEach(item => paidState.selected.add(item.id));
-            } else {
-                paidState.selected.clear();
-            }
-            renderPaidDebts();
-            updatePaidToolbar();
-            hapticImpact();
-        });
-    }
+    // "🔘 Tanlash" tugmasi
+    document.getElementById('btn-paid-enter-select')?.addEventListener('click', () => {
+        enterPaidSelection();
+        hapticImpact();
+    });
 
+    // "✕ Bekor" tugmasi
+    document.getElementById('btn-paid-cancel-select')?.addEventListener('click', () => {
+        exitPaidSelection();
+        hapticImpact();
+    });
+
+    // "☑️ Barchasi" tugmasi
+    document.getElementById('btn-paid-select-all-toggle')?.addEventListener('click', () => {
+        if (paidState.selected.size === paidState.items.length) {
+            paidState.selected.clear();
+        } else {
+            paidState.items.forEach(i => paidState.selected.add(i.id));
+        }
+        renderPaidDebts();
+        updatePaidToolbar();
+        hapticImpact();
+    });
+
+    // "🗑 Tanlanganlarni Korzinaga Yuborish" tugmasi
     const moveBtn = document.getElementById('btn-move-to-trash');
     if (moveBtn) {
         moveBtn.addEventListener('click', async () => {
             const ids = [...paidState.selected];
             if (ids.length === 0) return;
 
-            // window.confirm Telegram WebApp'da ishlamaydi — to'g'ridan-to'g'ri yuboramiz
             moveBtn.disabled = true;
             moveBtn.textContent = 'Yuborilmoqda...';
 
@@ -1367,16 +1494,15 @@ function setupPaidTab() {
                 const json = await res.json();
                 if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
                 hapticSuccess();
-                showToast(`🗑 ${json.moved} ta korzinaga yuborildi`);
-                paidState.selected.clear();
+                showToast(`🗑 ${json.moved} ta qarz korzinaga yuborildi`);
+                exitPaidSelection();
                 await fetchAndRenderPaidDebts();
                 await fetchAndRenderTrash();
             } catch (err) {
                 hapticError();
                 showToast(`❌ ${err.message}`);
-            } finally {
                 moveBtn.disabled = false;
-                moveBtn.textContent = '🗑 Korzinaga';
+                updatePaidToolbar();
             }
         });
     }
@@ -1389,7 +1515,38 @@ function setupPaidTab() {
 const trashState = {
     items: [],
     selected: new Set(),
+    isSelecting: false,
 };
+
+function enterTrashSelection(initialId = null) {
+    trashState.isSelecting = true;
+    if (initialId) {
+        trashState.selected.add(initialId);
+    }
+    const normalBar = document.getElementById('trash-normal-bar');
+    const selectBar = document.getElementById('trash-select-bar');
+    const floatingBar = document.getElementById('trash-floating-action-bar');
+    if (normalBar) normalBar.style.display = 'none';
+    if (selectBar) selectBar.style.display = 'flex';
+    if (floatingBar) floatingBar.style.display = 'block';
+
+    renderTrash();
+    updateTrashToolbar();
+}
+
+function exitTrashSelection() {
+    trashState.isSelecting = false;
+    trashState.selected.clear();
+
+    const normalBar = document.getElementById('trash-normal-bar');
+    const selectBar = document.getElementById('trash-select-bar');
+    const floatingBar = document.getElementById('trash-floating-action-bar');
+    if (normalBar) normalBar.style.display = 'flex';
+    if (selectBar) selectBar.style.display = 'none';
+    if (floatingBar) floatingBar.style.display = 'none';
+
+    renderTrash();
+}
 
 function toggleTrashItem(id) {
     if (trashState.selected.has(id)) {
@@ -1397,22 +1554,22 @@ function toggleTrashItem(id) {
     } else {
         trashState.selected.add(id);
     }
-    const cb = document.querySelector(`.trash-cb[data-id="${id}"]`);
     const card = document.querySelector(`#trash-list .trash-item[data-id="${id}"]`);
-    if (cb) cb.checked = trashState.selected.has(id);
-    if (card) card.classList.toggle('selected', trashState.selected.has(id));
+    const cb = document.querySelector(`.trash-cb[data-id="${id}"]`);
+    const isSelected = trashState.selected.has(id);
+    if (card) card.classList.toggle('selected', isSelected);
+    if (cb) cb.checked = isSelected;
     updateTrashToolbar();
-    updateTrashSelectAllCheckbox();
     hapticImpact();
 }
 
 function renderTrash() {
     const container = document.getElementById('trash-list');
+    const badge = document.getElementById('trash-total-badge');
     const purgeBar = document.getElementById('trash-purge-bar');
     if (!container) return;
 
-    // Inline confirm panelini yashiramiz (har safar re-render qilganda)
-    hidePurgeConfirm();
+    if (badge) badge.textContent = `${trashState.items.length} ta`;
 
     if (trashState.items.length === 0) {
         container.innerHTML = `
@@ -1422,68 +1579,81 @@ function renderTrash() {
             </div>
         `;
         if (purgeBar) purgeBar.style.display = 'none';
-        updateTrashToolbar();
+        exitTrashSelection();
         return;
     }
 
     if (purgeBar) purgeBar.style.display = 'flex';
 
-    container.innerHTML = trashState.items.map(item => `
-        <div class="trash-item ${trashState.selected.has(item.id) ? 'selected' : ''}" data-id="${item.id}">
-            <input type="checkbox" class="trash-item-checkbox trash-cb"
-                   data-id="${item.id}" ${trashState.selected.has(item.id) ? 'checked' : ''}>
-            <div class="trash-item-body">
-                <div class="trash-item-name">${escapeHtml(item.product_name)}${item.product_quantity > 1 ? ` — ${item.product_quantity} ta` : ''}</div>
-                <div class="trash-item-client">👤 ${escapeHtml(item.client_name)}</div>
-                <div class="trash-item-meta">
-                    <span>📅 ${item.debt_date}</span>
-                    <span>💰 ${formatMoney(item.original_debt, item.currency)}</span>
+    container.innerHTML = trashState.items.map(item => {
+        const isSelected = trashState.selected.has(item.id);
+        const checkboxStyle = trashState.isSelecting ? 'display:inline-block;' : 'display:none;';
+        return `
+            <div class="trash-item ${isSelected ? 'selected' : ''}" data-id="${item.id}">
+                <input type="checkbox" class="trash-item-checkbox trash-cb"
+                       data-id="${item.id}" ${isSelected ? 'checked' : ''} style="${checkboxStyle}">
+                <div class="trash-item-body">
+                    <div class="trash-item-name">${escapeHtml(item.product_name)}${item.product_quantity > 1 ? ` — ${item.product_quantity} ta` : ''}</div>
+                    <div class="trash-item-client">👤 ${escapeHtml(item.client_name)}</div>
+                    <div class="trash-item-meta">
+                        <span>📅 ${item.debt_date}</span>
+                        <span>💰 ${formatMoney(item.original_debt, item.currency)}</span>
+                    </div>
                 </div>
+                <div class="trash-item-price" style="color: var(--text-muted);">🗑</div>
             </div>
-            <div class="trash-item-price" style="color: var(--text-muted);">🗑</div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 
-    // Butun kartani bosib ham tanlash mumkin
+    // Har bir kartochkaga gesture
     container.querySelectorAll('.trash-item').forEach(card => {
-        card.addEventListener('click', (e) => {
-            if (e.target.classList.contains('trash-cb')) return;
-            const id = Number(card.getAttribute('data-id'));
-            toggleTrashItem(id);
-        });
+        const id = Number(card.getAttribute('data-id'));
+        attachCardGesture(
+            card,
+            () => {
+                if (!trashState.isSelecting) {
+                    enterTrashSelection(id);
+                } else {
+                    toggleTrashItem(id);
+                }
+            },
+            () => {
+                if (trashState.isSelecting) {
+                    toggleTrashItem(id);
+                } else {
+                    enterTrashSelection(id);
+                }
+            }
+        );
     });
 
     container.querySelectorAll('.trash-cb').forEach(cb => {
         cb.addEventListener('change', () => {
             const id = Number(cb.getAttribute('data-id'));
-            if (cb.checked) trashState.selected.add(id);
-            else trashState.selected.delete(id);
-            const card = cb.closest('.trash-item');
-            if (card) card.classList.toggle('selected', cb.checked);
-            updateTrashToolbar();
-            updateTrashSelectAllCheckbox();
-            hapticImpact();
+            toggleTrashItem(id);
         });
     });
 }
 
 function updateTrashToolbar() {
-    const btn = document.getElementById('btn-restore-from-trash');
-    const countEl = document.getElementById('trash-selected-count');
+    const countLabel = document.getElementById('trash-selected-count-label');
+    const restoreBtn = document.getElementById('btn-restore-from-trash');
+    const allBtn = document.getElementById('btn-trash-select-all-toggle');
     const cnt = trashState.selected.size;
-    if (btn) btn.disabled = cnt === 0;
-    if (countEl) {
-        countEl.style.display = cnt > 0 ? 'inline-block' : 'none';
-        countEl.textContent = `${cnt} ta tanlandi`;
-    }
-}
 
-function updateTrashSelectAllCheckbox() {
-    const allCb = document.getElementById('trash-select-all');
-    if (!allCb) return;
-    if (trashState.items.length === 0) { allCb.checked = false; return; }
-    allCb.checked = trashState.selected.size === trashState.items.length;
-    allCb.indeterminate = trashState.selected.size > 0 && trashState.selected.size < trashState.items.length;
+    if (countLabel) {
+        countLabel.textContent = `${cnt} ta tanlandi`;
+    }
+    if (restoreBtn) {
+        restoreBtn.disabled = cnt === 0;
+        restoreBtn.textContent = cnt > 0
+            ? `↩️ Tanlanganlarni Yopilganga Qaytarish (${cnt})`
+            : `↩️ Tanlanganlarni Yopilganga Qaytarish`;
+    }
+    if (allBtn) {
+        const allSelected = trashState.items.length > 0 && cnt === trashState.items.length;
+        allBtn.textContent = allSelected ? '◻️ Bekor' : '☑️ Barchasi';
+    }
 }
 
 async function fetchAndRenderTrash() {
@@ -1495,9 +1665,8 @@ async function fetchAndRenderTrash() {
         if (!res.ok) throw new Error('Yuklab bo\'lmadi');
         trashState.items = await res.json();
         trashState.selected.clear();
+        trashState.isSelecting = false;
         renderTrash();
-        updateTrashToolbar();
-        updateTrashSelectAllCheckbox();
     } catch (err) {
         container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${err.message}</p></div>`;
     }
@@ -1540,7 +1709,7 @@ async function executePurge() {
         if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
         hapticSuccess();
         showToast(`🗑 ${json.deleted} ta yozuv butunlay o'chirildi`);
-        trashState.selected.clear();
+        exitTrashSelection();
         await fetchAndRenderTrash();
     } catch (err) {
         hapticError();
@@ -1550,20 +1719,31 @@ async function executePurge() {
 }
 
 function setupTrashTab() {
-    const selectAll = document.getElementById('trash-select-all');
-    if (selectAll) {
-        selectAll.addEventListener('change', () => {
-            if (selectAll.checked) {
-                trashState.items.forEach(item => trashState.selected.add(item.id));
-            } else {
-                trashState.selected.clear();
-            }
-            renderTrash();
-            updateTrashToolbar();
-            hapticImpact();
-        });
-    }
+    // "🔘 Tanlash" tugmasi
+    document.getElementById('btn-trash-enter-select')?.addEventListener('click', () => {
+        enterTrashSelection();
+        hapticImpact();
+    });
 
+    // "✕ Bekor" tugmasi
+    document.getElementById('btn-trash-cancel-select')?.addEventListener('click', () => {
+        exitTrashSelection();
+        hapticImpact();
+    });
+
+    // "☑️ Barchasi" tugmasi
+    document.getElementById('btn-trash-select-all-toggle')?.addEventListener('click', () => {
+        if (trashState.selected.size === trashState.items.length) {
+            trashState.selected.clear();
+        } else {
+            trashState.items.forEach(i => trashState.selected.add(i.id));
+        }
+        renderTrash();
+        updateTrashToolbar();
+        hapticImpact();
+    });
+
+    // "↩️ Qaytarish" tugmasi
     const restoreBtn = document.getElementById('btn-restore-from-trash');
     if (restoreBtn) {
         restoreBtn.addEventListener('click', async () => {
@@ -1581,16 +1761,15 @@ function setupTrashTab() {
                 const json = await res.json();
                 if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
                 hapticSuccess();
-                showToast(`✅ ${json.restored} ta yopilganga qaytarildi`);
-                trashState.selected.clear();
+                showToast(`✅ ${json.restored} ta qarz yopilganga qaytarildi`);
+                exitTrashSelection();
                 await fetchAndRenderTrash();
                 await fetchAndRenderPaidDebts();
             } catch (err) {
                 hapticError();
                 showToast(`❌ ${err.message}`);
-            } finally {
                 restoreBtn.disabled = false;
-                restoreBtn.textContent = '↩️ Qaytarish';
+                updateTrashToolbar();
             }
         });
     }
@@ -1598,5 +1777,6 @@ function setupTrashTab() {
     // Purge tugmasi — inline confirm orqali
     document.getElementById('btn-purge-trash')?.addEventListener('click', showPurgeConfirm);
 }
+
 
 
