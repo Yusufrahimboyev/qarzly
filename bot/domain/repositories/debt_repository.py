@@ -55,3 +55,50 @@ class DebtRepository(ABC):
         Bu har bir mijoz uchun alohida so'rov (N+1) o'rniga bitta agregat so'rov.
         """
         raise NotImplementedError
+
+    # ------------------------------------------------------------------
+    # Korzina (Trash) operatsiyalari
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    async def get_all_paid(self) -> list[Debt]:
+        """Barcha yopilgan (paid) qarzlarni qaytaradi — Yopilganlar tab uchun."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_paid_by_client_id(self, client_id: int) -> list[Debt]:
+        """Berilgan mijozning yopilgan qarzlarini qaytaradi."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def move_to_trash(self, debt_ids: list[int]) -> int:
+        """Ko'rsatilgan IDlardagi yopilgan qarzlarni 'trashed' statusiga o'tkazadi.
+
+        Faqat status='paid' bo'lgan qarzlar o'tkaziladi.
+        Qaytaradi: o'zgartirilgan yozuvlar soni.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def restore_from_trash(self, debt_ids: list[int]) -> int:
+        """Ko'rsatilgan IDlardagi trashed qarzlarni 'paid' statusiga qaytaradi.
+
+        Qaytaradi: o'zgartirilgan yozuvlar soni.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_all_trashed(self) -> list[Debt]:
+        """Barcha korzinaga yuborilgan (trashed) qarzlarni qaytaradi."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def purge_trash(self) -> int:
+        """Korzinani butunlay tozalaydi:
+        1. Barcha 'trashed' qarzlarni trash arxiv jadvaliga ko'chiradi (mijoz nomi bilan).
+        2. debts jadvalidan o'chiradi (ON DELETE RESTRICT sababli payments avval o'chiriladi).
+
+        Qaytaradi: o'chirilgan yozuvlar soni.
+        """
+        raise NotImplementedError
+

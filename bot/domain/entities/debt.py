@@ -14,8 +14,9 @@ from bot.domain.entities.currency import Currency
 
 
 class DebtStatus(StrEnum):
-    ACTIVE = "active"
-    PAID = "paid"
+    ACTIVE   = "active"
+    PAID     = "paid"
+    TRASHED  = "trashed"
 
 
 @dataclass(frozen=True, slots=True)

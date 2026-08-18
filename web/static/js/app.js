@@ -1083,15 +1083,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // Bottom Nav Tabs
-    document.querySelectorAll('.nav-item').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tabId = btn.getAttribute('data-tab');
-            switchTab(tabId);
-            hapticImpact();
-        });
-    });
-
     // Refresh Button
     const refreshBtn = document.getElementById('btn-refresh');
     if (refreshBtn) {
@@ -1187,6 +1178,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup forms
     setupCreateForm();
     setupPaymentForm();
+    setupPaidTab();
+    setupTrashTab();
 
     // Klaviatura xulq-atvori: input'ga foküs qilinganda (klaviatura ochilganda)
     // pastki navigatsiya bar ekranning o'rtasiga ko'tarilib qolmasligi uchun
@@ -1207,7 +1200,331 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Tab switch — yangi tablar uchun ham ma'lumot yuklaymiz
+    document.querySelectorAll('.nav-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabId = btn.getAttribute('data-tab');
+            switchTab(tabId);
+            if (tabId === 'tab-paid') fetchAndRenderPaidDebts();
+            if (tabId === 'tab-trash') fetchAndRenderTrash();
+            hapticImpact();
+        });
+    });
+
     // Initial Fetch
     fetchStats();
     fetchSummaries();
 });
+
+// ==========================================
+// TAB: YOPILGANLAR (CLOSED DEBTS)
+// ==========================================
+
+const paidState = {
+    items: [],
+    selected: new Set(),
+};
+
+function renderPaidDebts() {
+    const container = document.getElementById('paid-debts-list');
+    if (!container) return;
+
+    if (paidState.items.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">🟢</div>
+                <p>Yopilgan qarzlar yo'q</p>
+            </div>
+        `;
+        updatePaidToolbar();
+        return;
+    }
+
+    container.innerHTML = paidState.items.map(item => `
+        <div class="trash-item ${paidState.selected.has(item.id) ? 'selected' : ''}" data-id="${item.id}">
+            <input type="checkbox" class="trash-item-checkbox paid-cb"
+                   data-id="${item.id}" ${paidState.selected.has(item.id) ? 'checked' : ''}>
+            <div class="trash-item-body">
+                <div class="trash-item-name">${escapeHtml(item.product_name)}${item.product_quantity > 1 ? ` — ${item.product_quantity} ta` : ''}</div>
+                <div class="trash-item-client">👤 ${escapeHtml(item.client_name)}</div>
+                <div class="trash-item-meta">
+                    <span>📅 ${item.debt_date}</span>
+                    <span>💰 ${formatMoney(item.original_debt, item.currency)}</span>
+                </div>
+            </div>
+            <div class="trash-item-price">🟢 Yopilgan</div>
+        </div>
+    `).join('');
+
+    container.querySelectorAll('.paid-cb').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const id = Number(cb.getAttribute('data-id'));
+            if (cb.checked) paidState.selected.add(id);
+            else paidState.selected.delete(id);
+            const card = cb.closest('.trash-item');
+            if (card) card.classList.toggle('selected', cb.checked);
+            updatePaidToolbar();
+            updatePaidSelectAllCheckbox();
+            hapticImpact();
+        });
+    });
+}
+
+function updatePaidToolbar() {
+    const btn = document.getElementById('btn-move-to-trash');
+    const countEl = document.getElementById('paid-selected-count');
+    const cnt = paidState.selected.size;
+    if (btn) btn.disabled = cnt === 0;
+    if (countEl) {
+        countEl.style.display = cnt > 0 ? 'inline-block' : 'none';
+        countEl.textContent = `${cnt} ta tanlandi`;
+    }
+}
+
+function updatePaidSelectAllCheckbox() {
+    const allCb = document.getElementById('paid-select-all');
+    if (!allCb) return;
+    if (paidState.items.length === 0) { allCb.checked = false; return; }
+    allCb.checked = paidState.selected.size === paidState.items.length;
+    allCb.indeterminate = paidState.selected.size > 0 && paidState.selected.size < paidState.items.length;
+}
+
+async function fetchAndRenderPaidDebts() {
+    const container = document.getElementById('paid-debts-list');
+    if (!container) return;
+    container.innerHTML = '<div class="empty-state"><p>Yuklanmoqda...</p></div>';
+    try {
+        const res = await apiFetch('/api/paid-debts');
+        if (!res.ok) throw new Error('Yuklab bo\'lmadi');
+        paidState.items = await res.json();
+        paidState.selected.clear();
+        renderPaidDebts();
+        updatePaidSelectAllCheckbox();
+    } catch (err) {
+        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${err.message}</p></div>`;
+    }
+}
+
+function setupPaidTab() {
+    const selectAll = document.getElementById('paid-select-all');
+    if (selectAll) {
+        selectAll.addEventListener('change', () => {
+            if (selectAll.checked) {
+                paidState.items.forEach(item => paidState.selected.add(item.id));
+            } else {
+                paidState.selected.clear();
+            }
+            renderPaidDebts();
+            updatePaidToolbar();
+            hapticImpact();
+        });
+    }
+
+    const moveBtn = document.getElementById('btn-move-to-trash');
+    if (moveBtn) {
+        moveBtn.addEventListener('click', async () => {
+            const ids = [...paidState.selected];
+            if (ids.length === 0) return;
+
+            const confirmed = window.confirm(`${ids.length} ta yopilgan qarzni korzinaga yuborasizmi?`);
+            if (!confirmed) return;
+
+            moveBtn.disabled = true;
+            moveBtn.textContent = 'Ko\'chirilmoqda...';
+
+            try {
+                const res = await apiFetch('/api/trash/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ debt_ids: ids }),
+                });
+                const json = await res.json();
+                if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
+                hapticSuccess();
+                showToast(`✅ ${json.moved} ta korzinaga yuborildi`);
+                paidState.selected.clear();
+                await fetchAndRenderPaidDebts();
+                // Korzina ham yangilanadi agar ochiq bo'lsa
+                await fetchAndRenderTrash();
+            } catch (err) {
+                hapticError();
+                showToast(`❌ ${err.message}`);
+            } finally {
+                moveBtn.disabled = false;
+                moveBtn.textContent = '🗑 Korzinaga';
+            }
+        });
+    }
+}
+
+// ==========================================
+// TAB: KORZINA (TRASH)
+// ==========================================
+
+const trashState = {
+    items: [],
+    selected: new Set(),
+};
+
+function renderTrash() {
+    const container = document.getElementById('trash-list');
+    const purgeBar = document.getElementById('trash-purge-bar');
+    if (!container) return;
+
+    if (trashState.items.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">🗑</div>
+                <p>Korzina bo'sh</p>
+            </div>
+        `;
+        if (purgeBar) purgeBar.style.display = 'none';
+        updateTrashToolbar();
+        return;
+    }
+
+    if (purgeBar) purgeBar.style.display = 'flex';
+
+    container.innerHTML = trashState.items.map(item => `
+        <div class="trash-item ${trashState.selected.has(item.id) ? 'selected' : ''}" data-id="${item.id}">
+            <input type="checkbox" class="trash-item-checkbox trash-cb"
+                   data-id="${item.id}" ${trashState.selected.has(item.id) ? 'checked' : ''}>
+            <div class="trash-item-body">
+                <div class="trash-item-name">${escapeHtml(item.product_name)}${item.product_quantity > 1 ? ` — ${item.product_quantity} ta` : ''}</div>
+                <div class="trash-item-client">👤 ${escapeHtml(item.client_name)}</div>
+                <div class="trash-item-meta">
+                    <span>📅 ${item.debt_date}</span>
+                    <span>💰 ${formatMoney(item.original_debt, item.currency)}</span>
+                </div>
+            </div>
+            <div class="trash-item-price" style="color: var(--text-muted);">🗑</div>
+        </div>
+    `).join('');
+
+    container.querySelectorAll('.trash-cb').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const id = Number(cb.getAttribute('data-id'));
+            if (cb.checked) trashState.selected.add(id);
+            else trashState.selected.delete(id);
+            const card = cb.closest('.trash-item');
+            if (card) card.classList.toggle('selected', cb.checked);
+            updateTrashToolbar();
+            updateTrashSelectAllCheckbox();
+            hapticImpact();
+        });
+    });
+}
+
+function updateTrashToolbar() {
+    const btn = document.getElementById('btn-restore-from-trash');
+    const countEl = document.getElementById('trash-selected-count');
+    const cnt = trashState.selected.size;
+    if (btn) btn.disabled = cnt === 0;
+    if (countEl) {
+        countEl.style.display = cnt > 0 ? 'inline-block' : 'none';
+        countEl.textContent = `${cnt} ta tanlandi`;
+    }
+}
+
+function updateTrashSelectAllCheckbox() {
+    const allCb = document.getElementById('trash-select-all');
+    if (!allCb) return;
+    if (trashState.items.length === 0) { allCb.checked = false; return; }
+    allCb.checked = trashState.selected.size === trashState.items.length;
+    allCb.indeterminate = trashState.selected.size > 0 && trashState.selected.size < trashState.items.length;
+}
+
+async function fetchAndRenderTrash() {
+    const container = document.getElementById('trash-list');
+    if (!container) return;
+    container.innerHTML = '<div class="empty-state"><p>Yuklanmoqda...</p></div>';
+    try {
+        const res = await apiFetch('/api/trash');
+        if (!res.ok) throw new Error('Yuklab bo\'lmadi');
+        trashState.items = await res.json();
+        trashState.selected.clear();
+        renderTrash();
+        updateTrashSelectAllCheckbox();
+    } catch (err) {
+        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${err.message}</p></div>`;
+    }
+}
+
+function setupTrashTab() {
+    const selectAll = document.getElementById('trash-select-all');
+    if (selectAll) {
+        selectAll.addEventListener('change', () => {
+            if (selectAll.checked) {
+                trashState.items.forEach(item => trashState.selected.add(item.id));
+            } else {
+                trashState.selected.clear();
+            }
+            renderTrash();
+            updateTrashToolbar();
+            hapticImpact();
+        });
+    }
+
+    const restoreBtn = document.getElementById('btn-restore-from-trash');
+    if (restoreBtn) {
+        restoreBtn.addEventListener('click', async () => {
+            const ids = [...trashState.selected];
+            if (ids.length === 0) return;
+
+            restoreBtn.disabled = true;
+            restoreBtn.textContent = 'Qaytarilmoqda...';
+            try {
+                const res = await apiFetch('/api/trash/restore', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ debt_ids: ids }),
+                });
+                const json = await res.json();
+                if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
+                hapticSuccess();
+                showToast(`✅ ${json.restored} ta yopilganga qaytarildi`);
+                trashState.selected.clear();
+                await fetchAndRenderTrash();
+                await fetchAndRenderPaidDebts();
+            } catch (err) {
+                hapticError();
+                showToast(`❌ ${err.message}`);
+            } finally {
+                restoreBtn.disabled = false;
+                restoreBtn.textContent = '↩️ Qaytarish';
+            }
+        });
+    }
+
+    const purgeBtn = document.getElementById('btn-purge-trash');
+    if (purgeBtn) {
+        purgeBtn.addEventListener('click', async () => {
+            const confirmed = window.confirm(
+                '⚠️ Korzinani BUTUNLAY tozalaysizmi?\n\nBu amalni qaytarib bo\'lmaydi.\nMa\'lumotlar statistika uchun Supabase\'da saqlanib qoladi.'
+            );
+            if (!confirmed) return;
+
+            purgeBtn.disabled = true;
+            purgeBtn.textContent = 'Tozalanmoqda...';
+            try {
+                const res = await apiFetch('/api/trash/purge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                const json = await res.json();
+                if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
+                hapticSuccess();
+                showToast(`🗑 ${json.deleted} ta yozuv butunlay o'chirildi`);
+                trashState.selected.clear();
+                await fetchAndRenderTrash();
+            } catch (err) {
+                hapticError();
+                showToast(`❌ ${err.message}`);
+            } finally {
+                purgeBtn.disabled = false;
+                purgeBtn.textContent = '🗑 Korzinani Tozalash';
+            }
+        });
+    }
+}
+

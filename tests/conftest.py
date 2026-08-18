@@ -173,6 +173,74 @@ class FakeDebtRepository(DebtRepository):
             )
             self._store[debt_id] = updated
 
+    # ------------------------------------------------------------------
+    # Korzina (Trash) operatsiyalari
+    # ------------------------------------------------------------------
+
+    async def get_all_paid(self) -> list[Debt]:
+        return [d for d in self._store.values() if d.status == DebtStatus.PAID]
+
+    async def get_paid_by_client_id(self, client_id: int) -> list[Debt]:
+        return [
+            d for d in self._store.values()
+            if d.client_id == client_id and d.status == DebtStatus.PAID
+        ]
+
+    async def move_to_trash(self, debt_ids: list[int]) -> int:
+        count = 0
+        for debt_id in debt_ids:
+            d = self._store.get(debt_id)
+            if d is not None and d.status == DebtStatus.PAID:
+                self._store[debt_id] = Debt(
+                    id=d.id, client_id=d.client_id, debt_date=d.debt_date,
+                    product_name=d.product_name, product_quantity=d.product_quantity,
+                    product_price=d.product_price, currency=d.currency,
+                    exchange_exists=d.exchange_exists,
+                    exchange_product_name=d.exchange_product_name,
+                    exchange_product_price=d.exchange_product_price,
+                    given_money=d.given_money, original_debt=d.original_debt,
+                    remaining_debt=d.remaining_debt, products=d.products,
+                    status=DebtStatus.TRASHED,
+                    created_at=d.created_at, updated_at=datetime.now(),
+                )
+                count += 1
+        return count
+
+    async def restore_from_trash(self, debt_ids: list[int]) -> int:
+        count = 0
+        for debt_id in debt_ids:
+            d = self._store.get(debt_id)
+            if d is not None and d.status == DebtStatus.TRASHED:
+                self._store[debt_id] = Debt(
+                    id=d.id, client_id=d.client_id, debt_date=d.debt_date,
+                    product_name=d.product_name, product_quantity=d.product_quantity,
+                    product_price=d.product_price, currency=d.currency,
+                    exchange_exists=d.exchange_exists,
+                    exchange_product_name=d.exchange_product_name,
+                    exchange_product_price=d.exchange_product_price,
+                    given_money=d.given_money, original_debt=d.original_debt,
+                    remaining_debt=d.remaining_debt, products=d.products,
+                    status=DebtStatus.PAID,
+                    created_at=d.created_at, updated_at=datetime.now(),
+                )
+                count += 1
+        return count
+
+    async def get_all_trashed(self) -> list[Debt]:
+        return [d for d in self._store.values() if d.status == DebtStatus.TRASHED]
+
+    async def purge_trash(self) -> int:
+        """Barcha trashed qarzlarni in-memory store dan o'chiradi."""
+        to_delete = [
+            debt_id for debt_id, d in self._store.items()
+            if d.status == DebtStatus.TRASHED
+        ]
+        for debt_id in to_delete:
+            del self._store[debt_id]
+        return len(to_delete)
+
+
+
 
 class FakePaymentRepository(PaymentRepository):
     """In-memory PaymentRepository."""

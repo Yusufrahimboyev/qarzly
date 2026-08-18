@@ -466,19 +466,182 @@ async def api_make_payment(request: web.Request) -> web.Response:
         )
 
 
+# ==========================================
+# KORZINA (TRASH) API HANDLERS
+# ==========================================
+
+
+async def api_get_paid_debts(request: web.Request) -> web.Response:
+    """Barcha yopilgan qarzlarni qaytaradi — Yopilganlar tab uchun.
+
+    Har bir yozuvda mijoz_id, mijoz_nomi, tovar_nomi, sana, valyuta mavjud.
+    """
+    debt_service: DebtService = request.app["debt_service"]
+    client_service: ClientService = request.app["client_service"]
+
+    paid_debts = await debt_service.debt_repo.get_all_paid()
+
+    # Mijozlar ID -> ism xaritasini tuzamiz (bitta so'rovda)
+    summaries = await client_service.get_all_summaries()
+    client_names: dict[int, str] = {
+        s.client.id: s.client.full_name
+        for s in summaries
+        if s.client.id is not None
+    }
+
+    data = [
+        {
+            "id": d.id,
+            "client_id": d.client_id,
+            "client_name": client_names.get(d.client_id, "Noma'lum"),
+            "product_name": d.product_name,
+            "product_quantity": d.product_quantity,
+            "product_price": d.product_price,
+            "currency": d.currency.value,
+            "original_debt": d.original_debt,
+            "remaining_debt": d.remaining_debt,
+            "debt_date": d.debt_date,
+            "status": d.status.value,
+        }
+        for d in paid_debts
+    ]
+    return web.json_response(data)
+
+
+async def api_trash_move(request: web.Request) -> web.Response:
+    """Tanlangan yopilgan qarzlarni korzinaga ko'chiradi.
+
+    Body: {"debt_ids": [1, 2, 3]}
+    """
+    debt_service: DebtService = request.app["debt_service"]
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Yaroqsiz JSON format"}, status=400)
+
+    debt_ids = body.get("debt_ids")
+    if not isinstance(debt_ids, list) or not debt_ids:
+        return web.json_response(
+            {"error": "debt_ids ro'yxati bo'sh yoki noto'g'ri"}, status=400
+        )
+    if not all(isinstance(i, int) and i > 0 for i in debt_ids):
+        return web.json_response(
+            {"error": "Barcha debt_ids musbat butun son bo'lishi kerak"}, status=400
+        )
+
+    try:
+        moved = await debt_service.debt_repo.move_to_trash(debt_ids)
+        return web.json_response({"ok": True, "moved": moved})
+    except Exception:
+        logger.exception("Korzinaga ko'chirishda xatolik")
+        return web.json_response(
+            {"error": "Serverda kutilmagan xatolik"}, status=500
+        )
+
+
+async def api_get_trash(request: web.Request) -> web.Response:
+    """Barcha korzina elementlarini qaytaradi."""
+    debt_service: DebtService = request.app["debt_service"]
+    client_service: ClientService = request.app["client_service"]
+
+    trashed_debts = await debt_service.debt_repo.get_all_trashed()
+
+    summaries = await client_service.get_all_summaries()
+    client_names: dict[int, str] = {
+        s.client.id: s.client.full_name
+        for s in summaries
+        if s.client.id is not None
+    }
+
+    data = [
+        {
+            "id": d.id,
+            "client_id": d.client_id,
+            "client_name": client_names.get(d.client_id, "Noma'lum"),
+            "product_name": d.product_name,
+            "product_quantity": d.product_quantity,
+            "product_price": d.product_price,
+            "currency": d.currency.value,
+            "original_debt": d.original_debt,
+            "remaining_debt": d.remaining_debt,
+            "debt_date": d.debt_date,
+            "status": d.status.value,
+        }
+        for d in trashed_debts
+    ]
+    return web.json_response(data)
+
+
+async def api_trash_restore(request: web.Request) -> web.Response:
+    """Korzinadan tanlangan elementlarni yopilganga qaytaradi.
+
+    Body: {"debt_ids": [1, 2, 3]}
+    """
+    debt_service: DebtService = request.app["debt_service"]
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Yaroqsiz JSON format"}, status=400)
+
+    debt_ids = body.get("debt_ids")
+    if not isinstance(debt_ids, list) or not debt_ids:
+        return web.json_response(
+            {"error": "debt_ids ro'yxati bo'sh yoki noto'g'ri"}, status=400
+        )
+    if not all(isinstance(i, int) and i > 0 for i in debt_ids):
+        return web.json_response(
+            {"error": "Barcha debt_ids musbat butun son bo'lishi kerak"}, status=400
+        )
+
+    try:
+        restored = await debt_service.debt_repo.restore_from_trash(debt_ids)
+        return web.json_response({"ok": True, "restored": restored})
+    except Exception:
+        logger.exception("Korzinadan qaytarishda xatolik")
+        return web.json_response(
+            {"error": "Serverda kutilmagan xatolik"}, status=500
+        )
+
+
+async def api_trash_purge(request: web.Request) -> web.Response:
+    """Korzinani butunlay tozalaydi (qayta tiklab bo'lmaydi).
+
+    O'chirilgan yozuvlar Supabase trash jadvalida arxivlanadi.
+    """
+    debt_service: DebtService = request.app["debt_service"]
+
+    try:
+        deleted = await debt_service.debt_repo.purge_trash()
+        return web.json_response({"ok": True, "deleted": deleted})
+    except Exception:
+        logger.exception("Korzinani tozalashda xatolik")
+        return web.json_response(
+            {"error": "Serverda kutilmagan xatolik"}, status=500
+        )
+
+
 def setup_routes(app: web.Application) -> None:
     """Route'larni aiohttp ilovasiga ro'yxatga oladi."""
     # Web UI & Health
     app.router.add_get("/", index_handler)
     app.router.add_get("/health", health_check)
 
-    # REST APIs
+    # REST APIs — asosiy
     app.router.add_get("/api/stats", api_get_stats)
     app.router.add_get("/api/summaries", api_get_summaries)
     app.router.add_get("/api/debtors", api_get_debtors)
     app.router.add_get("/api/clients/{id}/report", api_get_client_report)
     app.router.add_post("/api/debts", api_create_debt)
     app.router.add_post("/api/payments", api_make_payment)
+
+    # REST APIs — Korzina (Trash)
+    app.router.add_get("/api/paid-debts", api_get_paid_debts)
+    app.router.add_post("/api/trash/move", api_trash_move)
+    app.router.add_get("/api/trash", api_get_trash)
+    app.router.add_post("/api/trash/restore", api_trash_restore)
+    app.router.add_post("/api/trash/purge", api_trash_purge)
 
     # Static assets
     if _STATIC_DIR.exists():

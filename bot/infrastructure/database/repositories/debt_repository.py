@@ -177,6 +177,126 @@ class PgDebtRepository(DebtRepository):
                 debt_id,
             )
 
+    # ------------------------------------------------------------------
+    # Korzina (Trash) operatsiyalari
+    # ------------------------------------------------------------------
+
+    async def get_all_paid(self) -> list[Debt]:
+        """Barcha yopilgan (paid) qarzlarni qaytaradi."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT{_SELECT_COLS} FROM debts"
+                " WHERE status = 'paid'"
+                " ORDER BY updated_at DESC, id DESC"
+            )
+        return [self._map_row(row) for row in rows]
+
+    async def get_paid_by_client_id(self, client_id: int) -> list[Debt]:
+        """Berilgan mijozning yopilgan qarzlarini qaytaradi."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT{_SELECT_COLS} FROM debts"
+                " WHERE client_id = $1 AND status = 'paid'"
+                " ORDER BY updated_at DESC, id DESC",
+                client_id,
+            )
+        return [self._map_row(row) for row in rows]
+
+    async def move_to_trash(self, debt_ids: list[int]) -> int:
+        """Ko'rsatilgan IDlardagi yopilgan qarzlarni 'trashed' ga o'tkazadi.
+
+        Faqat status='paid' bo'lgan qarzlar o'tkaziladi (active qarzlarga tegmaydi).
+        """
+        if not debt_ids:
+            return 0
+        async with self._pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE debts
+                SET status = 'trashed', updated_at = CURRENT_TIMESTAMP
+                WHERE id = ANY($1::BIGINT[]) AND status = 'paid'
+                """,
+                debt_ids,
+            )
+        # asyncpg "UPDATE N" formatida qaytaradi
+        count_str = result.split()[-1] if result else "0"
+        return int(count_str)
+
+    async def restore_from_trash(self, debt_ids: list[int]) -> int:
+        """Ko'rsatilgan IDlardagi trashed qarzlarni 'paid' statusiga qaytaradi."""
+        if not debt_ids:
+            return 0
+        async with self._pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE debts
+                SET status = 'paid', updated_at = CURRENT_TIMESTAMP
+                WHERE id = ANY($1::BIGINT[]) AND status = 'trashed'
+                """,
+                debt_ids,
+            )
+        count_str = result.split()[-1] if result else "0"
+        return int(count_str)
+
+    async def get_all_trashed(self) -> list[Debt]:
+        """Barcha korzinaga yuborilgan (trashed) qarzlarni qaytaradi."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT{_SELECT_COLS} FROM debts"
+                " WHERE status = 'trashed'"
+                " ORDER BY updated_at DESC, id DESC"
+            )
+        return [self._map_row(row) for row in rows]
+
+    async def purge_trash(self) -> int:
+        """Korzinani butunlay tozalaydi (atomik tranzaksiya).
+
+        1. Trashed qarzlar uchun payments o'chiriladi.
+        2. Trashed qarzlar trash arxiv jadvaliga ko'chiriladi (mijoz nomi bilan).
+        3. debts jadvalidan o'chiriladi.
+
+        Qaytaradi: o'chirilgan debt yozuvlar soni.
+        """
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                # 1. Trashed qarzlarga tegishli payments o'chiriladi
+                await conn.execute(
+                    """
+                    DELETE FROM payments
+                    WHERE debt_id IN (
+                        SELECT id FROM debts WHERE status = 'trashed'
+                    )
+                    """
+                )
+
+                # 2. Trashed qarzlarni trash arxiviga ko'chirish (clients bilan JOIN)
+                await conn.execute(
+                    """
+                    INSERT INTO trash (
+                        original_id, client_id, client_name,
+                        product_name, product_price,
+                        original_debt, remaining_debt,
+                        currency, debt_date, status_before, products_json
+                    )
+                    SELECT
+                        d.id, d.client_id, c.full_name,
+                        d.product_name, d.product_price,
+                        d.original_debt, d.remaining_debt,
+                        d.currency, d.debt_date, d.status, d.products_json
+                    FROM debts d
+                    JOIN clients c ON c.id = d.client_id
+                    WHERE d.status = 'trashed'
+                    """
+                )
+
+                # 3. debts jadvalidan o'chirish
+                result = await conn.execute(
+                    "DELETE FROM debts WHERE status = 'trashed'"
+                )
+
+        count_str = result.split()[-1] if result else "0"
+        return int(count_str)
+
     @staticmethod
     def _map_row(row: asyncpg.Record) -> Debt:
         products = parse_products_json(row["products_json"])
@@ -200,3 +320,4 @@ class PgDebtRepository(DebtRepository):
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
+
