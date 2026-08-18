@@ -479,7 +479,7 @@ async def api_get_paid_debts(request: web.Request) -> web.Response:
     debt_service: DebtService = request.app["debt_service"]
     client_service: ClientService = request.app["client_service"]
 
-    paid_debts = await debt_service.debt_repo.get_all_paid()
+    paid_debts = await debt_service.get_all_paid()
 
     # Mijozlar ID -> ism xaritasini tuzamiz (bitta so'rovda)
     summaries = await client_service.get_all_summaries()
@@ -531,7 +531,7 @@ async def api_trash_move(request: web.Request) -> web.Response:
         )
 
     try:
-        moved = await debt_service.debt_repo.move_to_trash(debt_ids)
+        moved = await debt_service.move_to_trash(debt_ids)
         return web.json_response({"ok": True, "moved": moved})
     except Exception:
         logger.exception("Korzinaga ko'chirishda xatolik")
@@ -545,7 +545,7 @@ async def api_get_trash(request: web.Request) -> web.Response:
     debt_service: DebtService = request.app["debt_service"]
     client_service: ClientService = request.app["client_service"]
 
-    trashed_debts = await debt_service.debt_repo.get_all_trashed()
+    trashed_debts = await debt_service.get_all_trashed()
 
     summaries = await client_service.get_all_summaries()
     client_names: dict[int, str] = {
@@ -596,7 +596,7 @@ async def api_trash_restore(request: web.Request) -> web.Response:
         )
 
     try:
-        restored = await debt_service.debt_repo.restore_from_trash(debt_ids)
+        restored = await debt_service.restore_from_trash(debt_ids)
         return web.json_response({"ok": True, "restored": restored})
     except Exception:
         logger.exception("Korzinadan qaytarishda xatolik")
@@ -613,13 +613,14 @@ async def api_trash_purge(request: web.Request) -> web.Response:
     debt_service: DebtService = request.app["debt_service"]
 
     try:
-        deleted = await debt_service.debt_repo.purge_trash()
+        deleted = await debt_service.purge_trash()
         return web.json_response({"ok": True, "deleted": deleted})
     except Exception:
         logger.exception("Korzinani tozalashda xatolik")
         return web.json_response(
             {"error": "Serverda kutilmagan xatolik"}, status=500
         )
+
 
 
 def setup_routes(app: web.Application) -> None:

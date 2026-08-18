@@ -440,3 +440,32 @@ class DebtService:
             total_paid_after=_sum_by(paid_after, "amount"),
             total_remaining_debt=_sum_by(active_debts, "remaining_debt"),
         )
+
+    # ------------------------------------------------------------------
+    # Korzina (Trash) va Yopilgan qarzlar operatsiyalari
+    # ------------------------------------------------------------------
+
+    @property
+    def debts(self) -> DebtRepository:
+        return self._debts
+
+    async def get_all_paid(self) -> list[Debt]:
+        """Barcha yopilgan (paid) qarzlarni qaytaradi."""
+        return await self._debts.get_all_paid()
+
+    async def get_all_trashed(self) -> list[Debt]:
+        """Barcha korzinaga yuborilgan (trashed) qarzlarni qaytaradi."""
+        return await self._debts.get_all_trashed()
+
+    async def move_to_trash(self, debt_ids: list[int]) -> int:
+        """Yopilgan qarzlarni korzinaga ko'chiradi."""
+        return await self._debts.move_to_trash(debt_ids)
+
+    async def restore_from_trash(self, debt_ids: list[int]) -> int:
+        """Korzinadagi qarzlarni yopilganga qaytaradi."""
+        return await self._debts.restore_from_trash(debt_ids)
+
+    async def purge_trash(self) -> int:
+        """Korzinani butunlay tozalaydi (Supabase trash arxiviga ko'chiradi)."""
+        return await self._debts.purge_trash()
+

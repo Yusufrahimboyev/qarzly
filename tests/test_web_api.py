@@ -505,3 +505,89 @@ async def test_api_rejects_non_admin_when_admin_ids_configured(
         assert res.status == 403
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_api_trash_flow(
+    aiohttp_app: web.Application,
+) -> None:
+    """Yopilgan qarzlar va korzina API to'liq oqimi testi."""
+    from aiohttp.test_utils import TestClient, TestServer
+    server = TestServer(aiohttp_app)
+    client = TestClient(server)
+    await client.start_server()
+
+    try:
+        headers = auth_header()
+
+        # 1. Qarz yaratamiz va to'liq to'laymiz -> status paid bo'ladi
+        create_res = await client.post(
+            "/api/debts",
+            json={
+                "client_name": "Trash Test User",
+                "client_phone": "+998901112233",
+                "products": [{"name": "Akumulyator", "quantity": 1, "price_per_unit": 500000}],
+            },
+            headers=headers,
+        )
+        assert create_res.status == 200
+        client_id = (await create_res.json())["client_id"]
+
+        # To'liq to'lov qilamiz
+        pay_res = await client.post(
+            "/api/payments",
+            json={"client_id": client_id, "mode": "full"},
+            headers=headers,
+        )
+        assert pay_res.status == 200
+
+        # 2. GET /api/paid-debts -> yopilgan qarz ro'yxatda chiqadi
+        paid_res = await client.get("/api/paid-debts", headers=headers)
+        assert paid_res.status == 200
+        paid_list = await paid_res.json()
+        assert len(paid_list) >= 1
+        debt_id = paid_list[0]["id"]
+        assert paid_list[0]["product_name"] == "Akumulyator"
+        assert paid_list[0]["status"] == "paid"
+
+        # 3. POST /api/trash/move -> korzinaga ko'chiramiz
+        move_res = await client.post(
+            "/api/trash/move",
+            json={"debt_ids": [debt_id]},
+            headers=headers,
+        )
+        assert move_res.status == 200
+        assert (await move_res.json())["moved"] == 1
+
+        # 4. GET /api/paid-debts endi bo'sh bo'ladi
+        paid_res2 = await client.get("/api/paid-debts", headers=headers)
+        paid_list2 = await paid_res2.json()
+        assert not any(d["id"] == debt_id for d in paid_list2)
+
+        # 5. GET /api/trash -> korzinada paydo bo'ldi
+        trash_res = await client.get("/api/trash", headers=headers)
+        assert trash_res.status == 200
+        trash_list = await trash_res.json()
+        assert any(d["id"] == debt_id for d in trash_list)
+
+        # 6. POST /api/trash/restore -> qaytaramiz
+        restore_res = await client.post(
+            "/api/trash/restore",
+            json={"debt_ids": [debt_id]},
+            headers=headers,
+        )
+        assert restore_res.status == 200
+        assert (await restore_res.json())["restored"] == 1
+
+        # Qaytgach yana paid-debts da chiqadi
+        paid_res3 = await client.get("/api/paid-debts", headers=headers)
+        assert any(d["id"] == debt_id for d in (await paid_res3.json()))
+
+        # 7. Qayta korzinaga tashlab, purge qilamiz
+        await client.post("/api/trash/move", json={"debt_ids": [debt_id]}, headers=headers)
+        purge_res = await client.post("/api/trash/purge", headers=headers)
+        assert purge_res.status == 200
+        assert (await purge_res.json())["deleted"] >= 1
+    finally:
+        await client.close()
+
