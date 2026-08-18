@@ -57,12 +57,15 @@ class ClientService:
         return await self._clients.get_by_id(client_id)
 
     async def get_all_summaries(self) -> list[ClientDebtSummary]:
-        """Barcha mijozlarni alifbo tartibida qarz holati bilan qaytaradi.
+        """Barcha faol yoki yopilgan qarzi bor mijozlarni alifbo tartibida qaytaradi.
 
-        Qarzlar valyuta bo'yicha ajratilgan: so'm va dollar alohida yig'iladi.
+        Barcha qarzlari korzinaga yuborilgan yoki o'chirilgan mijozlar jadvalda
+        ortiqcha 0 so'm bo'lib ko'rinmasligi uchun chiqarilmaydi.
         """
         all_clients = await self._clients.get_all_alphabetical()
         active_totals = await self._debts.get_active_totals()
+        paid_debts = await self._debts.get_all_paid()
+        paid_client_ids = {d.client_id for d in paid_debts}
 
         summaries: list[ClientDebtSummary] = []
         for client in all_clients:
@@ -75,6 +78,12 @@ class ClientService:
                 if totals[0] > 0
             }
             active_count = sum(totals[1] for totals in per_currency.values())
+            has_debt = active_count > 0
+
+            # Agar mijozning faol qarzi ham, yopilgan (non-trashed) qarzi ham bo'lmasa — jadvalda ko'rsatilmaydi
+            if not has_debt and client.id not in paid_client_ids:
+                continue
+
             summaries.append(
                 ClientDebtSummary(
                     client=client,
@@ -84,6 +93,7 @@ class ClientService:
             )
 
         return summaries
+
 
     async def get_debtor_summaries(self) -> list[ClientDebtSummary]:
         """Faqat qarzi bor (kamida bitta valyutada) mijozlarni alifbo bo'yicha qaytaradi."""

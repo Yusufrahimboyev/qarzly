@@ -120,8 +120,9 @@ class FakeDebtRepository(DebtRepository):
     async def get_all_by_client_id(self, client_id: int) -> list[Debt]:
         return [
             d for d in self._store.values()
-            if d.client_id == client_id
+            if d.client_id == client_id and d.status != DebtStatus.TRASHED
         ]
+
 
     async def get_active_by_client_id(self, client_id: int) -> list[Debt]:
         return [

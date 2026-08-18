@@ -107,11 +107,12 @@ class PgDebtRepository(DebtRepository):
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
                 f"SELECT{_SELECT_COLS} FROM debts"
-                " WHERE client_id = $1 ORDER BY debt_date ASC, id ASC",
+                " WHERE client_id = $1 AND status != 'trashed' ORDER BY debt_date ASC, id ASC",
                 client_id,
             )
 
         return [self._map_row(row) for row in rows]
+
 
     async def get_active_by_client_id(self, client_id: int) -> list[Debt]:
         async with self._pool.acquire() as conn:
@@ -294,8 +295,17 @@ class PgDebtRepository(DebtRepository):
                     "DELETE FROM debts WHERE status = 'trashed'"
                 )
 
+                # 4. Qarzi qolmagan (debts jadvalida yo'q) mijozlarni tozalash
+                await conn.execute(
+                    """
+                    DELETE FROM clients
+                    WHERE id NOT IN (SELECT DISTINCT client_id FROM debts)
+                    """
+                )
+
         count_str = result.split()[-1] if result else "0"
         return int(count_str)
+
 
     @staticmethod
     def _map_row(row: asyncpg.Record) -> Debt:

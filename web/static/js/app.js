@@ -1510,8 +1510,12 @@ function setupPaidTab() {
                 hapticSuccess();
                 showToast(`🗑 ${json.moved} ta qarz korzinaga yuborildi`);
                 exitPaidSelection();
-                await fetchAndRenderPaidDebts();
-                await fetchAndRenderTrash();
+                await Promise.all([
+                    fetchStats(),
+                    fetchSummaries(),
+                    fetchAndRenderPaidDebts(),
+                    fetchAndRenderTrash(),
+                ]);
             } catch (err) {
                 hapticError();
                 showToast(`❌ ${err.message}`);
@@ -1724,7 +1728,12 @@ async function executePurge() {
         hapticSuccess();
         showToast(`🗑 ${json.deleted} ta yozuv butunlay o'chirildi`);
         exitTrashSelection();
-        await fetchAndRenderTrash();
+        await Promise.all([
+            fetchStats(),
+            fetchSummaries(),
+            fetchAndRenderTrash(),
+            fetchAndRenderPaidDebts(),
+        ]);
     } catch (err) {
         hapticError();
         showToast(`❌ ${err.message}`);
@@ -1777,8 +1786,12 @@ function setupTrashTab() {
                 hapticSuccess();
                 showToast(`✅ ${json.restored} ta qarz yopilganga qaytarildi`);
                 exitTrashSelection();
-                await fetchAndRenderTrash();
-                await fetchAndRenderPaidDebts();
+                await Promise.all([
+                    fetchStats(),
+                    fetchSummaries(),
+                    fetchAndRenderTrash(),
+                    fetchAndRenderPaidDebts(),
+                ]);
             } catch (err) {
                 hapticError();
                 showToast(`❌ ${err.message}`);
@@ -1791,6 +1804,7 @@ function setupTrashTab() {
     // Purge tugmasi — inline confirm orqali
     document.getElementById('btn-purge-trash')?.addEventListener('click', showPurgeConfirm);
 }
+
 
 
 

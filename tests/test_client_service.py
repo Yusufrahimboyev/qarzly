@@ -71,22 +71,35 @@ async def test_alphabetical_summaries_and_debtors(
     c_anvar, _ = await client_service.get_or_create("Aliyev Anvar", "+998901111111")
     c_bekzod, _ = await client_service.get_or_create("Bekzod Karimov", "+998902222222")
 
-    # Qarzlar: Anvar (1 000 000), Zohid (500 000), Bekzod (qarz yo'q)
+    # Qarzlar: Anvar (1 000 000 faol), Zohid (500 000 faol), Bekzod (100 000 yopilgan)
     await debt_service.create_debt(
         c_anvar.id, "16.08.2026", product_name="Shina", product_price=1000000,  # type: ignore[arg-type]
     )
     await debt_service.create_debt(
         c_zohid.id, "16.08.2026", product_name="Moy", product_price=500000,  # type: ignore[arg-type]
     )
+    debt_bekzod = await debt_service.create_debt(
+        c_bekzod.id, "16.08.2026", product_name="Filter", product_price=100000,  # type: ignore[arg-type]
+    )
+    await debt_service.pay_full_debt(c_bekzod.id, "16.08.2026")  # type: ignore[arg-type]
 
-    # Barcha mijozlar alifbo tartibida
+    # Barcha mijozlar (faol yoki yopilgan qarzi bor) alifbo tartibida
     all_summaries = await client_service.get_all_summaries()
     names = [s.client.full_name for s in all_summaries]
     assert names == ["Aliyev Anvar", "Bekzod Karimov", "Zohidov Zohid"]
 
-    # Faqat qarzdorlar alifbo tartibida (Bekzod bo'lmasligi kerak)
+    # Faqat qarzdorlar alifbo tartibida (Bekzod qarzini yopgani uchun qarzdorlar ro'yxatida bo'lmaydi)
     debtors = await client_service.get_debtor_summaries()
     debtor_names = [d.client.full_name for d in debtors]
     assert debtor_names == ["Aliyev Anvar", "Zohidov Zohid"]
     assert debtors[0].remaining_by_currency == {"UZS": 1000000}
     assert debtors[1].remaining_by_currency == {"UZS": 500000}
+
+    # Agar Bekzodning yopilgan qarzi korzinaga o'tkazilsa — Bekzod jadvaldan ham chiqib ketadi
+    assert debt_bekzod.id is not None
+    await debt_service.move_to_trash([debt_bekzod.id])
+    all_summaries_after_trash = await client_service.get_all_summaries()
+    names_after = [s.client.full_name for s in all_summaries_after_trash]
+    assert names_after == ["Aliyev Anvar", "Zohidov Zohid"]
+
+
