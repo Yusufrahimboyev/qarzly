@@ -1374,16 +1374,26 @@ input:checked + .slider:before {
 
 /* Checkbox with smooth expand in selection mode */
 .trash-item-checkbox {
-    width: 20px;
-    height: 20px;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    margin: 0;
     accent-color: var(--primary-color);
     cursor: pointer;
     flex-shrink: 0;
-    transition: transform 0.2s;
+    pointer-events: none;
+    transition: width 0.18s ease, opacity 0.18s ease, margin 0.18s ease, transform 0.15s ease;
+}
+
+.selection-active .trash-item-checkbox {
+    width: 20px;
+    height: 20px;
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .trash-item.selected .trash-item-checkbox {
-    transform: scale(1.15);
+    transform: scale(1.1);
 }
 
 .trash-item-body {

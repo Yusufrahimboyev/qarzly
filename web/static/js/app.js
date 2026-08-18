@@ -349,8 +349,31 @@ function escapeHtml(str) {
 async function openClientReportModal(clientId) {
     hapticImpact();
     const modal = document.getElementById('report-modal');
+    if (!modal) return;
+
+    // 1. Keshdagi mijoz ma'lumotlari orqali modalni DARHOL ochamiz (0ms kechikish)
+    const cached = state.summaries.find(s => String(s.id) === String(clientId));
+    if (cached) {
+        document.getElementById('modal-client-name').textContent = cached.full_name;
+        document.getElementById('modal-client-phone').textContent = cached.phone || '-';
+        document.getElementById('modal-total-remaining').textContent = cached.has_debt ? formatMoneyMap(cached.remaining) : "Qarz yo'q";
+        document.getElementById('modal-total-products').textContent = '...';
+        document.getElementById('modal-total-paid').textContent = '...';
+    } else {
+        document.getElementById('modal-client-name').textContent = 'Mijoz Hisoboti';
+        document.getElementById('modal-client-phone').textContent = 'Yuklanmoqda...';
+    }
+
+    const debtsList = document.getElementById('modal-debts-list');
+    const paymentsList = document.getElementById('modal-payments-list');
+    if (debtsList) debtsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:13px;">Tarix yuklanmoqda...</div>';
+    if (paymentsList) paymentsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:13px;">Yuklanmoqda...</div>';
+
+    modal.style.display = 'flex';
+
+    // 2. Fonda to'liq hisobotni yuklab, modalni to'ldiramiz
     const data = await fetchClientReport(clientId);
-    if (!data || !modal) {
+    if (!data) {
         showToast('Mijoz ma\'lumotlarini yuklab bo\'lmadi');
         return;
     }
@@ -358,13 +381,12 @@ async function openClientReportModal(clientId) {
     state.selectedClientReport = data;
 
     document.getElementById('modal-client-name').textContent = data.client.full_name;
-    document.getElementById('modal-client-phone').textContent = data.client.phone;
+    document.getElementById('modal-client-phone').textContent = data.client.phone || '-';
     document.getElementById('modal-total-products').textContent = formatMoneyMap(data.total_product_price);
     document.getElementById('modal-total-paid').textContent = formatMoneyMap(sumMaps(data.total_paid_after, data.total_given_money));
     document.getElementById('modal-total-remaining').textContent = formatMoneyMap(data.total_remaining_debt);
 
     // Render Debts History — ko'p tovarli bo'lsa har bir tovarni alohida ko'rsatadi
-    const debtsList = document.getElementById('modal-debts-list');
     if (data.debts.length === 0) {
         debtsList.innerHTML = '<p class="text-muted" style="font-size:13px;">Qarzlar mavjud emas</p>';
     } else {
@@ -414,7 +436,6 @@ async function openClientReportModal(clientId) {
     }
 
     // Render Payments History
-    const paymentsList = document.getElementById('modal-payments-list');
     const actualPayments = data.payments.filter(p => p.payment_type !== 'initial');
     if (actualPayments.length === 0) {
         paymentsList.innerHTML = '<p class="text-muted" style="font-size:13px;">To\'lovlar mavjud emas</p>';
@@ -435,13 +456,9 @@ async function openClientReportModal(clientId) {
     }
 
     const payBtn = document.getElementById('modal-pay-now-btn');
-    // total_remaining_debt — valyutalar xaritasi ({UZS: n, USD: n}).
-    // Hammasi 0 yoki bo'sh bo'lsa tugma yashirinadi.
     const remainingValues = Object.values(data.total_remaining_debt || {});
     const hasAnyDebt = remainingValues.some(v => (Number(v) || 0) > 0);
     if (payBtn) payBtn.style.display = hasAnyDebt ? 'block' : 'none';
-
-    modal.style.display = 'flex';
 }
 
 function closeClientReportModal() {
@@ -1234,69 +1251,72 @@ document.addEventListener('DOMContentLoaded', () => {
 // UTILITY: LONG-PRESS & TAP GESTURE HANDLER
 // ==========================================
 
+// ==========================================
+// UTILITY: LONG-PRESS & TAP GESTURE HANDLER
+// ==========================================
+
 function attachCardGesture(card, onLongPress, onClick) {
     let timer = null;
     let isLong = false;
     let startX = 0;
     let startY = 0;
+    let touchMoved = false;
 
-    const startTouch = (e) => {
+    card.addEventListener('touchstart', (e) => {
         if (e.target.closest('input[type="checkbox"], button, a')) return;
         isLong = false;
+        touchMoved = false;
         if (e.touches && e.touches.length > 0) {
             startX = e.touches[0].clientX;
             startY = e.touches[0].clientY;
         }
         timer = setTimeout(() => {
-            isLong = true;
-            hapticImpact();
-            onLongPress(e);
-        }, 400);
-    };
+            if (!touchMoved) {
+                isLong = true;
+                hapticImpact();
+                onLongPress();
+            }
+        }, 380);
+    }, { passive: true });
 
-    const cancelTouch = () => {
+    card.addEventListener('touchmove', (e) => {
+        if (e.touches && e.touches.length > 0) {
+            const dx = Math.abs(e.touches[0].clientX - startX);
+            const dy = Math.abs(e.touches[0].clientY - startY);
+            if (dx > 8 || dy > 8) {
+                touchMoved = true;
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+            }
+        }
+    }, { passive: true });
+
+    card.addEventListener('touchend', () => {
         if (timer) {
             clearTimeout(timer);
             timer = null;
         }
-    };
-
-    const moveTouch = (e) => {
-        if (e.touches && e.touches.length > 0) {
-            const dx = Math.abs(e.touches[0].clientX - startX);
-            const dy = Math.abs(e.touches[0].clientY - startY);
-            if (dx > 10 || dy > 10) {
-                cancelTouch();
-            }
-        }
-    };
-
-    card.addEventListener('touchstart', startTouch, { passive: true });
-    card.addEventListener('touchend', (e) => {
-        cancelTouch();
-        if (!isLong && onClick) {
-            onClick(e);
+        if (!touchMoved && !isLong && onClick) {
+            onClick();
         }
     });
-    card.addEventListener('touchmove', moveTouch, { passive: true });
-    card.addEventListener('touchcancel', cancelTouch);
 
-    // Mouse support for desktop testing
-    card.addEventListener('mousedown', (e) => {
-        if (e.button !== 0 || e.target.closest('input[type="checkbox"], button, a')) return;
-        isLong = false;
-        timer = setTimeout(() => {
-            isLong = true;
-            onLongPress(e);
-        }, 400);
-    });
-    card.addEventListener('mouseup', (e) => {
-        cancelTouch();
-        if (!isLong && onClick) {
-            onClick(e);
+    card.addEventListener('touchcancel', () => {
+        if (timer) {
+            clearTimeout(timer);
+            timer = null;
         }
     });
-    card.addEventListener('mouseleave', cancelTouch);
+
+    // Desktop mouse click
+    card.addEventListener('click', (e) => {
+        if (e.target.closest('input[type="checkbox"], button, a')) return;
+        if (!window.matchMedia('(pointer: coarse)').matches && onClick) {
+            onClick();
+        }
+    });
 }
 
 // ==========================================
@@ -1311,9 +1331,9 @@ const paidState = {
 
 function enterPaidSelection(initialId = null) {
     paidState.isSelecting = true;
-    if (initialId) {
-        paidState.selected.add(initialId);
-    }
+    const listEl = document.getElementById('paid-debts-list');
+    if (listEl) listEl.classList.add('selection-active');
+
     const normalBar = document.getElementById('paid-normal-bar');
     const selectBar = document.getElementById('paid-select-bar');
     const floatingBar = document.getElementById('paid-floating-action-bar');
@@ -1321,13 +1341,26 @@ function enterPaidSelection(initialId = null) {
     if (selectBar) selectBar.style.display = 'flex';
     if (floatingBar) floatingBar.style.display = 'block';
 
-    renderPaidDebts();
+    if (initialId !== null && initialId !== undefined) {
+        paidState.selected.add(initialId);
+        const card = document.querySelector(`#paid-debts-list .trash-item[data-id="${initialId}"]`);
+        const cb = document.querySelector(`.paid-cb[data-id="${initialId}"]`);
+        if (card) card.classList.add('selected');
+        if (cb) cb.checked = true;
+    }
     updatePaidToolbar();
 }
 
 function exitPaidSelection() {
     paidState.isSelecting = false;
     paidState.selected.clear();
+
+    const listEl = document.getElementById('paid-debts-list');
+    if (listEl) {
+        listEl.classList.remove('selection-active');
+        listEl.querySelectorAll('.trash-item').forEach(c => c.classList.remove('selected'));
+        listEl.querySelectorAll('.paid-cb').forEach(cb => { cb.checked = false; });
+    }
 
     const normalBar = document.getElementById('paid-normal-bar');
     const selectBar = document.getElementById('paid-select-bar');
@@ -1336,7 +1369,7 @@ function exitPaidSelection() {
     if (selectBar) selectBar.style.display = 'none';
     if (floatingBar) floatingBar.style.display = 'none';
 
-    renderPaidDebts();
+    updatePaidToolbar();
 }
 
 function togglePaidItem(id) {
@@ -1374,11 +1407,10 @@ function renderPaidDebts() {
 
     container.innerHTML = paidState.items.map(item => {
         const isSelected = paidState.selected.has(item.id);
-        const checkboxStyle = paidState.isSelecting ? 'display:inline-block;' : 'display:none;';
         return `
             <div class="trash-item ${isSelected ? 'selected' : ''}" data-id="${item.id}">
                 <input type="checkbox" class="trash-item-checkbox paid-cb"
-                       data-id="${item.id}" ${isSelected ? 'checked' : ''} style="${checkboxStyle}">
+                       data-id="${item.id}" ${isSelected ? 'checked' : ''}>
                 <div class="trash-item-body">
                     <div class="trash-item-name">${escapeHtml(item.product_name)}${item.product_quantity > 1 ? ` — ${item.product_quantity} ta` : ''}</div>
                     <div class="trash-item-client">👤 ${escapeHtml(item.client_name)}</div>
@@ -1392,13 +1424,18 @@ function renderPaidDebts() {
         `;
     }).join('');
 
-    // Har bir kartochkaga gesture (bosib turish yoki bosish) ulaymiz
+    if (paidState.isSelecting) {
+        container.classList.add('selection-active');
+    } else {
+        container.classList.remove('selection-active');
+    }
+
+    // Har bir kartochkaga gesture ulaymiz
     container.querySelectorAll('.trash-item').forEach(card => {
         const id = Number(card.getAttribute('data-id'));
 
         attachCardGesture(
             card,
-            // Long press (bosib turganda)
             () => {
                 if (!paidState.isSelecting) {
                     enterPaidSelection(id);
@@ -1406,19 +1443,17 @@ function renderPaidDebts() {
                     togglePaidItem(id);
                 }
             },
-            // Regular Tap (bosganda)
             () => {
                 if (paidState.isSelecting) {
                     togglePaidItem(id);
                 } else {
-                    // Agar tanlash rejimida bo'lmasa, bosganda ham tanlash rejimiga kirishi mumkin
                     enterPaidSelection(id);
                 }
             }
         );
     });
 
-    // Checkbox o'ziga to'g'ridan-to'g'ri bosilganda
+    // Checkbox bosilganda
     container.querySelectorAll('.paid-cb').forEach(cb => {
         cb.addEventListener('change', () => {
             const id = Number(cb.getAttribute('data-id'));
@@ -1451,13 +1486,11 @@ function updatePaidToolbar() {
 async function fetchAndRenderPaidDebts() {
     const container = document.getElementById('paid-debts-list');
     if (!container) return;
-    container.innerHTML = '<div class="empty-state"><p>Yuklanmoqda...</p></div>';
     try {
         const res = await apiFetch('/api/paid-debts');
         if (!res.ok) throw new Error('Yuklab bo\'lmadi');
         paidState.items = await res.json();
         paidState.selected.clear();
-        paidState.isSelecting = false;
         renderPaidDebts();
     } catch (err) {
         container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${err.message}</p></div>`;
@@ -1479,12 +1512,16 @@ function setupPaidTab() {
 
     // "☑️ Barchasi" tugmasi
     document.getElementById('btn-paid-select-all-toggle')?.addEventListener('click', () => {
+        const listEl = document.getElementById('paid-debts-list');
         if (paidState.selected.size === paidState.items.length) {
             paidState.selected.clear();
+            listEl?.querySelectorAll('.trash-item').forEach(c => c.classList.remove('selected'));
+            listEl?.querySelectorAll('.paid-cb').forEach(cb => { cb.checked = false; });
         } else {
             paidState.items.forEach(i => paidState.selected.add(i.id));
+            listEl?.querySelectorAll('.trash-item').forEach(c => c.classList.add('selected'));
+            listEl?.querySelectorAll('.paid-cb').forEach(cb => { cb.checked = true; });
         }
-        renderPaidDebts();
         updatePaidToolbar();
         hapticImpact();
     });
@@ -1538,9 +1575,9 @@ const trashState = {
 
 function enterTrashSelection(initialId = null) {
     trashState.isSelecting = true;
-    if (initialId) {
-        trashState.selected.add(initialId);
-    }
+    const listEl = document.getElementById('trash-list');
+    if (listEl) listEl.classList.add('selection-active');
+
     const normalBar = document.getElementById('trash-normal-bar');
     const selectBar = document.getElementById('trash-select-bar');
     const floatingBar = document.getElementById('trash-floating-action-bar');
@@ -1548,13 +1585,26 @@ function enterTrashSelection(initialId = null) {
     if (selectBar) selectBar.style.display = 'flex';
     if (floatingBar) floatingBar.style.display = 'block';
 
-    renderTrash();
+    if (initialId !== null && initialId !== undefined) {
+        trashState.selected.add(initialId);
+        const card = document.querySelector(`#trash-list .trash-item[data-id="${initialId}"]`);
+        const cb = document.querySelector(`.trash-cb[data-id="${initialId}"]`);
+        if (card) card.classList.add('selected');
+        if (cb) cb.checked = true;
+    }
     updateTrashToolbar();
 }
 
 function exitTrashSelection() {
     trashState.isSelecting = false;
     trashState.selected.clear();
+
+    const listEl = document.getElementById('trash-list');
+    if (listEl) {
+        listEl.classList.remove('selection-active');
+        listEl.querySelectorAll('.trash-item').forEach(c => c.classList.remove('selected'));
+        listEl.querySelectorAll('.trash-cb').forEach(cb => { cb.checked = false; });
+    }
 
     const normalBar = document.getElementById('trash-normal-bar');
     const selectBar = document.getElementById('trash-select-bar');
@@ -1563,7 +1613,7 @@ function exitTrashSelection() {
     if (selectBar) selectBar.style.display = 'none';
     if (floatingBar) floatingBar.style.display = 'none';
 
-    renderTrash();
+    updateTrashToolbar();
 }
 
 function toggleTrashItem(id) {
@@ -1605,11 +1655,10 @@ function renderTrash() {
 
     container.innerHTML = trashState.items.map(item => {
         const isSelected = trashState.selected.has(item.id);
-        const checkboxStyle = trashState.isSelecting ? 'display:inline-block;' : 'display:none;';
         return `
             <div class="trash-item ${isSelected ? 'selected' : ''}" data-id="${item.id}">
                 <input type="checkbox" class="trash-item-checkbox trash-cb"
-                       data-id="${item.id}" ${isSelected ? 'checked' : ''} style="${checkboxStyle}">
+                       data-id="${item.id}" ${isSelected ? 'checked' : ''}>
                 <div class="trash-item-body">
                     <div class="trash-item-name">${escapeHtml(item.product_name)}${item.product_quantity > 1 ? ` — ${item.product_quantity} ta` : ''}</div>
                     <div class="trash-item-client">👤 ${escapeHtml(item.client_name)}</div>
@@ -1622,6 +1671,12 @@ function renderTrash() {
             </div>
         `;
     }).join('');
+
+    if (trashState.isSelecting) {
+        container.classList.add('selection-active');
+    } else {
+        container.classList.remove('selection-active');
+    }
 
     // Har bir kartochkaga gesture
     container.querySelectorAll('.trash-item').forEach(card => {
@@ -1673,6 +1728,7 @@ function updateTrashToolbar() {
         allBtn.textContent = allSelected ? '◻️ Bekor' : '☑️ Barchasi';
     }
 }
+
 
 async function fetchAndRenderTrash() {
     const container = document.getElementById('trash-list');
