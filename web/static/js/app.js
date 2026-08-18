@@ -119,6 +119,8 @@ async function apiFetch(url, options = {}) {
         showUnauthorizedState("Ruxsat berilmagan. Ilovani Telegram boti ichida oching.");
     } else if (res.status === 403) {
         showUnauthorizedState("⛔️ Sizning Telegram ID'ingizga ushbu tizimdan foydalanish huquqi berilmagan.");
+    } else if (res.status === 502 || res.status === 503) {
+        showToast("⏳ Server yangilanmoqda, 10-20 soniyadan so'ng qayta urinib ko'ring...");
     }
     return res;
 }
