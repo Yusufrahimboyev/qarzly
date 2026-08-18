@@ -378,13 +378,6 @@
                         <p>Yopilgan qarzlar yo'q</p>
                     </div>
                 </div>
-
-                <!-- Floating Bottom Action Bar in Selection Mode -->
-                <div id="paid-floating-action-bar" class="floating-action-bar" style="display:none;">
-                    <button id="btn-move-to-trash" class="btn btn-danger btn-block btn-action-lg" disabled>
-                        🗑 Tanlanganlarni Korzinaga Yuborish
-                    </button>
-                </div>
             </section>
 
             <!-- TAB: KORZINA (TRASH) -->
@@ -421,13 +414,6 @@
                     </div>
                 </div>
 
-                <!-- Floating Bottom Action Bar for Restore -->
-                <div id="trash-floating-action-bar" class="floating-action-bar" style="display:none;">
-                    <button id="btn-restore-from-trash" class="btn btn-primary btn-block btn-action-lg" disabled>
-                        ↩️ Tanlanganlarni Yopilganga Qaytarish
-                    </button>
-                </div>
-
                 <!-- Purge section at bottom of Korzina -->
                 <div id="trash-purge-bar" class="purge-bar" style="display:none;">
                     <span class="purge-bar-text">⚠️ Tozalangandan so'ng qayta tiklab bo'lmaydi</span>
@@ -438,6 +424,19 @@
             </section>
 
         </main>
+
+        <!-- Floating Action Bars (Selection Mode overlay over bottom dock) -->
+        <div id="paid-floating-action-bar" class="floating-action-bar" style="display:none;">
+            <button id="btn-move-to-trash" class="btn btn-danger btn-block btn-action-lg" disabled>
+                🗑 Tanlanganlarni Korzinaga Yuborish
+            </button>
+        </div>
+
+        <div id="trash-floating-action-bar" class="floating-action-bar" style="display:none;">
+            <button id="btn-restore-from-trash" class="btn btn-primary btn-block btn-action-lg" disabled>
+                ↩️ Tanlanganlarni Yopilganga Qaytarish
+            </button>
+        </div>
 
         <!-- Bottom Navigation Bar (5 tabs) -->
         <nav class="bottom-nav">
