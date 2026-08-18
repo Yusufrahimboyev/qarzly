@@ -1072,6 +1072,13 @@ function switchTab(tabId) {
         btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (tabId === 'tab-paid') fetchAndRenderPaidDebts();
+    if (tabId === 'tab-trash') fetchAndRenderTrash();
+    if (tabId === 'tab-table') {
+        fetchStats();
+        fetchSummaries();
+    }
 }
 
 // ==========================================
@@ -1085,13 +1092,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // Refresh Button
+    // Refresh Button — barcha tablar ma'lumotini qayta yuklaydi
     const refreshBtn = document.getElementById('btn-refresh');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', async () => {
             refreshBtn.classList.add('rotating');
             hapticImpact();
-            await Promise.all([fetchStats(), fetchSummaries()]);
+            await Promise.all([
+                fetchStats(),
+                fetchSummaries(),
+                fetchAndRenderPaidDebts(),
+                fetchAndRenderTrash(),
+            ]);
             setTimeout(() => refreshBtn.classList.remove('rotating'), 600);
             showToast('Yangilandi');
         });
@@ -1202,20 +1214,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Tab switch — yangi tablar uchun ham ma'lumot yuklaymiz
+    // Tab switch listener
     document.querySelectorAll('.nav-item').forEach(btn => {
         btn.addEventListener('click', () => {
             const tabId = btn.getAttribute('data-tab');
             switchTab(tabId);
-            if (tabId === 'tab-paid') fetchAndRenderPaidDebts();
-            if (tabId === 'tab-trash') fetchAndRenderTrash();
             hapticImpact();
         });
     });
 
-    // Initial Fetch
+    // Initial Fetch — barcha asosiy ma'lumotlarni birdaniga yuklaymiz
     fetchStats();
     fetchSummaries();
+    fetchAndRenderPaidDebts();
+    fetchAndRenderTrash();
 });
 
 // ==========================================
