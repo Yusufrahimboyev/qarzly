@@ -103,3 +103,34 @@ async def test_alphabetical_summaries_and_debtors(
     assert names_after == ["Aliyev Anvar", "Zohidov Zohid"]
 
 
+@pytest.mark.asyncio
+async def test_client_latest_debt_dates_and_get_all_clients(
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
+) -> None:
+    client_service = ClientService(client_repo, debt_repo)
+    debt_service = DebtService(client_repo, debt_repo, payment_repo)
+
+    c1, _ = await client_service.get_or_create("Aliyev Anvar", "+998901111111")
+    c2, _ = await client_service.get_or_create("Valiyev Vali", "+998902222222")
+
+    await debt_service.create_debt(
+        c1.id, "10.08.2026", product_name="Old debt", product_price=100000,  # type: ignore[arg-type]
+    )
+    await debt_service.create_debt(
+        c1.id, "18.08.2026", product_name="New debt", product_price=200000,  # type: ignore[arg-type]
+    )
+
+    summaries = await client_service.get_all_summaries()
+    summary_map = {s.client.id: s for s in summaries}
+    assert summary_map[c1.id].latest_debt_date == "18.08.2026"
+
+    all_clients = await client_service.get_all_clients()
+    assert len(all_clients) == 2
+    client_ids = [c.id for c in all_clients]
+    assert c1.id in client_ids
+    assert c2.id in client_ids
+
+
+

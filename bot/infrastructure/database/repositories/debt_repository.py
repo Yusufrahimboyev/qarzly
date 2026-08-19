@@ -156,6 +156,18 @@ class PgDebtRepository(DebtRepository):
             totals.setdefault(client_id, {})[currency_code] = (rem_amount, count)
         return totals
 
+    async def get_client_latest_dates(self) -> dict[int, str]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT client_id, MAX(debt_date)
+                FROM debts
+                WHERE status != 'trashed'
+                GROUP BY client_id
+                """
+            )
+        return {int(row[0]): str(row[1]) for row in rows if row[1]}
+
     async def update_remaining_debt(
         self,
         debt_id: int,

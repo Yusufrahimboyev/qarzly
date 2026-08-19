@@ -145,6 +145,15 @@ class FakeDebtRepository(DebtRepository):
                 totals[d.client_id][cur] = (prev_sum + d.remaining_debt, prev_count + 1)
         return totals
 
+    async def get_client_latest_dates(self) -> dict[int, str]:
+        latest_dates: dict[int, str] = {}
+        for d in self._store.values():
+            if d.status != DebtStatus.TRASHED and d.debt_date:
+                curr = latest_dates.get(d.client_id, "")
+                if not curr or d.debt_date > curr:
+                    latest_dates[d.client_id] = d.debt_date
+        return latest_dates
+
     async def update_remaining_debt(
         self,
         debt_id: int,

@@ -34,8 +34,11 @@ function hapticImpact() {
 const state = {
     summaries: [],
     filter: 'all',
+    sort: 'name_asc',
     searchQuery: '',
     selectedClientReport: null,
+    renderedCount: 0,
+    filteredList: [],
 };
 
 // Utilities
@@ -71,6 +74,29 @@ function isValidDateString(str) {
     if (m < 1 || m > 12) return false;
     const dt = new Date(y, m - 1, d);
     return dt.getDate() === d && dt.getMonth() === m - 1 && dt.getFullYear() === y;
+}
+
+function parseDateToTime(str) {
+    if (!str || typeof str !== 'string') return 0;
+    if (/^\d{2}\.\d{2}\.\d{4}$/.test(str)) {
+        const [d, m, y] = str.split('.').map(Number);
+        return new Date(y, m - 1, d).getTime();
+    }
+    const t = Date.parse(str);
+    return isNaN(t) ? 0 : t;
+}
+
+function getTotalDebtUZS(item) {
+    const rem = item.remaining || {};
+    return (rem.UZS || 0) + ((rem.USD || 0) * 12800);
+}
+
+function debounce(fn, delay = 150) {
+    let timer = null;
+    return function (...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+    };
 }
 
 function getTodayFormatted() {
@@ -181,32 +207,101 @@ async function fetchClientReport(clientId) {
 }
 
 // ==========================================
-// TAB 1: RENDER CLIENTS LIST & SEARCH/FILTER
+// TAB 1: RENDER CLIENTS LIST, FILTER & SORT (OPTIMIZED CHUNKED BATCHES)
 // ==========================================
 
-function renderClientsList() {
-    const container = document.getElementById('clients-list');
-    if (!container) return;
+const BATCH_SIZE = 30;
+let listObserver = null;
 
+function getProcessedList() {
     let list = [...state.summaries];
 
-    // Apply Filter Chips
+    // 1. Filter Chips
     if (state.filter === 'debtors') {
         list = list.filter(item => item.has_debt);
     } else if (state.filter === 'paid') {
         list = list.filter(item => !item.has_debt);
     }
 
-    // Apply Search Query
+    // 2. Search Query
     if (state.searchQuery.trim()) {
         const q = state.searchQuery.toLowerCase().trim();
         list = list.filter(item =>
-            item.full_name.toLowerCase().includes(q) ||
-            item.phone.toLowerCase().includes(q)
+            (item.full_name && item.full_name.toLowerCase().includes(q)) ||
+            (item.phone && item.phone.toLowerCase().includes(q))
         );
     }
 
-    if (list.length === 0) {
+    // 3. Sorting
+    switch (state.sort) {
+        case 'name_desc':
+            list.sort((a, b) => (b.full_name || '').localeCompare(a.full_name || '', 'uz', { sensitivity: 'base' }));
+            break;
+        case 'date_desc':
+            list.sort((a, b) => {
+                const tA = parseDateToTime(a.latest_debt_date || a.created_at);
+                const tB = parseDateToTime(b.latest_debt_date || b.created_at);
+                return tB - tA;
+            });
+            break;
+        case 'date_asc':
+            list.sort((a, b) => {
+                const tA = parseDateToTime(a.latest_debt_date || a.created_at);
+                const tB = parseDateToTime(b.latest_debt_date || b.created_at);
+                return tA - tB;
+            });
+            break;
+        case 'debt_desc':
+            list.sort((a, b) => getTotalDebtUZS(b) - getTotalDebtUZS(a));
+            break;
+        case 'debt_asc':
+            list.sort((a, b) => getTotalDebtUZS(a) - getTotalDebtUZS(b));
+            break;
+        case 'name_asc':
+        default:
+            list.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '', 'uz', { sensitivity: 'base' }));
+            break;
+    }
+
+    return list;
+}
+
+function renderClientCardHTML(item) {
+    const dateHtml = item.latest_debt_date
+        ? `<div class="client-date-tag">📅 ${escapeHtml(item.latest_debt_date)}</div>`
+        : '';
+    return `
+        <div class="client-item-card" data-client-id="${item.id}">
+            <div class="client-item-main">
+                <div class="client-name">${escapeHtml(item.full_name)}</div>
+                <div class="client-phone">${escapeHtml(item.phone || 'Telefonsiz')}</div>
+                ${dateHtml}
+            </div>
+            <div class="client-item-meta">
+                <div class="client-debt-badge">
+                    <div class="client-debt-amount ${item.has_debt ? '' : 'is-paid'}">
+                        ${item.has_debt ? formatMoneyMap(item.remaining) : formatMoney(0)}
+                    </div>
+                    <span class="client-status-pill ${item.has_debt ? 'pill-debt' : 'pill-paid'}">
+                        ${item.has_debt ? '🔴 Qarzdor' : '🟢 Yopilgan'}
+                    </span>
+                </div>
+                <button class="client-history-btn" data-client-id="${item.id}" title="Hisobot" aria-label="Hisobot">
+                    📊
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function renderClientsList() {
+    const container = document.getElementById('clients-list');
+    if (!container) return;
+
+    state.filteredList = getProcessedList();
+    state.renderedCount = 0;
+
+    if (state.filteredList.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon">📂</div>
@@ -216,44 +311,51 @@ function renderClientsList() {
         return;
     }
 
-    container.innerHTML = list.map(item => `
-        <div class="client-item-card" data-client-id="${item.id}">
-            <div class="client-item-main">
-                <div class="client-item-info">
-                    <div class="client-item-name">${escapeHtml(item.full_name)}</div>
-                    <div class="client-item-phone">${escapeHtml(item.phone)}</div>
-                </div>
-                <div class="client-item-meta">
-                    <div class="client-item-debt ${item.has_debt ? 'has-debt' : 'no-debt'}">
-                        ${item.has_debt ? formatMoneyMap(item.remaining) : formatMoney(0)}
-                    </div>
-                    <span class="badge ${item.has_debt ? 'badge-danger' : 'badge-success'}">
-                        ${item.has_debt ? '🔴 Qarzdor' : '🟢 Yopilgan'}
-                    </span>
-                </div>
-            </div>
-            <button class="client-history-btn" data-client-id="${item.id}" title="Hisobotni ko'rish" aria-label="Hisobot">
-                📊
-            </button>
-        </div>
-    `).join('');
+    container.innerHTML = '';
+    appendClientBatch();
+}
 
-    // Karta ustiga bosilganda — mijoz hisoboti (report modal) ochiladi
-    container.querySelectorAll('.client-item-card').forEach(card => {
-        card.addEventListener('click', (e) => {
-            if (e.target.closest('.client-history-btn')) return;
-            const clientId = card.getAttribute('data-client-id');
-            if (clientId) openClientReportModal(clientId);
-        });
-    });
+function appendClientBatch() {
+    const container = document.getElementById('clients-list');
+    if (!container) return;
 
-    // 📊 tugmasi — hisobot modalini ochadi
-    container.querySelectorAll('.client-history-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openClientReportModal(btn.getAttribute('data-client-id'));
-        });
-    });
+    const oldSentinel = document.getElementById('client-list-sentinel');
+    if (oldSentinel) oldSentinel.remove();
+
+    const nextBatch = state.filteredList.slice(state.renderedCount, state.renderedCount + BATCH_SIZE);
+    if (nextBatch.length === 0) return;
+
+    const fragment = document.createDocumentFragment();
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = nextBatch.map(renderClientCardHTML).join('');
+
+    while (tempDiv.firstChild) {
+        fragment.appendChild(tempDiv.firstChild);
+    }
+    container.appendChild(fragment);
+
+    state.renderedCount += nextBatch.length;
+
+    if (state.renderedCount < state.filteredList.length) {
+        const sentinel = document.createElement('div');
+        sentinel.id = 'client-list-sentinel';
+        sentinel.style.height = '30px';
+        sentinel.style.margin = '10px 0';
+        sentinel.style.textAlign = 'center';
+        sentinel.style.color = 'var(--text-muted)';
+        sentinel.style.fontSize = '12px';
+        sentinel.textContent = 'Yuklanmoqda...';
+        container.appendChild(sentinel);
+
+        if (!listObserver) {
+            listObserver = new IntersectionObserver((entries) => {
+                if (entries[0] && entries[0].isIntersecting) {
+                    appendClientBatch();
+                }
+            }, { rootMargin: '200px' });
+        }
+        listObserver.observe(sentinel);
+    }
 }
 
 // Jadvaldan tanlangan mavjud mijozga yangi qarz qo'shishni boshlaydi:
@@ -893,6 +995,8 @@ function getSelectedDebtInCurrency(opt, currency) {
 
 function setupPaymentForm() {
     const select = document.getElementById('pay-client-select');
+    const payDateInput = document.getElementById('pay-date');
+    const btnPayToday = document.getElementById('btn-pay-set-today');
     const infoCard = document.getElementById('pay-client-info-card');
     const optionsWrapper = document.getElementById('pay-options-wrapper');
     const radioModes = document.querySelectorAll('input[name="payment_mode"]');
@@ -901,6 +1005,15 @@ function setupPaymentForm() {
     const previewAmount = document.getElementById('pay-preview-amount');
     const previewRemaining = document.getElementById('pay-preview-remaining');
     const submitBtn = document.getElementById('btn-submit-payment');
+
+    // Default Payment Date to Today
+    if (payDateInput) payDateInput.value = getTodayFormatted();
+    if (btnPayToday) {
+        btnPayToday.addEventListener('click', () => {
+            if (payDateInput) payDateInput.value = getTodayFormatted();
+            hapticImpact();
+        });
+    }
 
     if (select) {
         select.addEventListener('change', () => {
@@ -1013,9 +1126,15 @@ function setupPaymentForm() {
             const currency = getPaymentCurrency();
             const opt = select?.selectedOptions[0];
             const totalDebt = getSelectedDebtInCurrency(opt, currency);
+            const payDate = payDateInput?.value.trim() || getTodayFormatted();
 
             if (!clientId) {
                 showToast('Qarzdor mijozni tanlang');
+                return;
+            }
+
+            if (!isValidDateString(payDate)) {
+                showToast('To\'lov sanasi noto\'g\'ri (masalan: 20.08.2026)');
                 return;
             }
 
@@ -1044,7 +1163,7 @@ function setupPaymentForm() {
                         payment_type: mode,
                         amount: amount,
                         currency: currency,
-                        payment_date: getTodayFormatted(),
+                        payment_date: payDate,
                     })
                 });
 
@@ -1058,6 +1177,7 @@ function setupPaymentForm() {
 
                 // Reset payment form
                 document.getElementById('payment-form').reset();
+                if (payDateInput) payDateInput.value = getTodayFormatted();
                 if (infoCard) infoCard.style.display = 'none';
                 if (optionsWrapper) optionsWrapper.style.display = 'none';
                 if (partialGroup) partialGroup.style.display = 'none';
@@ -1126,14 +1246,38 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Search Input
+    // Event delegation on clients list container (Single listener for entire list)
+    const clientsListContainer = document.getElementById('clients-list');
+    if (clientsListContainer) {
+        clientsListContainer.addEventListener('click', (e) => {
+            const historyBtn = e.target.closest('.client-history-btn');
+            if (historyBtn) {
+                e.stopPropagation();
+                const clientId = historyBtn.getAttribute('data-client-id');
+                if (clientId) openClientReportModal(clientId);
+                return;
+            }
+            const card = e.target.closest('.client-item-card');
+            if (card) {
+                const clientId = card.getAttribute('data-client-id');
+                if (clientId) openClientReportModal(clientId);
+            }
+        });
+    }
+
+    // Search Input with Debounce (150ms)
     const searchInput = document.getElementById('table-search-input');
     const clearSearchBtn = document.getElementById('clear-search-btn');
     if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
-            state.searchQuery = e.target.value;
-            if (clearSearchBtn) clearSearchBtn.style.display = state.searchQuery ? 'block' : 'none';
+        const handleSearch = debounce((val) => {
+            state.searchQuery = val;
             renderClientsList();
+        }, 150);
+
+        searchInput.addEventListener('input', (e) => {
+            const val = e.target.value;
+            if (clearSearchBtn) clearSearchBtn.style.display = val ? 'block' : 'none';
+            handleSearch(val);
         });
     }
     if (clearSearchBtn) {
@@ -1143,6 +1287,16 @@ document.addEventListener('DOMContentLoaded', () => {
             clearSearchBtn.style.display = 'none';
             renderClientsList();
             hapticImpact();
+        });
+    }
+
+    // Sort Selector (A-Z, Z-A, Sana, Qarz)
+    const sortSelect = document.getElementById('table-sort-select');
+    if (sortSelect) {
+        sortSelect.addEventListener('change', (e) => {
+            state.sort = e.target.value;
+            hapticImpact();
+            renderClientsList();
         });
     }
 

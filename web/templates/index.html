@@ -68,11 +68,23 @@
                     </div>
                 </div>
 
-                <!-- Filter Chips -->
-                <div class="filter-chips">
-                    <button class="chip active" data-filter="all">Barchasi</button>
-                    <button class="chip" data-filter="debtors">🔴 Qarzdorlar</button>
-                    <button class="chip" data-filter="paid">🟢 Yopilganlar</button>
+                <!-- Filter & Sort Toolbar -->
+                <div class="filter-sort-bar">
+                    <div class="filter-chips">
+                        <button class="chip active" data-filter="all">Barchasi</button>
+                        <button class="chip" data-filter="debtors">🔴 Qarzdorlar</button>
+                        <button class="chip" data-filter="paid">🟢 Yopilganlar</button>
+                    </div>
+                    <div class="sort-select-wrapper">
+                        <select id="table-sort-select" class="sort-select" aria-label="Saralash">
+                            <option value="name_asc">🔤 Ism (A → Z)</option>
+                            <option value="name_desc">🔤 Ism (Z → A)</option>
+                            <option value="date_desc">📅 Sana (Eng yangi)</option>
+                            <option value="date_asc">📅 Sana (Eng eski)</option>
+                            <option value="debt_desc">💰 Qarz (Katta → Kichik)</option>
+                            <option value="debt_asc">💰 Qarz (Kichik → Katta)</option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- Client List Container -->
@@ -262,6 +274,15 @@
                     </div>
 
                     <form id="payment-form" onsubmit="return false;">
+                        <!-- Sana -->
+                        <div class="form-group">
+                            <label for="pay-date">📅 To'lov sanasi</label>
+                            <div class="input-with-action">
+                                <input type="text" id="pay-date" placeholder="DD.MM.YYYY (masalan: 20.08.2026)" required>
+                                <button type="button" id="btn-pay-set-today" class="btn-sm">Bugun</button>
+                            </div>
+                        </div>
+
                         <div class="form-group">
                             <label for="pay-client-select">👤 Qarzdor mijozni tanlang</label>
                             <select id="pay-client-select" required>

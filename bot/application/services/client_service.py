@@ -56,6 +56,10 @@ class ClientService:
         """ID bo'yicha mijozni topadi."""
         return await self._clients.get_by_id(client_id)
 
+    async def get_all_clients(self) -> list[Client]:
+        """Barcha mijozlarni alifbo tartibida qaytaradi (engil so'rov)."""
+        return await self._clients.get_all_alphabetical()
+
     async def get_all_summaries(self) -> list[ClientDebtSummary]:
         """Barcha faol yoki yopilgan qarzi bor mijozlarni alifbo tartibida qaytaradi.
 
@@ -64,6 +68,7 @@ class ClientService:
         """
         all_clients = await self._clients.get_all_alphabetical()
         active_totals = await self._debts.get_active_totals()
+        latest_dates = await self._debts.get_client_latest_dates()
         paid_debts = await self._debts.get_all_paid()
         paid_client_ids = {d.client_id for d in paid_debts}
 
@@ -89,6 +94,7 @@ class ClientService:
                     client=client,
                     remaining_by_currency=remaining,
                     active_debts_count=active_count,
+                    latest_debt_date=latest_dates.get(client.id, ""),
                 )
             )
 

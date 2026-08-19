@@ -591,3 +591,92 @@ async def test_api_trash_flow(
     finally:
         await client.close()
 
+
+@pytest.mark.asyncio
+async def test_api_summaries_includes_latest_debt_date(
+    aiohttp_app: web.Application,
+) -> None:
+    """GET /api/summaries va /api/debtors latest_debt_date va created_at maydonlarini qaytarishi kerak."""
+    from aiohttp.test_utils import TestClient, TestServer
+    server = TestServer(aiohttp_app)
+    client = TestClient(server)
+    await client.start_server()
+
+    try:
+        headers = auth_header()
+        payload = {
+            "client_name": "Date Test Mijoz",
+            "client_phone": "+998909998877",
+            "debt_date": "19.08.2026",
+            "products": [{"name": "Moy", "quantity": 1, "price_per_unit": 200000}],
+        }
+        res_create = await client.post("/api/debts", json=payload, headers=headers)
+        assert res_create.status == 200
+
+        res_sum = await client.get("/api/summaries", headers=headers)
+        assert res_sum.status == 200
+        summaries = await res_sum.json()
+        item = next(s for s in summaries if s["full_name"] == "Date Test Mijoz")
+        assert item["latest_debt_date"] == "19.08.2026"
+        assert item["created_at"] is not None
+
+        res_debtors = await client.get("/api/debtors", headers=headers)
+        assert res_debtors.status == 200
+        debtors = await res_debtors.json()
+        debtor_item = next(d for d in debtors if d["full_name"] == "Date Test Mijoz")
+        assert debtor_item["latest_debt_date"] == "19.08.2026"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_api_payment_with_custom_date(
+    aiohttp_app: web.Application,
+) -> None:
+    """POST /api/payments da kiritilgan maxsus payment_date to'g'ri saqlanishi kerak."""
+    from aiohttp.test_utils import TestClient, TestServer
+    server = TestServer(aiohttp_app)
+    client = TestClient(server)
+    await client.start_server()
+
+    try:
+        headers = auth_header()
+        res_create = await client.post(
+            "/api/debts",
+            json={
+                "client_name": "Custom Pay Date User",
+                "client_phone": "+998901239988",
+                "debt_date": "15.08.2026",
+                "products": [{"name": "Shina", "quantity": 1, "price_per_unit": 600000}],
+            },
+            headers=headers,
+        )
+        assert res_create.status == 200
+        client_id = (await res_create.json())["client_id"]
+
+        # Qisman to'lov maxsus sana bilan
+        res_pay = await client.post(
+            "/api/payments",
+            json={
+                "client_id": client_id,
+                "payment_type": "partial",
+                "amount": 200000,
+                "currency": "UZS",
+                "payment_date": "17.08.2026",
+            },
+            headers=headers,
+        )
+        assert res_pay.status == 200
+
+        # Report orqali to'lov sanasini tekshiramiz
+        res_report = await client.get(f"/api/clients/{client_id}/report", headers=headers)
+        assert res_report.status == 200
+        report = await res_report.json()
+        payments = report["payments"]
+        custom_pay = next(p for p in payments if p["payment_type"] == "partial")
+        assert custom_pay["payment_date"] == "17.08.2026"
+        assert custom_pay["amount"] == 200000
+    finally:
+        await client.close()
+
+

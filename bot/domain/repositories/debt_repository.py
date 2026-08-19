@@ -56,6 +56,11 @@ class DebtRepository(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    async def get_client_latest_dates(self) -> dict[int, str]:
+        """Mijozlar bo'yicha eng oxirgi qarz sanalarini qaytaradi (client_id -> max_date)."""
+        raise NotImplementedError
+
     # ------------------------------------------------------------------
     # Korzina (Trash) operatsiyalari
     # ------------------------------------------------------------------

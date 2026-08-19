@@ -27,6 +27,7 @@ class ClientDebtSummary:
     client: Client
     remaining_by_currency: MoneyMap = field(default_factory=empty_money)
     active_debts_count: int = 0
+    latest_debt_date: str = ""
 
     @property
     def has_debt(self) -> bool:

@@ -140,6 +140,8 @@ async def api_get_summaries(request: web.Request) -> web.Response:
             "remaining": s.remaining_by_currency,
             "active_debts_count": s.active_debts_count,
             "has_debt": s.has_debt,
+            "latest_debt_date": s.latest_debt_date,
+            "created_at": s.client.created_at.isoformat() if s.client.created_at else None,
         }
         for s in summaries
     ]
@@ -159,6 +161,8 @@ async def api_get_debtors(request: web.Request) -> web.Response:
             "remaining": s.remaining_by_currency,
             "active_debts_count": s.active_debts_count,
             "has_debt": True,
+            "latest_debt_date": s.latest_debt_date,
+            "created_at": s.client.created_at.isoformat() if s.client.created_at else None,
         }
         for s in debtors
     ]
@@ -481,12 +485,12 @@ async def api_get_paid_debts(request: web.Request) -> web.Response:
 
     paid_debts = await debt_service.get_all_paid()
 
-    # Mijozlar ID -> ism xaritasini tuzamiz (bitta so'rovda)
-    summaries = await client_service.get_all_summaries()
+    # Mijozlar ID -> ism xaritasini tuzamiz (bitta engil so'rovda)
+    all_clients = await client_service.get_all_clients()
     client_names: dict[int, str] = {
-        s.client.id: s.client.full_name
-        for s in summaries
-        if s.client.id is not None
+        c.id: c.full_name
+        for c in all_clients
+        if c.id is not None
     }
 
     data = [
@@ -547,11 +551,11 @@ async def api_get_trash(request: web.Request) -> web.Response:
 
     trashed_debts = await debt_service.get_all_trashed()
 
-    summaries = await client_service.get_all_summaries()
+    all_clients = await client_service.get_all_clients()
     client_names: dict[int, str] = {
-        s.client.id: s.client.full_name
-        for s in summaries
-        if s.client.id is not None
+        c.id: c.full_name
+        for c in all_clients
+        if c.id is not None
     }
 
     data = [
