@@ -1046,6 +1046,9 @@ function setupPaymentForm() {
         radio.addEventListener('change', () => {
             const isPartial = radio.value === 'partial';
             if (partialGroup) partialGroup.style.display = isPartial ? 'block' : 'none';
+            if (isPartial && payDateInput && !payDateInput.value) {
+                payDateInput.value = getTodayFormatted();
+            }
             updatePaymentCalculation();
             hapticImpact();
         });
