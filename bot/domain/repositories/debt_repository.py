@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import date
 
 from bot.domain.entities.debt import Debt, DebtStatus
 
@@ -28,8 +29,17 @@ class DebtRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_active_by_client_id(self, client_id: int) -> list[Debt]:
-        """Mijozning faol (yopilmagan) qarzlarini FIFO tartibida (eng eski birinchi) qaytaradi."""
+    async def get_active_by_client_id(
+        self,
+        client_id: int,
+        *,
+        for_update: bool = False,
+    ) -> list[Debt]:
+        """Mijozning faol (yopilmagan) qarzlarini FIFO tartibida (eng eski birinchi) qaytaradi.
+
+        `for_update=True` bo'lsa qatorlar tranzaksiya oxirigacha qulflanadi —
+        parallel to'lovlarda lost update bo'lmasligi uchun.
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -57,8 +67,13 @@ class DebtRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_client_latest_dates(self) -> dict[int, str]:
+    async def get_client_latest_dates(self) -> dict[int, date]:
         """Mijozlar bo'yicha eng oxirgi qarz sanalarini qaytaradi (client_id -> max_date)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_client_ids_with_paid_debts(self) -> set[int]:
+        """Yopilgan qarzi bor mijozlar ID lari (barcha qarzlarni yuklamasdan)."""
         raise NotImplementedError
 
     # ------------------------------------------------------------------
@@ -66,8 +81,12 @@ class DebtRepository(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    async def get_all_paid(self) -> list[Debt]:
-        """Barcha yopilgan (paid) qarzlarni qaytaradi — Yopilganlar tab uchun."""
+    async def get_all_paid(
+        self,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Debt]:
+        """Yopilgan (paid) qarzlarni sahifalab qaytaradi — Yopilganlar tab uchun."""
         raise NotImplementedError
 
     @abstractmethod
@@ -93,15 +112,22 @@ class DebtRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_all_trashed(self) -> list[Debt]:
-        """Barcha korzinaga yuborilgan (trashed) qarzlarni qaytaradi."""
+    async def get_all_trashed(
+        self,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Debt]:
+        """Korzinaga yuborilgan (trashed) qarzlarni sahifalab qaytaradi."""
         raise NotImplementedError
 
     @abstractmethod
-    async def purge_trash(self) -> int:
+    async def purge_trash(self, actor_id: int | None = None) -> int:
         """Korzinani butunlay tozalaydi:
-        1. Barcha 'trashed' qarzlarni trash arxiv jadvaliga ko'chiradi (mijoz nomi bilan).
-        2. debts jadvalidan o'chiradi (ON DELETE RESTRICT sababli payments avval o'chiriladi).
+        1. To'lov tarixini `trash_payments` arxiviga ko'chiradi (audit trail).
+        2. Barcha 'trashed' qarzlarni trash arxiv jadvaliga ko'chiradi (mijoz nomi bilan).
+        3. debts jadvalidan o'chiradi.
+
+        `actor_id` — amalni bajargan Telegram foydalanuvchi ID si (audit uchun).
 
         Qaytaradi: o'chirilgan yozuvlar soni.
         """

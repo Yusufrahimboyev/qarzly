@@ -7,7 +7,11 @@ import json
 import time
 from urllib.parse import urlencode
 
-from bot.infrastructure.web.telegram_auth import validate_init_data
+from bot.infrastructure.web.telegram_auth import (
+    CONTENT_SECURITY_POLICY,
+    SlidingWindowRateLimiter,
+    validate_init_data,
+)
 
 BOT_TOKEN = "123456:test-token"
 
@@ -76,3 +80,42 @@ def test_user_without_id_rejected() -> None:
     }
     raw = _sign(BOT_TOKEN, params)
     assert validate_init_data(raw, BOT_TOKEN) is None
+
+
+def test_future_auth_date_rejected() -> None:
+    """Kelajakdagi auth_date qabul qilinmasligi kerak (M-10)."""
+    future = int(time.time()) + 10 * 60
+    raw = _sign(BOT_TOKEN, _base_params(auth_date=future))
+    assert validate_init_data(raw, BOT_TOKEN) is None
+
+
+def test_small_clock_skew_accepted() -> None:
+    """Kichik soat farqi (30 s) normal hisoblanadi."""
+    slightly_ahead = int(time.time()) + 30
+    raw = _sign(BOT_TOKEN, _base_params(auth_date=slightly_ahead))
+    assert validate_init_data(raw, BOT_TOKEN) is not None
+
+
+def test_rate_limiter_blocks_after_limit() -> None:
+    limiter = SlidingWindowRateLimiter(limit=3, window_seconds=60)
+    assert limiter.allow("user:1") is True
+    assert limiter.allow("user:1") is True
+    assert limiter.allow("user:1") is True
+    assert limiter.allow("user:1") is False
+    # Boshqa foydalanuvchi ta'sirlanmaydi
+    assert limiter.allow("user:2") is True
+
+
+def test_rate_limiter_window_slides() -> None:
+    limiter = SlidingWindowRateLimiter(limit=2, window_seconds=60)
+    assert limiter.allow("ip:1", now=0.0) is True
+    assert limiter.allow("ip:1", now=1.0) is True
+    assert limiter.allow("ip:1", now=2.0) is False
+    # Oyna o'tgach yana ruxsat beriladi
+    assert limiter.allow("ip:1", now=70.0) is True
+
+
+def test_security_headers_include_csp_and_no_store() -> None:
+    """PII javoblari keshlanmasligi va CSP o'rnatilishi kerak (M-10)."""
+    assert "frame-ancestors" in CONTENT_SECURITY_POLICY
+    assert "https://telegram.org" in CONTENT_SECURITY_POLICY

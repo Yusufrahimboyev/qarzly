@@ -69,12 +69,14 @@ Asosiy biznes obyektlari (`bot/domain/entities/`):
 
 - **Aiogram 3.x** — eng so'nggi asinxron Telegram Bot framework
 - **Clean Architecture** — test qilish oson, kengaytiriladigan kod
-- **Async SQLite** (aiosqlite) — bitta ulanish ustida repositories
+- **PostgreSQL (Supabase)** + **asyncpg** pool — repository'lar pool yoki
+  tranzaksiya connection'i ustida ishlaydi (Unit of Work)
 - **Dependency Injection** — middleware orqali service'lar handler'ga uzatiladi
 - **aiohttp WebApp** — Telegram Mini App + REST API + health check
 - **APScheduler** — rejalashtirilgan vazifalar (namuna job mavjud)
 - **pydantic-settings** — typed, validatsiyalangan konfiguratsiya
-- **pytest** — Fake repository bilan unit va API testlari
+- **pytest** — Fake repository bilan unit/API testlari hamda haqiqiy
+  PostgreSQL talab qiladigan integration testlar (`tests/integration`)
 
 ## O'rnatish
 
@@ -90,11 +92,22 @@ cp .env.example .env
 | O'zgaruvchi | Majburiy | Default | Izoh |
 |---|---|---|---|
 | `BOT_TOKEN` | ✅ | — | BotFather'dan olingan token |
-| `ADMIN_IDS` | — | — | Admin Telegram ID lari (vergul bilan ajratilgan) |
+| `ADMIN_IDS` | ✅ | — | Admin Telegram ID lari (vergul bilan ajratilgan) |
+| `ALLOW_OPEN_ACCESS` | — | `false` | Faqat development: bo'sh `ADMIN_IDS` bilan ochiq kirish |
+| `DATABASE_URL` | ✅ | — | PostgreSQL DSN (Supabase) |
 | `PORT` | — | `8080` | Web server porti |
-| `DATABASE_PATH` | — | `data/bot.db` | SQLite fayl yo'li |
 | `RENDER_EXTERNAL_URL` | — | — | Mini App / keep-alive URL |
+| `API_RATE_LIMIT_PER_MINUTE` | — | `120` | Foydalanuvchi/IP uchun API chegarasi |
+| `INIT_DATA_MAX_AGE_SECONDS` | — | `86400` | Telegram initData amal qilish muddati |
+| `DB_POOL_MIN_SIZE` / `DB_POOL_MAX_SIZE` | — | `2` / `10` | asyncpg pool o'lchami |
+| `DB_COMMAND_TIMEOUT` | — | `60` | So'rov timeout (soniya) |
+| `APPLY_MIGRATIONS` | — | `true` | Startupda versiyalangan migratsiyalarni bajarish |
 | `LOG_LEVEL` | — | `INFO` | Log darajasi |
+| `LOG_JSON` | — | `false` | Structured (JSON) log formati |
+
+> **Xavfsizlik:** `ADMIN_IDS` bo'sh bo'lsa ilova **ishga tushmaydi**
+> (fail-closed). Ochiq rejim faqat `ALLOW_OPEN_ACCESS=true` bilan, ongli
+> ravishda va faqat development uchun yoqiladi.
 
 ## Ishga tushirish
 
@@ -124,10 +137,24 @@ Bot ishga tushgach, asosiy menyudan foydalanish mumkin:
 
 Barcha `/api/*` endpoint'lari **Telegram initData autentifikatsiyasini talab
 qiladi**: Mini App har bir so'rovga `X-Telegram-Init-Data` header'ini qo'shadi,
-server esa imzoni bot tokeni bilan tekshiradi (HMAC-SHA256, 24 soatlik amal
-qilish muddati). `ADMIN_IDS` sozlangan bo'lsa, faqat ro'yxatdagi
-foydalanuvchilar API'ga kira oladi; aks holda har qanday haqiqiy Telegram
-foydalanuvchisi kira oladi (bot tomonidagi qoida bilan bir xil).
+server esa imzoni bot tokeni bilan tekshiradi (HMAC-SHA256; `auth_date`
+oralig'i: kelajakdagi sana rad etiladi, maksimal yosh sozlanadi). Faqat
+`ADMIN_IDS` ro'yxatidagi foydalanuvchilar API'ga kira oladi.
+
+Qo'shimcha himoya:
+
+- har bir foydalanuvchi/IP uchun rate limit (`429` + `Retry-After`);
+- PII javoblari `Cache-Control: no-store` va `Vary: X-Telegram-Init-Data`;
+- Telegram va Google Fonts manbalarini allowlist qilgan CSP.
+
+`POST /api/debts` va `POST /api/payments` **idempotent**: so'rovga
+`Idempotency-Key` header'ini qo'shsangiz, tarmoq retry'i yoki ikki marta
+bosish dublikat yozuv yaratmaydi — birinchi javob qaytariladi. Mini App
+bu kalitni avtomatik yuboradi.
+
+Ro'yxat endpointlari (`/api/summaries`, `/api/debtors`, `/api/paid-debts`,
+`/api/trash`) `?limit=` va `?offset=` parametrlarini qo'llab-quvvatlaydi
+(default `limit=200`, maksimal `1000`).
 
 ## Xavfsizlik qoidalari
 
@@ -156,12 +183,14 @@ bot/
 │   └── logging.py           # log sozlamalari
 ├── domain/
 │   ├── entities/            # Client, Debt, Payment, Report
-│   └── repositories/        # interfeyslar (ABC)
+│   └── repositories/        # interfeyslar (ABC) + UnitOfWork
 ├── application/
 │   ├── services/            # ClientService, DebtService, UserService
 │   └── common/formatters.py # pul/sana formatlash yordamchilari
 ├── infrastructure/
-│   ├── database/            # SQLite (connection, schema, repositories)
+│   ├── database/            # PostgreSQL (pool, schema, migrations,
+│   │                        #   repositories, unit_of_work)
+│   ├── telegram/            # aiogram session middleware (retry_after)
 │   ├── scheduler/           # APScheduler
 │   └── web/                 # aiohttp server + REST API
 └── presentation/
@@ -174,7 +203,20 @@ web/
 ├── templates/index.html     # Mini App bosh sahifasi
 └── static/                  # Mini App CSS/JS
 
-tests/                       # pytest testlari
+tests/                       # pytest testlari (unit + fake repository)
+└── integration/             # haqiqiy PostgreSQL testlari (TEST_DATABASE_URL)
+```
+
+### Testlar
+
+```bash
+.venv/bin/python -m pytest -q                 # unit + API testlari
+.venv/bin/python -m ruff check .              # lint
+.venv/bin/python -m mypy bot tests            # type check
+
+# Integration testlar (alohida bo'sh test bazasi kerak — jadvallarni TRUNCATE qiladi)
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/qarzly_test \
+    .venv/bin/python -m pytest tests/integration -q
 ```
 
 ## Deploy (Render.com)
@@ -190,15 +232,17 @@ tests/                       # pytest testlari
 
 ### ⚠️ Muhim: Render free tarifi va ma'lumot saqlash
 
-Render **free** tarifida disk **ephemeral** (vaqtinchalik) — har deploy yoki
-restartda `data/bot.db` fayli **butunlay o'chib ketadi**. Real foydalanish
-uchun quyidagilardan birini qiling:
+Ma'lumotlar Render diskida emas, tashqi **PostgreSQL** (Supabase) da saqlanadi —
+shuning uchun deploy yoki restart ma'lumotni yo'qotmaydi. Shunga qaramay:
 
-- **Persistent Disk ulang** (pullik tarif talab qiladi) — `render.yaml` ga
-  `disk: { mountPath: data, sizeGB: 1 }` qo'shib, `DATABASE_PATH=data/bot.db`
-  qoldiring;
-- yoki **tashqi baza** (masalan Supabase/Neon PostgreSQL) ga o'ting;
-- yoki kamida muntazam **backup** olib turing (SQLite faylini yuklab olish).
+- Supabase'da muntazam **backup** yoqilganiga ishonch hosil qiling
+  (korzinani tozalash — `POST /api/trash/purge` — qaytarib bo'lmaydigan amal);
+- migratsiyalar versiyalangan (`schema_migrations` jadvali). Deploy paytida
+  bir marta bajarilishi uchun `APPLY_MIGRATIONS=false` qilib, migratsiyani
+  alohida job'da ishga tushirish mumkin;
+- sana ustunlari `DATE` turida: eski `TEXT` sanali baza birinchi migratsiyada
+  avtomatik konvertatsiya qilinadi va formatga mos bo'lmagan qiymat topilsa
+  deploy to'xtaydi (jimgina noto'g'ri konvertatsiya qilmaydi).
 
 Shuningdek, free tarifda 15 daqiqa trafik kelmasa xizmat uyquga o'tadi — bot
 polling'i ham to'xtaydi. Bu loyiha o'z `/health`'ini har 10 daqiqada ping

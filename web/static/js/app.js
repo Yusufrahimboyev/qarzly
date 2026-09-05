@@ -133,6 +133,15 @@ function showUnauthorizedState(message = "Ushbu tizimga faqat ruxsat berilgan Te
     `;
 }
 
+// Har bir yozuv so'rovi uchun bir martalik kalit: tarmoq retry'i yoki
+// tugmani ikki marta bosish dublikat qarz/to'lov yaratmasligi kerak.
+function newIdempotencyKey() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+}
+
 // Barcha API so'rovlarini Telegram initData imzosi bilan yuboradi.
 // Server imzoni tekshiradi — begona shaxs URLni bilsa ham ma'lumot ololmaydi.
 async function apiFetch(url, options = {}) {
@@ -141,7 +150,9 @@ async function apiFetch(url, options = {}) {
         headers['X-Telegram-Init-Data'] = tg.initData;
     }
     const res = await fetch(url, { ...options, headers });
-    if (res.status === 401) {
+    if (res.status === 429) {
+        showToast("⏳ So'rovlar juda tez-tez yuborildi. Biroz kuting...");
+    } else if (res.status === 401) {
         showUnauthorizedState("Ruxsat berilmagan. Ilovani Telegram boti ichida oching.");
     } else if (res.status === 403) {
         showUnauthorizedState("⛔️ Sizning Telegram ID'ingizga ushbu tizimdan foydalanish huquqi berilmagan.");
@@ -908,7 +919,10 @@ function setupCreateForm() {
 
                 const res = await apiFetch('/api/debts', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Idempotency-Key': newIdempotencyKey(),
+                    },
                     body: JSON.stringify(payload),
                 });
 
@@ -1160,7 +1174,10 @@ function setupPaymentForm() {
             try {
                 const res = await apiFetch('/api/payments', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Idempotency-Key': newIdempotencyKey(),
+                    },
                     body: JSON.stringify({
                         client_id: clientId,
                         payment_type: mode,

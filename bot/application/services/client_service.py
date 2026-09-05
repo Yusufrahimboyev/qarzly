@@ -25,32 +25,35 @@ class ClientService:
     async def get_or_create(self, full_name: str, phone: str) -> tuple[Client, bool]:
         """Mijozni telefon yoki ism bo'yicha qidiradi, topilmasa yangi yaratadi.
 
-        Bo'sh telefon bilan qidirilmaydi — aks holda birinchi uchragan
-        telefonsiz mijozga noto'g'ri bog'lanib qolardi.
+        Identity qoidalari:
+
+        - telefon berilgan bo'lsa — u asosiy identifikator. Mijoz faqat shu
+          telefon bo'yicha topiladi va yaratish `ON CONFLICT` bilan atomik
+          bajariladi (parallel so'rovlar dublikat yaratmaydi);
+        - telefon berilmagan bo'lsa — faqat telefonsiz mijozlar orasidan ism
+          bo'yicha qidiriladi.
+
+        Bir xil ismli, ammo turli telefonli ikki kishi hech qachon bitta
+        mijozga birlashtirilmaydi.
 
         Qaytaradi: (Client, created: bool)
         """
         clean_name = full_name.strip()
+        if not clean_name:
+            raise ValueError("Mijoz ismi bo'sh bo'lishi mumkin emas.")
         clean_phone = normalize_phone(phone)
 
-        # 1. Telefon orqali qidirish (faqat telefon kiritilgan bo'lsa)
         if clean_phone:
-            existing = await self._clients.find_by_phone(clean_phone)
-            if existing is not None:
-                return existing, False
+            return await self._clients.get_or_create_by_phone(
+                Client(full_name=clean_name, phone=clean_phone)
+            )
 
-        # 2. Ism bo'yicha qidirish
-        existing = await self._clients.find_by_name(clean_name)
+        existing = await self._clients.find_by_name_without_phone(clean_name)
         if existing is not None:
             return existing, False
 
-        # 3. Yangi mijoz yaratish
-        new_client = Client(
-            full_name=clean_name,
-            phone=clean_phone,
-        )
-        saved_client = await self._clients.add(new_client)
-        return saved_client, True
+        new_client = Client(full_name=clean_name, phone="")
+        return await self._clients.add(new_client), True
 
     async def get_by_id(self, client_id: int) -> Client | None:
         """ID bo'yicha mijozni topadi."""
@@ -69,8 +72,9 @@ class ClientService:
         all_clients = await self._clients.get_all_alphabetical()
         active_totals = await self._debts.get_active_totals()
         latest_dates = await self._debts.get_client_latest_dates()
-        paid_debts = await self._debts.get_all_paid()
-        paid_client_ids = {d.client_id for d in paid_debts}
+        # Yopilgan qarzlarning o'zi kerak emas — faqat qaysi mijozlarda
+        # borligi kerak. Shu sababli barcha entity o'rniga engil agregat.
+        paid_client_ids = await self._debts.get_client_ids_with_paid_debts()
 
         summaries: list[ClientDebtSummary] = []
         for client in all_clients:
@@ -85,7 +89,8 @@ class ClientService:
             active_count = sum(totals[1] for totals in per_currency.values())
             has_debt = active_count > 0
 
-            # Agar mijozning faol qarzi ham, yopilgan (non-trashed) qarzi ham bo'lmasa — jadvalda ko'rsatilmaydi
+            # Faol qarzi ham, yopilgan qarzi ham bo'lmagan mijoz jadvalda
+            # ko'rsatilmaydi (ortiqcha 0 so'mli qator bo'lmasligi uchun).
             if not has_debt and client.id not in paid_client_ids:
                 continue
 
@@ -94,7 +99,7 @@ class ClientService:
                     client=client,
                     remaining_by_currency=remaining,
                     active_debts_count=active_count,
-                    latest_debt_date=latest_dates.get(client.id, ""),
+                    latest_debt_date=latest_dates.get(client.id),
                 )
             )
 

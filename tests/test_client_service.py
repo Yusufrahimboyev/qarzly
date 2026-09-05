@@ -1,6 +1,8 @@
 """ClientService uchun testlar."""
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from bot.application.services.client_service import ClientService
@@ -30,10 +32,10 @@ async def test_client_get_or_create(
     assert is_new2 is False
     assert client2.id == client1.id
 
-    # Mavjud mijoz (ism orqali)
+    # Bir xil ism, ammo BOSHQA telefon — bu boshqa odam, birlashtirilmaydi
     client3, is_new3 = await service.get_or_create("Aliyev Anvar", "+998999999999")
-    assert is_new3 is False
-    assert client3.id == client1.id
+    assert is_new3 is True
+    assert client3.id != client1.id
 
 
 @pytest.mark.asyncio
@@ -88,7 +90,8 @@ async def test_alphabetical_summaries_and_debtors(
     names = [s.client.full_name for s in all_summaries]
     assert names == ["Aliyev Anvar", "Bekzod Karimov", "Zohidov Zohid"]
 
-    # Faqat qarzdorlar alifbo tartibida (Bekzod qarzini yopgani uchun qarzdorlar ro'yxatida bo'lmaydi)
+    # Faqat qarzdorlar alifbo tartibida
+    # (Bekzod qarzini yopgani uchun qarzdorlar ro'yxatida bo'lmaydi)
     debtors = await client_service.get_debtor_summaries()
     debtor_names = [d.client.full_name for d in debtors]
     assert debtor_names == ["Aliyev Anvar", "Zohidov Zohid"]
@@ -124,7 +127,7 @@ async def test_client_latest_debt_dates_and_get_all_clients(
 
     summaries = await client_service.get_all_summaries()
     summary_map = {s.client.id: s for s in summaries}
-    assert summary_map[c1.id].latest_debt_date == "18.08.2026"
+    assert summary_map[c1.id].latest_debt_date == date(2026, 8, 18)
 
     all_clients = await client_service.get_all_clients()
     assert len(all_clients) == 2

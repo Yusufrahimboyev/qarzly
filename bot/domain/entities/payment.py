@@ -5,7 +5,7 @@ To'lovlar (to'liq, qisman yoki dastlabki berilgan pul) yozuvi.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
 from bot.domain.entities.currency import Currency
@@ -24,7 +24,7 @@ class Payment:
     client_id: int
     amount: int
     payment_type: PaymentType
-    payment_date: str
+    payment_date: date
     currency: Currency = Currency.UZS
     debt_id: int | None = None
     id: int | None = None

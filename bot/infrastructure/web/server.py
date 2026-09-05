@@ -14,7 +14,16 @@ from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
 from bot.infrastructure.database.connection import Database
-from bot.infrastructure.web.routes import setup_routes
+from bot.infrastructure.database.repositories.idempotency_repository import (
+    IdempotencyStore,
+)
+from bot.infrastructure.web.routes import (
+    CLIENT_SERVICE_KEY,
+    DATABASE_KEY,
+    DEBT_SERVICE_KEY,
+    IDEMPOTENCY_KEY,
+    setup_routes,
+)
 from bot.infrastructure.web.telegram_auth import (
     create_auth_middleware,
     security_headers_middleware,
@@ -32,6 +41,7 @@ class WebServer:
         debt_service: DebtService,
         settings: Settings,
         database: Database | None = None,
+        idempotency_store: IdempotencyStore | None = None,
         host: str = "0.0.0.0",
         port: int = 8080,
     ) -> None:
@@ -39,6 +49,7 @@ class WebServer:
         self._debt_service = debt_service
         self._settings = settings
         self._database = database
+        self._idempotency_store = idempotency_store
         self._host = host
         self._port = port
         self._runner: web.AppRunner | None = None
@@ -48,12 +59,21 @@ class WebServer:
         app = web.Application(
             middlewares=[
                 security_headers_middleware,
-                create_auth_middleware(self._settings.token, self._settings.admin_ids),
+                create_auth_middleware(
+                    self._settings.token,
+                    self._settings.admin_id_list,
+                    allow_open_access=self._settings.allow_open_access,
+                    rate_limit_per_minute=self._settings.api_rate_limit_per_minute,
+                    max_age_seconds=self._settings.init_data_max_age_seconds,
+                ),
             ]
         )
-        app["client_service"] = self._client_service
-        app["debt_service"] = self._debt_service
-        app["database"] = self._database
+        app[CLIENT_SERVICE_KEY] = self._client_service
+        app[DEBT_SERVICE_KEY] = self._debt_service
+        if self._database is not None:
+            app[DATABASE_KEY] = self._database
+        if self._idempotency_store is not None:
+            app[IDEMPOTENCY_KEY] = self._idempotency_store
 
         setup_routes(app)
 

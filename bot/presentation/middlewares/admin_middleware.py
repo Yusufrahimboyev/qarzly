@@ -1,7 +1,11 @@
 """Presentation qatlami: Admin autentifikatsiya va ruxsat tekshiruvi middleware'i.
 
-Agar ADMIN_IDS sozlangan bo'lsa, faqat ro'yxatdagi Telegram ID egalariga
-botdan foydalanishga ruxsat beriladi.
+Faqat ADMIN_IDS ro'yxatidagi Telegram ID egalari botdan foydalana oladi.
+
+Ro'yxat bo'sh bo'lsa, kirish ochiq emas — taqiqlanadi. Yagona istisno:
+`ALLOW_OPEN_ACCESS=true` bilan ongli ravishda yoqilgan development rejimi.
+Ilgari bo'sh ro'yxat "hammaga ruxsat" degani edi va bitta unutilgan
+environment variable barcha mijozlar ma'lumotlarini ochib qo'yardi.
 """
 from __future__ import annotations
 
@@ -29,9 +33,7 @@ class AdminMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        # admin_ids bo'sh bo'lsa — barchaga ruxsat (dastlabki sozlash uchun)
-        if not self._settings.admin_ids:
-            return await handler(event, data)
+        allowed_ids = self._settings.admin_id_list
 
         user_id: int | None = None
         if isinstance(event, Message) and event.from_user is not None:
@@ -39,16 +41,31 @@ class AdminMiddleware(BaseMiddleware):
         elif isinstance(event, CallbackQuery) and event.from_user is not None:
             user_id = event.from_user.id
 
-        if user_id is not None and user_id not in self._settings.admin_ids:
+        if not allowed_ids:
+            if self._settings.allow_open_access:
+                # Development rejimi — ochiq kirish ongli yoqilgan.
+                return await handler(event, data)
+            logger.error(
+                "ADMIN_IDS sozlanmagan — kirish rad etildi: user_id=%s", user_id
+            )
+            await self._deny(event, user_id)
+            return None
+
+        if user_id is None or user_id not in allowed_ids:
             logger.warning("Ruxsatsiz kirishga urinish: user_id=%s", user_id)
-            if isinstance(event, Message):
-                await event.answer(
-                    "⛔️ <b>Kechirasiz, sizda ushbu botdan foydalanish huquqi mavjud emas.</b>\n\n"
-                    f"Sizning Telegram ID: <code>{user_id}</code>\n"
-                    "Admin bilan bog'laning.",
-                )
-            elif isinstance(event, CallbackQuery):
-                await event.answer("⛔️ Ruxsat berilmagan.", show_alert=True)
+            await self._deny(event, user_id)
             return None
 
         return await handler(event, data)
+
+    @staticmethod
+    async def _deny(event: TelegramObject, user_id: int | None) -> None:
+        """Foydalanuvchiga ruxsat yo'qligini bildiradi."""
+        if isinstance(event, Message):
+            await event.answer(
+                "⛔️ <b>Kechirasiz, sizda ushbu botdan foydalanish huquqi mavjud emas.</b>\n\n"
+                f"Sizning Telegram ID: <code>{user_id}</code>\n"
+                "Admin bilan bog'laning.",
+            )
+        elif isinstance(event, CallbackQuery):
+            await event.answer("⛔️ Ruxsat berilmagan.", show_alert=True)

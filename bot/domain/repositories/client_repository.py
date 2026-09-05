@@ -30,6 +30,22 @@ class ClientRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def find_by_name_without_phone(self, full_name: str) -> Client | None:
+        """Telefonsiz mijozlar orasidan ism bo'yicha topadi (case-insensitive).
+
+        Telefoni bor mijoz hech qachon faqat ism bo'yicha birlashtirilmaydi.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_or_create_by_phone(self, client: Client) -> tuple[Client, bool]:
+        """Telefon bo'yicha mijozni atomik topadi yoki yaratadi.
+
+        Qaytaradi: (Client, created). Parallel so'rovlarda dublikat yaratmaydi.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_all_alphabetical(self) -> list[Client]:
         """Barcha mijozlarni alfavit tartibida qaytaradi."""
         raise NotImplementedError

@@ -484,8 +484,10 @@ async def test_create_debts_mixed_currencies(
     service = DebtService(client_repo, debt_repo, payment_repo)
 
     products = [
-        DebtProduct(name="Shina", quantity=1, price_per_unit=120, currency="USD"),  # 120 $
-        DebtProduct(name="Moy", quantity=1, price_per_unit=450000, currency="UZS"),  # 450 000
+        # 120 $
+        DebtProduct(name="Shina", quantity=1, price_per_unit=120, currency=Currency.USD),
+        # 450 000 so'm
+        DebtProduct(name="Moy", quantity=1, price_per_unit=450000, currency=Currency.UZS),
     ]
     # Exchange 20 $ (dollardan), berilgan pul 50 000 so'm (so'mdan)
     # Dollar qarz: 120 - 20 = 100 $; So'm qarz: 450 000 - 50 000 = 400 000
@@ -549,8 +551,8 @@ async def test_create_debts_exchange_bigger_than_group_error(
     service = DebtService(client_repo, debt_repo, payment_repo)
 
     products = [
-        DebtProduct(name="Shina", quantity=1, price_per_unit=100, currency="USD"),
-        DebtProduct(name="Moy", quantity=1, price_per_unit=1000000, currency="UZS"),
+        DebtProduct(name="Shina", quantity=1, price_per_unit=100, currency=Currency.USD),
+        DebtProduct(name="Moy", quantity=1, price_per_unit=1000000, currency=Currency.UZS),
     ]
 
     # 500 $ exchange — dollar tovarlari jami 100 $ dan katta
@@ -564,3 +566,198 @@ async def test_create_debts_exchange_bigger_than_group_error(
             exchange_product_price=500,
             exchange_currency=Currency.USD,
         )
+
+
+@pytest.mark.asyncio
+async def test_fifo_across_month_and_year_boundary(
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
+) -> None:
+    """FIFO haqiqiy sana bo'yicha ishlashi kerak, matn tartibida emas.
+
+    Regressiya: sana TEXT ("DD.MM.YYYY") bo'lganda saralash
+    ['01.02.2026', '15.12.2025', '31.01.2026'] bo'lib, to'lov eng eski
+    qarzga emas, matn bo'yicha "eng kichik" qarzga tushardi.
+    """
+    client = await client_repo.add(
+        Client(full_name="FIFO Mijoz", phone="+998901230001")
+    )
+    assert client.id is not None
+    service = DebtService(client_repo, debt_repo, payment_repo)
+
+    oldest = await service.create_debt(
+        client.id, "15.12.2025", product_name="Eng eski", product_price=100000
+    )
+    middle = await service.create_debt(
+        client.id, "31.01.2026", product_name="O'rtadagi", product_price=100000
+    )
+    newest = await service.create_debt(
+        client.id, "01.02.2026", product_name="Eng yangi", product_price=100000
+    )
+
+    # 100 000 to'lov aynan eng eski (dekabr 2025) qarzni yopishi kerak
+    await service.pay_partial_debt(client.id, 100000, "05.02.2026")
+
+    assert oldest.id is not None and middle.id is not None and newest.id is not None
+    stored = {d.id: d for d in await debt_repo.get_all_by_client_id(client.id)}
+    assert stored[oldest.id].remaining_debt == 0
+    assert stored[middle.id].remaining_debt == 100000
+    assert stored[newest.id].remaining_debt == 100000
+
+
+@pytest.mark.asyncio
+async def test_debt_date_is_stored_as_date_object(
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
+) -> None:
+    """Domain entity sanani `date` sifatida saqlaydi (matn emas)."""
+    from datetime import date as date_type
+
+    client = await client_repo.add(Client(full_name="Sana", phone="+998901230002"))
+    assert client.id is not None
+    service = DebtService(client_repo, debt_repo, payment_repo)
+
+    debt = await service.create_debt(
+        client.id, "16.08.2026", product_name="Tovar", product_price=1000, given_money=400
+    )
+    assert debt.debt_date == date_type(2026, 8, 16)
+
+    payments = await payment_repo.get_by_client_id(client.id)
+    assert payments[0].payment_date == date_type(2026, 8, 16)
+
+
+@pytest.mark.asyncio
+async def test_single_product_usd_keeps_currency_inside_product(
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
+) -> None:
+    """Single-product USD qarzda ichki tovar ham USD bo'lishi kerak (M-04)."""
+    from bot.domain.entities.currency import Currency
+
+    client = await client_repo.add(Client(full_name="USD", phone="+998901230003"))
+    assert client.id is not None
+    service = DebtService(client_repo, debt_repo, payment_repo)
+
+    debt = await service.create_debt(
+        client_id=client.id,
+        debt_date="16.08.2026",
+        product_name="Shina",
+        product_price=100,
+        currency=Currency.USD,
+    )
+
+    assert debt.currency == Currency.USD
+    assert len(debt.products) == 1
+    assert debt.products[0].currency == Currency.USD
+    assert debt.products[0].to_dict()["currency"] == "USD"
+
+
+@pytest.mark.asyncio
+async def test_create_debts_rejects_deduction_without_matching_group(
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
+) -> None:
+    """Mos valyutadagi tovar bo'lmasa, chegirma jimgina yo'qolmasligi kerak (M-05)."""
+    from bot.domain.entities.currency import Currency
+
+    client = await client_repo.add(Client(full_name="Mos emas", phone="+998901230004"))
+    assert client.id is not None
+    service = DebtService(client_repo, debt_repo, payment_repo)
+
+    with pytest.raises(ValueError, match="valyutadagi tovar kiritilmagan"):
+        await service.create_debts(
+            client_id=client.id,
+            debt_date="16.08.2026",
+            products=[DebtProduct(name="Moy", price_per_unit=500000)],
+            given_money=100,
+            given_currency=Currency.USD,
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_debts_validates_all_groups_before_saving(
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
+) -> None:
+    """Bir guruhda xato bo'lsa, boshqa guruh ham saqlanmasligi kerak (M-05)."""
+    from bot.domain.entities.currency import Currency
+
+    client = await client_repo.add(Client(full_name="Guruh", phone="+998901230005"))
+    assert client.id is not None
+    service = DebtService(client_repo, debt_repo, payment_repo)
+
+    with pytest.raises(ValueError):
+        await service.create_debts(
+            client_id=client.id,
+            debt_date="16.08.2026",
+            products=[
+                DebtProduct(name="Moy", price_per_unit=500000, currency=Currency.UZS),
+                DebtProduct(name="Shina", price_per_unit=100, currency=Currency.USD),
+            ],
+            # USD guruhida 100 $ tovar bor, ammo 500 $ berilgan pul — xato
+            given_money=500,
+            given_currency=Currency.USD,
+        )
+
+    assert await debt_repo.get_all_by_client_id(client.id) == []
+
+
+@pytest.mark.asyncio
+async def test_invalid_product_is_rejected_by_domain(
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
+) -> None:
+    """Domain invariantlari API DTO'sidan mustaqil ishlaydi (M-03)."""
+    client = await client_repo.add(Client(full_name="Invariant", phone="+998901230006"))
+    assert client.id is not None
+    service = DebtService(client_repo, debt_repo, payment_repo)
+
+    with pytest.raises(ValueError, match="Tovar nomi"):
+        await service.create_debts(
+            client_id=client.id,
+            debt_date="16.08.2026",
+            products=[DebtProduct(name="   ", price_per_unit=1000)],
+        )
+
+    with pytest.raises(ValueError, match="miqdori"):
+        await service.create_debts(
+            client_id=client.id,
+            debt_date="16.08.2026",
+            products=[DebtProduct(name="Moy", quantity=0, price_per_unit=1000)],
+        )
+
+
+@pytest.mark.asyncio
+async def test_report_excludes_payments_of_trashed_debts(
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
+) -> None:
+    """Korzinadagi qarzning to'lovi hisobot jamiga qo'shilmasligi kerak (M-08)."""
+    client = await client_repo.add(Client(full_name="Korzina", phone="+998901230007"))
+    assert client.id is not None
+    service = DebtService(client_repo, debt_repo, payment_repo)
+
+    first = await service.create_debt(
+        client.id, "01.08.2026", product_name="Birinchi", product_price=100000
+    )
+    await service.create_debt(
+        client.id, "02.08.2026", product_name="Ikkinchi", product_price=200000
+    )
+    await service.pay_partial_debt(client.id, 100000, "03.08.2026")
+
+    assert first.id is not None
+    await service.move_to_trash([first.id])
+
+    report = await service.get_client_report(client.id)
+    debt_ids = {d.id for d in report.debts}
+    assert first.id not in debt_ids
+    # Yopilgan va korzinaga o'tkazilgan qarzning to'lovi ham ko'rsatilmaydi
+    assert report.total_paid_after == {}
+    assert all(p.debt_id in debt_ids for p in report.payments)

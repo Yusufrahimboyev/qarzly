@@ -10,3 +10,6 @@ data/*.db
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# Supabase CLI lokal metadata (repositoryda saqlanmaydi)
+supabase/.temp/

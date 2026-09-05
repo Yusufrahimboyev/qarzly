@@ -8,6 +8,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.application.common.formatters import (
     aggregate_remaining,
     esc_html,
+    format_date,
     format_money,
     format_money_map,
 )
@@ -17,6 +18,7 @@ from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import DebtStatus
 from bot.domain.entities.payment import PaymentType
 from bot.domain.entities.report import ClientReport
+from bot.presentation.common.messaging import split_message
 from bot.presentation.keyboards.debt_table_kb import (
     get_client_report_keyboard,
     get_debt_table_keyboard,
@@ -123,10 +125,17 @@ async def cb_client_report(
         return
 
     text = _render_report(report)
-    await callback.message.edit_text(
-        text,
-        reply_markup=get_client_report_keyboard(client_id, has_debt=_has_debt(report)),
-    )
+    keyboard = get_client_report_keyboard(client_id, has_debt=_has_debt(report))
+    chunks = split_message(text)
+
+    # Uzun tarixli mijozda hisobot Telegram chegarasidan (4096 belgi) oshadi —
+    # bunda xabar bo'laklarga bo'linadi, tugmalar oxirgi bo'lakda bo'ladi.
+    await callback.message.edit_text(chunks[0], reply_markup=None if len(chunks) > 1 else keyboard)
+    for idx, chunk in enumerate(chunks[1:], start=1):
+        await callback.message.answer(
+            chunk,
+            reply_markup=keyboard if idx == len(chunks) - 1 else None,
+        )
     await callback.answer()
 
 
@@ -152,7 +161,10 @@ def _render_report(report: ClientReport) -> str:
             status_icon = "🔴" if d.status == DebtStatus.ACTIVE else "🟢"
             status_text = "Qarzdor" if d.status == DebtStatus.ACTIVE else "Yopilgan"
 
-            lines.append(f"\n<b>{idx}. {d.debt_date} — {status_icon} {status_text}</b>")
+            lines.append(
+                f"\n<b>{idx}. {format_date(d.debt_date)} — "
+                f"{status_icon} {status_text}</b>"
+            )
 
             # Ko'p tovarli bo'lsa har bir tovarni alohida ko'rsatamiz
             if len(d.products) > 1:
@@ -195,7 +207,9 @@ def _render_report(report: ClientReport) -> str:
         for idx, pay in enumerate(actual_payments, start=1):
             p_type_label = "To'liq" if pay.payment_type == PaymentType.FULL else "Qisman"
             pay_str = format_money(pay.amount, pay.currency)
-            lines.append(f"{idx}. {pay.payment_date}: +{pay_str} ({p_type_label})")
+            lines.append(
+                f"{idx}. {format_date(pay.payment_date)}: +{pay_str} ({p_type_label})"
+            )
 
     # Yakuniy umumiy hisob — har bir total valyutalar bo'yicha
     lines.append("\n━━━━━━━━━━━━━━━━━━━━")

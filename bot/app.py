@@ -3,11 +3,17 @@
 Bu — dasturning yagona joyi bo'lib, konkret implementatsiyalarni (PostgreSQL repo,
 scheduler, web server) yaratadi va bir-biriga bog'laydi (dependency injection).
 Boshqa hech bir qatlam bu ulanishlar haqida bilmaydi.
+
+Resurslar `AsyncExitStack` orqali ochiladi: qaysi bosqichda xato bo'lishidan
+qat'i nazar, undan oldin ochilgan hamma narsa teskari tartibda va bir-birini
+bloklamasdan yopiladi.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -26,13 +32,18 @@ from bot.infrastructure.database.repositories.client_repository import (
 from bot.infrastructure.database.repositories.debt_repository import (
     PgDebtRepository,
 )
+from bot.infrastructure.database.repositories.idempotency_repository import (
+    IdempotencyStore,
+)
 from bot.infrastructure.database.repositories.payment_repository import (
     PgPaymentRepository,
 )
 from bot.infrastructure.database.repositories.user_repository import (
     PgUserRepository,
 )
+from bot.infrastructure.database.unit_of_work import create_unit_of_work_factory
 from bot.infrastructure.scheduler.scheduler import create_scheduler
+from bot.infrastructure.telegram.retry_middleware import RetryAfterMiddleware
 from bot.infrastructure.web.server import WebServer
 from bot.presentation.handlers import register_handlers
 from bot.presentation.middlewares import register_middlewares
@@ -40,78 +51,110 @@ from bot.presentation.middlewares import register_middlewares
 logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def _closing(resource, close) -> AsyncIterator[object]:
+    """Resursni beradi va chiqishda uni xatolarga chidamli yopadi."""
+    try:
+        yield resource
+    finally:
+        try:
+            result = close()
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception:
+            logger.exception("Resursni yopishda xatolik (davom etilmoqda)")
+
+
 async def run() -> None:
     """Botni sozlaydi, ishga tushiradi va to'xtaganda resurslarni tozalaydi."""
     settings = get_settings()
-    setup_logging(settings.log_level)
+    setup_logging(settings.log_level, json_format=settings.log_json)
 
-    if not settings.admin_ids:
+    if settings.allow_open_access and not settings.admin_id_list:
         logger.warning(
-            "⚠️ ADMIN_IDS bo'sh — bot OCHIQ rejimda ishlaydi: botni topgan HAR QANDAY "
-            "Telegram foydalanuvchisi barcha mijozlar ma'lumotlarini ko'ra va "
-            "o'zgartira oladi. .env faylida ADMIN_IDS ni sozlang!"
+            "⚠️ ALLOW_OPEN_ACCESS=true va ADMIN_IDS bo'sh — bot OCHIQ rejimda "
+            "ishlaydi: botni topgan HAR QANDAY Telegram foydalanuvchisi barcha "
+            "mijozlar ma'lumotlarini ko'ra va o'zgartira oladi. Bu rejim faqat "
+            "development uchun!"
         )
 
-    # --- Infrastructure: ma'lumotlar bazasi (Supabase PostgreSQL) ---
-    database = Database(settings.database_url)
-    await database.connect()
+    async with AsyncExitStack() as stack:
+        # --- Infrastructure: ma'lumotlar bazasi (Supabase PostgreSQL) ---
+        database = Database(
+            settings.dsn,
+            min_size=settings.db_pool_min_size,
+            max_size=settings.db_pool_max_size,
+            command_timeout=settings.db_command_timeout,
+            apply_migrations=settings.apply_migrations,
+        )
+        await database.connect()
+        await stack.enter_async_context(_closing(database, database.disconnect))
 
-    # --- Repositories ---
-    user_repository = PgUserRepository(database.pool)
-    client_repository = PgClientRepository(database.pool)
-    debt_repository = PgDebtRepository(database.pool)
-    payment_repository = PgPaymentRepository(database.pool)
+        # --- Repositories ---
+        pool = database.pool
+        user_repository = PgUserRepository(pool)
+        client_repository = PgClientRepository(pool)
+        debt_repository = PgDebtRepository(pool)
+        payment_repository = PgPaymentRepository(pool)
+        idempotency_store = IdempotencyStore(pool)
+        uow_factory = create_unit_of_work_factory(pool)
 
-    # --- Application Services ---
-    user_service = UserService(user_repository)
-    client_service = ClientService(
-        clients=client_repository,
-        debts=debt_repository,
-    )
-    debt_service = DebtService(
-        clients=client_repository,
-        debts=debt_repository,
-        payments=payment_repository,
-    )
+        # --- Application Services ---
+        user_service = UserService(user_repository)
+        client_service = ClientService(
+            clients=client_repository,
+            debts=debt_repository,
+        )
+        debt_service = DebtService(
+            clients=client_repository,
+            debts=debt_repository,
+            payments=payment_repository,
+            uow_factory=uow_factory,
+        )
 
-    # --- Aiogram: Bot va Dispatcher ---
-    bot = Bot(
-        token=settings.token,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
-    dp = Dispatcher(storage=MemoryStorage())
+        # --- Aiogram: Bot va Dispatcher ---
+        bot = Bot(
+            token=settings.token,
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        )
+        # Telegram 429 va tarmoq xatolarida retry_after'ni hurmat qiladi.
+        bot.session.middleware(RetryAfterMiddleware())
+        await stack.enter_async_context(_closing(bot, bot.session.close))
+        dp = Dispatcher(storage=MemoryStorage())
 
-    # --- Middlewares & Handlers ---
-    register_middlewares(
-        dp=dp,
-        user_service=user_service,
-        client_service=client_service,
-        debt_service=debt_service,
-        settings=settings,
-    )
-    register_handlers(dp)
+        # --- Middlewares & Handlers ---
+        register_middlewares(
+            dp=dp,
+            user_service=user_service,
+            client_service=client_service,
+            debt_service=debt_service,
+            settings=settings,
+        )
+        register_handlers(dp)
 
-    # --- Infrastructure: scheduler va web server ---
-    scheduler = create_scheduler(settings.render_external_url)
-    web_server = WebServer(
-        client_service=client_service,
-        debt_service=debt_service,
-        settings=settings,
-        database=database,
-        host="0.0.0.0",
-        port=settings.port,
-    )
-    await web_server.start()
+        # --- Infrastructure: scheduler va web server ---
+        scheduler = create_scheduler(settings.render_external_url)
+        await stack.enter_async_context(
+            _closing(scheduler, lambda: scheduler.shutdown(wait=False))
+        )
 
-    logger.info("🤖 Qarz Daftar boti ishga tushdi. Polling boshlandi.")
-    try:
-        await dp.start_polling(bot)
-    finally:
-        logger.info("Bot to'xtatilmoqda, resurslar tozalanmoqda...")
-        scheduler.shutdown(wait=False)
-        await web_server.stop()
-        await database.disconnect()
-        await bot.session.close()
+        web_server = WebServer(
+            client_service=client_service,
+            debt_service=debt_service,
+            settings=settings,
+            database=database,
+            idempotency_store=idempotency_store,
+            host="0.0.0.0",
+            port=settings.port,
+        )
+        await web_server.start()
+        await stack.enter_async_context(_closing(web_server, web_server.stop))
+
+        logger.info("🤖 Qarz Daftar boti ishga tushdi. Polling boshlandi.")
+        try:
+            await dp.start_polling(bot)
+        finally:
+            logger.info("Bot to'xtatilmoqda, resurslar tozalanmoqda...")
 
 
 def main() -> None:

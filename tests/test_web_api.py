@@ -14,7 +14,11 @@ from pydantic import SecretStr
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
-from bot.infrastructure.web.routes import setup_routes
+from bot.infrastructure.web.routes import (
+    CLIENT_SERVICE_KEY,
+    DEBT_SERVICE_KEY,
+    setup_routes,
+)
 from bot.infrastructure.web.telegram_auth import (
     INIT_DATA_HEADER,
     create_auth_middleware,
@@ -27,6 +31,29 @@ from tests.conftest import (
 )
 
 TEST_BOT_TOKEN = "123456:test-token"
+
+
+class FakeIdempotencyStore:
+    """IdempotencyStore ning in-memory analogi (testlar uchun)."""
+
+    def __init__(self) -> None:
+        self._reserved: dict[tuple[str, str], str | None] = {}
+
+    async def reserve(self, scope: str, key: str, actor_id: int | None) -> bool:
+        if (scope, key) in self._reserved:
+            return False
+        self._reserved[(scope, key)] = None
+        return True
+
+    async def get_response(self, scope: str, key: str) -> str | None:
+        return self._reserved.get((scope, key))
+
+    async def save_response(self, scope: str, key: str, response_json: str) -> None:
+        self._reserved[(scope, key)] = response_json
+
+    async def release(self, scope: str, key: str) -> None:
+        if self._reserved.get((scope, key)) is None:
+            self._reserved.pop((scope, key), None)
 
 
 def make_init_data(bot_token: str, user_id: int = 42, auth_date: int | None = None) -> str:
@@ -53,15 +80,26 @@ def make_app(
     admin_ids: list[int],
 ) -> web.Application:
     """WebServer bilan bir xil konfiguratsiyadagi aiohttp app yaratadi."""
-    settings = Settings(bot_token=SecretStr(TEST_BOT_TOKEN), admin_ids=admin_ids, database_url="postgresql://test:test@localhost:5432/test")
+    settings = Settings(
+        bot_token=SecretStr(TEST_BOT_TOKEN),
+        admin_ids=admin_ids,
+        # Testlarda ochiq rejim ongli ravishda yoqiladi (fail-closed default).
+        allow_open_access=not admin_ids,
+        database_url=SecretStr("postgresql://test:test@localhost:5432/test"),
+    )
     app = web.Application(
         middlewares=[
             security_headers_middleware,
-            create_auth_middleware(settings.token, settings.admin_ids),
+            create_auth_middleware(
+                settings.token,
+                settings.admin_id_list,
+                allow_open_access=settings.allow_open_access,
+                rate_limit_per_minute=settings.api_rate_limit_per_minute,
+            ),
         ]
     )
-    app["client_service"] = ClientService(client_repo, debt_repo)
-    app["debt_service"] = DebtService(client_repo, debt_repo, payment_repo)
+    app[CLIENT_SERVICE_KEY] = ClientService(client_repo, debt_repo)
+    app[DEBT_SERVICE_KEY] = DebtService(client_repo, debt_repo, payment_repo)
     setup_routes(app)
     return app
 
@@ -536,7 +574,7 @@ async def test_api_trash_flow(
         # To'liq to'lov qilamiz
         pay_res = await client.post(
             "/api/payments",
-            json={"client_id": client_id, "mode": "full"},
+            json={"client_id": client_id, "payment_type": "full"},
             headers=headers,
         )
         assert pay_res.status == 200
@@ -596,7 +634,8 @@ async def test_api_trash_flow(
 async def test_api_summaries_includes_latest_debt_date(
     aiohttp_app: web.Application,
 ) -> None:
-    """GET /api/summaries va /api/debtors latest_debt_date va created_at maydonlarini qaytarishi kerak."""
+    """GET /api/summaries va /api/debtors javobida latest_debt_date va
+    created_at maydonlari bo'lishi kerak."""
     from aiohttp.test_utils import TestClient, TestServer
     server = TestServer(aiohttp_app)
     client = TestClient(server)
@@ -680,3 +719,158 @@ async def test_api_payment_with_custom_date(
         await client.close()
 
 
+
+
+@pytest.mark.asyncio
+async def test_api_responses_are_not_cacheable(aiohttp_app: web.Application) -> None:
+    """PII qaytaradigan javoblarda no-store va Vary bo'lishi kerak (M-10)."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    server = TestServer(aiohttp_app)
+    async with TestClient(server) as client:
+        res = await client.get("/api/summaries", headers=auth_header())
+        assert res.status == 200
+        assert res.headers["Cache-Control"] == "no-store"
+        assert res.headers["Vary"] == INIT_DATA_HEADER
+        assert "frame-ancestors" in res.headers["Content-Security-Policy"]
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_blank_and_unknown_fields(
+    aiohttp_app: web.Application,
+) -> None:
+    """Bo'sh joydan iborat nom va noma'lum maydon rad etilishi kerak (M-03)."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    server = TestServer(aiohttp_app)
+    async with TestClient(server) as client:
+        blank = await client.post(
+            "/api/debts",
+            json={
+                "client_name": "   ",
+                "products": [{"name": "Moy", "price_per_unit": 1000}],
+            },
+            headers=auth_header(),
+        )
+        assert blank.status == 400
+
+        blank_product = await client.post(
+            "/api/debts",
+            json={
+                "client_name": "Test",
+                "products": [{"name": "   ", "price_per_unit": 1000}],
+            },
+            headers=auth_header(),
+        )
+        assert blank_product.status == 400
+
+        unknown = await client.post(
+            "/api/debts",
+            json={
+                "client_name": "Test",
+                "products": [{"name": "Moy", "price_per_unit": 1000}],
+                "unexpected_field": 1,
+            },
+            headers=auth_header(),
+        )
+        assert unknown.status == 400
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_out_of_range_amounts(aiohttp_app: web.Application) -> None:
+    """BIGINT chegarasidan oshgan summa 500 emas, 400 qaytarishi kerak (M-03)."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    server = TestServer(aiohttp_app)
+    async with TestClient(server) as client:
+        res = await client.post(
+            "/api/debts",
+            json={
+                "client_name": "Katta summa",
+                "products": [{"name": "Moy", "price_per_unit": 10**19}],
+            },
+            headers=auth_header(),
+        )
+        assert res.status == 400
+
+        too_many = await client.post(
+            "/api/debts",
+            json={
+                "client_name": "Ko'p tovar",
+                "products": [
+                    {"name": f"Tovar {i}", "price_per_unit": 1000} for i in range(51)
+                ],
+            },
+            headers=auth_header(),
+        )
+        assert too_many.status == 400
+
+
+@pytest.mark.asyncio
+async def test_idempotent_create_debt_does_not_duplicate(
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
+) -> None:
+    """Bir xil Idempotency-Key bilan takror so'rov ikkinchi qarz yaratmaydi (M-01)."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from bot.infrastructure.web.routes import IDEMPOTENCY_KEY
+
+    app = make_app(client_repo, debt_repo, payment_repo, admin_ids=[])
+    app[IDEMPOTENCY_KEY] = FakeIdempotencyStore()  # type: ignore[misc]
+
+    payload = {
+        "client_name": "Idempotent Mijoz",
+        "client_phone": "+998901234567",
+        "products": [{"name": "Shina", "price_per_unit": 500000}],
+    }
+    headers = {**auth_header(), "Idempotency-Key": "key-123"}
+
+    server = TestServer(app)
+    async with TestClient(server) as client:
+        first = await client.post("/api/debts", json=payload, headers=headers)
+        assert first.status == 200
+        first_json = await first.json()
+
+        second = await client.post("/api/debts", json=payload, headers=headers)
+        assert second.status == 200
+        assert await second.json() == first_json
+
+    all_debts = await debt_repo.get_all_active()
+    assert len(all_debts) == 1
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_returns_429(
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
+) -> None:
+    """Juda ko'p so'rov 429 bilan rad etiladi (M-10)."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    app = web.Application(
+        middlewares=[
+            security_headers_middleware,
+            create_auth_middleware(
+                TEST_BOT_TOKEN,
+                [],
+                allow_open_access=True,
+                rate_limit_per_minute=3,
+            ),
+        ]
+    )
+    app[CLIENT_SERVICE_KEY] = ClientService(client_repo, debt_repo)
+    app[DEBT_SERVICE_KEY] = DebtService(client_repo, debt_repo, payment_repo)
+    setup_routes(app)
+
+    server = TestServer(app)
+    async with TestClient(server) as client:
+        statuses = [
+            (await client.get("/api/stats", headers=auth_header())).status
+            for _ in range(5)
+        ]
+
+    assert statuses[:3] == [200, 200, 200]
+    assert 429 in statuses[3:]

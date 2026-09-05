@@ -6,6 +6,7 @@ import asyncpg
 from bot.domain.entities.currency import Currency
 from bot.domain.entities.payment import Payment, PaymentType
 from bot.domain.repositories.payment_repository import PaymentRepository
+from bot.infrastructure.database.repositories.executor import Executor
 
 _SELECT_PAYMENT_COLS = """
     id, client_id, debt_id, amount, currency, payment_type, payment_date, created_at
@@ -15,8 +16,8 @@ _SELECT_PAYMENT_COLS = """
 class PgPaymentRepository(PaymentRepository):
     """PaymentRepository ning asyncpg orqali amalga oshirilishi."""
 
-    def __init__(self, pool: asyncpg.Pool) -> None:
-        self._pool = pool
+    def __init__(self, executor: Executor) -> None:
+        self._db = executor
 
     async def add(self, payment: Payment) -> Payment:
         currency_val = (
@@ -24,73 +25,52 @@ class PgPaymentRepository(PaymentRepository):
             if isinstance(payment.currency, Currency)
             else str(payment.currency)
         )
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO payments (
-                    client_id,
-                    debt_id,
-                    amount,
-                    currency,
-                    payment_type,
-                    payment_date
-                )
-                VALUES ($1, $2, $3, $4, $5, $6)
-                RETURNING id
-                """,
-                payment.client_id,
-                payment.debt_id,
-                payment.amount,
-                currency_val,
-                payment.payment_type.value,
-                payment.payment_date,
+        row = await self._db.fetchrow(
+            f"""
+            INSERT INTO payments (
+                client_id,
+                debt_id,
+                amount,
+                currency,
+                payment_type,
+                payment_date
             )
-            payment_id = row["id"] if row else None
-            if payment_id is None:
-                raise RuntimeError("To'lov yozuvini saqlashda ID olinmadi.")
-            return await self._get_by_id(payment_id)  # type: ignore[return-value]
-
-    async def _get_by_id(self, payment_id: int) -> Payment | None:
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                f"""
-                SELECT {_SELECT_PAYMENT_COLS}
-                FROM payments
-                WHERE id = $1
-                """,
-                payment_id,
-            )
-
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING {_SELECT_PAYMENT_COLS}
+            """,
+            payment.client_id,
+            payment.debt_id,
+            payment.amount,
+            currency_val,
+            payment.payment_type.value,
+            payment.payment_date,
+        )
         if row is None:
-            return None
+            raise RuntimeError("To'lov yozuvi saqlanmadi.")
         return self._map_row(row)
 
     async def get_by_client_id(self, client_id: int) -> list[Payment]:
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"""
-                SELECT {_SELECT_PAYMENT_COLS}
-                FROM payments
-                WHERE client_id = $1
-                ORDER BY payment_date ASC, id ASC
-                """,
-                client_id,
-            )
-
+        rows = await self._db.fetch(
+            f"""
+            SELECT {_SELECT_PAYMENT_COLS}
+            FROM payments
+            WHERE client_id = $1
+            ORDER BY payment_date ASC, id ASC
+            """,
+            client_id,
+        )
         return [self._map_row(row) for row in rows]
 
     async def get_by_debt_id(self, debt_id: int) -> list[Payment]:
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"""
-                SELECT {_SELECT_PAYMENT_COLS}
-                FROM payments
-                WHERE debt_id = $1
-                ORDER BY payment_date ASC, id ASC
-                """,
-                debt_id,
-            )
-
+        rows = await self._db.fetch(
+            f"""
+            SELECT {_SELECT_PAYMENT_COLS}
+            FROM payments
+            WHERE debt_id = $1
+            ORDER BY payment_date ASC, id ASC
+            """,
+            debt_id,
+        )
         return [self._map_row(row) for row in rows]
 
     @staticmethod

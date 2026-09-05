@@ -8,6 +8,7 @@ qo'shib yuborilmaydi.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 
 from bot.domain.entities.client import Client
 from bot.domain.entities.debt import Debt
@@ -27,7 +28,7 @@ class ClientDebtSummary:
     client: Client
     remaining_by_currency: MoneyMap = field(default_factory=empty_money)
     active_debts_count: int = 0
-    latest_debt_date: str = ""
+    latest_debt_date: date | None = None
 
     @property
     def has_debt(self) -> bool:

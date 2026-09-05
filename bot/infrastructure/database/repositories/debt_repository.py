@@ -1,16 +1,18 @@
 """Infrastructure qatlami: DebtRepository PostgreSQL implementatsiyasi."""
 from __future__ import annotations
 
+from datetime import date
+
 import asyncpg
 
 from bot.domain.entities.currency import Currency
-from bot.domain.entities.debt import (
-    Debt,
-    DebtStatus,
+from bot.domain.entities.debt import Debt, DebtStatus
+from bot.domain.repositories.debt_repository import DebtRepository
+from bot.infrastructure.database.mappers.products import (
     parse_products_json,
     serialize_products_json,
 )
-from bot.domain.repositories.debt_repository import DebtRepository
+from bot.infrastructure.database.repositories.executor import Executor, transaction_scope
 
 _SELECT_COLS = """
     id,
@@ -34,10 +36,16 @@ _SELECT_COLS = """
 
 
 class PgDebtRepository(DebtRepository):
-    """DebtRepository ning asyncpg orqali amalga oshirilishi."""
+    """DebtRepository ning asyncpg orqali amalga oshirilishi.
 
-    def __init__(self, pool: asyncpg.Pool) -> None:
-        self._pool = pool
+    Executor sifatida pool ham, tranzaksiya ichidagi connection ham berilishi
+    mumkin — shu sababli repository hech qachon o'zi yangi connection
+    "acquire" qilmaydi. Bu pool deadlock'ining oldini oladi va bir nechta
+    yozuvni bitta tranzaksiyada bajarish imkonini beradi.
+    """
+
+    def __init__(self, executor: Executor) -> None:
+        self._db = executor
 
     async def add(self, debt: Debt) -> Debt:
         currency_val = (
@@ -50,103 +58,100 @@ class PgDebtRepository(DebtRepository):
             if isinstance(debt.status, DebtStatus)
             else str(debt.status)
         )
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO debts (
-                    client_id,
-                    debt_date,
-                    product_name,
-                    product_quantity,
-                    product_price,
-                    currency,
-                    exchange_exists,
-                    exchange_product_name,
-                    exchange_product_price,
-                    given_money,
-                    original_debt,
-                    remaining_debt,
-                    products_json,
-                    status
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-                RETURNING id
-                """,
-                debt.client_id,
-                debt.debt_date,
-                debt.product_name,
-                debt.product_quantity,
-                debt.product_price,
-                currency_val,
-                1 if debt.exchange_exists else 0,
-                debt.exchange_product_name,
-                debt.exchange_product_price,
-                debt.given_money,
-                debt.original_debt,
-                debt.remaining_debt,
-                serialize_products_json(list(debt.products)),
-                status_val,
+        row = await self._db.fetchrow(
+            f"""
+            INSERT INTO debts (
+                client_id,
+                debt_date,
+                product_name,
+                product_quantity,
+                product_price,
+                currency,
+                exchange_exists,
+                exchange_product_name,
+                exchange_product_price,
+                given_money,
+                original_debt,
+                remaining_debt,
+                products_json,
+                status
             )
-            debt_id = row["id"] if row else None
-            if debt_id is None:
-                raise RuntimeError("Qarz yozuvini saqlashda ID olinmadi.")
-            return await self.get_by_id(debt_id)  # type: ignore[return-value]
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            RETURNING {_SELECT_COLS}
+            """,
+            debt.client_id,
+            debt.debt_date,
+            debt.product_name,
+            debt.product_quantity,
+            debt.product_price,
+            currency_val,
+            1 if debt.exchange_exists else 0,
+            debt.exchange_product_name,
+            debt.exchange_product_price,
+            debt.given_money,
+            debt.original_debt,
+            debt.remaining_debt,
+            serialize_products_json(debt.products),
+            status_val,
+        )
+        if row is None:
+            raise RuntimeError("Qarz yozuvi saqlanmadi.")
+        return self._map_row(row)
 
     async def get_by_id(self, debt_id: int) -> Debt | None:
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                f"SELECT{_SELECT_COLS} FROM debts WHERE id = $1",
-                debt_id,
-            )
-
+        row = await self._db.fetchrow(
+            f"SELECT{_SELECT_COLS} FROM debts WHERE id = $1",
+            debt_id,
+        )
         if row is None:
             return None
         return self._map_row(row)
 
     async def get_all_by_client_id(self, client_id: int) -> list[Debt]:
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"SELECT{_SELECT_COLS} FROM debts"
-                " WHERE client_id = $1 AND status != 'trashed' ORDER BY debt_date ASC, id ASC",
-                client_id,
-            )
-
+        rows = await self._db.fetch(
+            f"SELECT{_SELECT_COLS} FROM debts"
+            " WHERE client_id = $1 AND status != 'trashed'"
+            " ORDER BY debt_date ASC, id ASC",
+            client_id,
+        )
         return [self._map_row(row) for row in rows]
 
-
-    async def get_active_by_client_id(self, client_id: int) -> list[Debt]:
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"SELECT{_SELECT_COLS} FROM debts"
-                " WHERE client_id = $1 AND remaining_debt > 0"
-                " AND status = 'active' ORDER BY debt_date ASC, id ASC",
-                client_id,
-            )
-
+    async def get_active_by_client_id(
+        self,
+        client_id: int,
+        *,
+        for_update: bool = False,
+    ) -> list[Debt]:
+        # FOR UPDATE — to'lov taqsimoti davomida shu qatorlarni boshqa
+        # tranzaksiya o'zgartira olmaydi (lost update va ikki karra to'lovdan himoya).
+        lock_clause = " FOR UPDATE" if for_update else ""
+        rows = await self._db.fetch(
+            f"SELECT{_SELECT_COLS} FROM debts"
+            " WHERE client_id = $1 AND remaining_debt > 0"
+            " AND status = 'active' ORDER BY debt_date ASC, id ASC"
+            f"{lock_clause}",
+            client_id,
+        )
         return [self._map_row(row) for row in rows]
 
     async def get_all_active(self) -> list[Debt]:
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"SELECT{_SELECT_COLS} FROM debts"
-                " WHERE remaining_debt > 0 AND status = 'active'"
-                " ORDER BY id ASC"
-            )
-
+        rows = await self._db.fetch(
+            f"SELECT{_SELECT_COLS} FROM debts"
+            " WHERE remaining_debt > 0 AND status = 'active'"
+            " ORDER BY id ASC"
+        )
         return [self._map_row(row) for row in rows]
 
     async def get_active_totals(self) -> dict[int, dict[str, tuple[int, int]]]:
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT client_id, currency,
-                       COALESCE(SUM(remaining_debt), 0), COUNT(*)
-                FROM debts
-                WHERE remaining_debt > 0 AND status = 'active'
-                GROUP BY client_id, currency
-                """
-            )
-
+        rows = await self._db.fetch(
+            """
+            SELECT client_id, currency,
+                   COALESCE(SUM(remaining_debt), 0), COUNT(*)
+            FROM debts
+            WHERE remaining_debt > 0 AND status = 'active'
+            GROUP BY client_id, currency
+            """
+        )
         totals: dict[int, dict[str, tuple[int, int]]] = {}
         for row in rows:
             client_id = int(row[0])
@@ -156,17 +161,22 @@ class PgDebtRepository(DebtRepository):
             totals.setdefault(client_id, {})[currency_code] = (rem_amount, count)
         return totals
 
-    async def get_client_latest_dates(self) -> dict[int, str]:
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT client_id, MAX(debt_date)
-                FROM debts
-                WHERE status != 'trashed'
-                GROUP BY client_id
-                """
-            )
-        return {int(row[0]): str(row[1]) for row in rows if row[1]}
+    async def get_client_latest_dates(self) -> dict[int, date]:
+        rows = await self._db.fetch(
+            """
+            SELECT client_id, MAX(debt_date)
+            FROM debts
+            WHERE status != 'trashed'
+            GROUP BY client_id
+            """
+        )
+        return {int(row[0]): row[1] for row in rows if row[1] is not None}
+
+    async def get_client_ids_with_paid_debts(self) -> set[int]:
+        rows = await self._db.fetch(
+            "SELECT DISTINCT client_id FROM debts WHERE status = 'paid'"
+        )
+        return {int(row[0]) for row in rows}
 
     async def update_remaining_debt(
         self,
@@ -177,42 +187,46 @@ class PgDebtRepository(DebtRepository):
         status_val = (
             status.value if isinstance(status, DebtStatus) else str(status)
         )
-        async with self._pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE debts
-                SET remaining_debt = $1, status = $2,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = $3
-                """,
-                remaining_debt,
-                status_val,
-                debt_id,
-            )
+        await self._db.execute(
+            """
+            UPDATE debts
+            SET remaining_debt = $1, status = $2,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $3
+            """,
+            remaining_debt,
+            status_val,
+            debt_id,
+        )
 
     # ------------------------------------------------------------------
     # Korzina (Trash) operatsiyalari
     # ------------------------------------------------------------------
 
-    async def get_all_paid(self) -> list[Debt]:
+    async def get_all_paid(
+        self,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Debt]:
         """Barcha yopilgan (paid) qarzlarni qaytaradi."""
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"SELECT{_SELECT_COLS} FROM debts"
-                " WHERE status = 'paid'"
-                " ORDER BY updated_at DESC, id DESC"
-            )
+        rows = await self._db.fetch(
+            f"SELECT{_SELECT_COLS} FROM debts"
+            " WHERE status = 'paid'"
+            " ORDER BY updated_at DESC, id DESC"
+            " LIMIT $1 OFFSET $2",
+            limit,
+            max(offset, 0),
+        )
         return [self._map_row(row) for row in rows]
 
     async def get_paid_by_client_id(self, client_id: int) -> list[Debt]:
         """Berilgan mijozning yopilgan qarzlarini qaytaradi."""
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"SELECT{_SELECT_COLS} FROM debts"
-                " WHERE client_id = $1 AND status = 'paid'"
-                " ORDER BY updated_at DESC, id DESC",
-                client_id,
-            )
+        rows = await self._db.fetch(
+            f"SELECT{_SELECT_COLS} FROM debts"
+            " WHERE client_id = $1 AND status = 'paid'"
+            " ORDER BY updated_at DESC, id DESC",
+            client_id,
+        )
         return [self._map_row(row) for row in rows]
 
     async def move_to_trash(self, debt_ids: list[int]) -> int:
@@ -222,15 +236,14 @@ class PgDebtRepository(DebtRepository):
         """
         if not debt_ids:
             return 0
-        async with self._pool.acquire() as conn:
-            result = await conn.execute(
-                """
-                UPDATE debts
-                SET status = 'trashed', updated_at = CURRENT_TIMESTAMP
-                WHERE id = ANY($1::BIGINT[]) AND status = 'paid'
-                """,
-                debt_ids,
-            )
+        result = await self._db.execute(
+            """
+            UPDATE debts
+            SET status = 'trashed', updated_at = CURRENT_TIMESTAMP
+            WHERE id = ANY($1::BIGINT[]) AND status = 'paid'
+            """,
+            debt_ids,
+        )
         # asyncpg "UPDATE N" formatida qaytaradi
         count_str = result.split()[-1] if result else "0"
         return int(count_str)
@@ -239,85 +252,112 @@ class PgDebtRepository(DebtRepository):
         """Ko'rsatilgan IDlardagi trashed qarzlarni 'paid' statusiga qaytaradi."""
         if not debt_ids:
             return 0
-        async with self._pool.acquire() as conn:
-            result = await conn.execute(
-                """
-                UPDATE debts
-                SET status = 'paid', updated_at = CURRENT_TIMESTAMP
-                WHERE id = ANY($1::BIGINT[]) AND status = 'trashed'
-                """,
-                debt_ids,
-            )
+        result = await self._db.execute(
+            """
+            UPDATE debts
+            SET status = 'paid', updated_at = CURRENT_TIMESTAMP
+            WHERE id = ANY($1::BIGINT[]) AND status = 'trashed'
+            """,
+            debt_ids,
+        )
         count_str = result.split()[-1] if result else "0"
         return int(count_str)
 
-    async def get_all_trashed(self) -> list[Debt]:
+    async def get_all_trashed(
+        self,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Debt]:
         """Barcha korzinaga yuborilgan (trashed) qarzlarni qaytaradi."""
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"SELECT{_SELECT_COLS} FROM debts"
-                " WHERE status = 'trashed'"
-                " ORDER BY updated_at DESC, id DESC"
-            )
+        rows = await self._db.fetch(
+            f"SELECT{_SELECT_COLS} FROM debts"
+            " WHERE status = 'trashed'"
+            " ORDER BY updated_at DESC, id DESC"
+            " LIMIT $1 OFFSET $2",
+            limit,
+            max(offset, 0),
+        )
         return [self._map_row(row) for row in rows]
 
-    async def purge_trash(self) -> int:
+    async def purge_trash(self, actor_id: int | None = None) -> int:
         """Korzinani butunlay tozalaydi (atomik tranzaksiya).
 
-        1. Trashed qarzlar uchun payments o'chiriladi.
-        2. Trashed qarzlar trash arxiv jadvaliga ko'chiriladi (mijoz nomi bilan).
+        1. Trashed qarzlarning to'lov tarixi `trash_payments` arxiviga ko'chiriladi.
+        2. Trashed qarzlar `trash` arxiv jadvaliga ko'chiriladi (mijoz nomi bilan).
         3. debts jadvalidan o'chiriladi.
+
+        Moliyaviy audit trail append-only: payments qatorlari arxivga
+        ko'chirilgandan keyingina o'chiriladi.
 
         Qaytaradi: o'chirilgan debt yozuvlar soni.
         """
-        async with self._pool.acquire() as conn:
-            async with conn.transaction():
-                # 1. Trashed qarzlarga tegishli payments o'chiriladi
-                await conn.execute(
-                    """
-                    DELETE FROM payments
-                    WHERE debt_id IN (
-                        SELECT id FROM debts WHERE status = 'trashed'
-                    )
-                    """
+        async with self._transaction() as conn:
+            # 1. To'lov tarixini arxivlash (audit trail yo'qolmasligi uchun)
+            await conn.execute(
+                """
+                INSERT INTO trash_payments (
+                    original_id, original_debt_id, client_id, amount, currency,
+                    payment_type, payment_date, paid_created_at, deleted_by
                 )
+                SELECT p.id, p.debt_id, p.client_id, p.amount, p.currency,
+                       p.payment_type, p.payment_date, p.created_at, $1
+                FROM payments p
+                JOIN debts d ON d.id = p.debt_id
+                WHERE d.status = 'trashed'
+                """,
+                actor_id,
+            )
 
-                # 2. Trashed qarzlarni trash arxiviga ko'chirish (clients bilan JOIN)
-                await conn.execute(
-                    """
-                    INSERT INTO trash (
-                        original_id, client_id, client_name,
-                        product_name, product_price,
-                        original_debt, remaining_debt,
-                        currency, debt_date, status_before, products_json
-                    )
-                    SELECT
-                        d.id, d.client_id, c.full_name,
-                        d.product_name, d.product_price,
-                        d.original_debt, d.remaining_debt,
-                        d.currency, d.debt_date, d.status, d.products_json
-                    FROM debts d
-                    JOIN clients c ON c.id = d.client_id
-                    WHERE d.status = 'trashed'
-                    """
+            await conn.execute(
+                """
+                DELETE FROM payments
+                WHERE debt_id IN (
+                    SELECT id FROM debts WHERE status = 'trashed'
                 )
+                """
+            )
 
-                # 3. debts jadvalidan o'chirish
-                result = await conn.execute(
-                    "DELETE FROM debts WHERE status = 'trashed'"
+            # 2. Trashed qarzlarni trash arxiviga ko'chirish (clients bilan JOIN)
+            await conn.execute(
+                """
+                INSERT INTO trash (
+                    original_id, client_id, client_name,
+                    product_name, product_price,
+                    original_debt, remaining_debt,
+                    currency, debt_date, status_before, products_json, deleted_by
                 )
+                SELECT
+                    d.id, d.client_id, c.full_name,
+                    d.product_name, d.product_price,
+                    d.original_debt, d.remaining_debt,
+                    d.currency, d.debt_date, d.status, d.products_json, $1
+                FROM debts d
+                JOIN clients c ON c.id = d.client_id
+                WHERE d.status = 'trashed'
+                """,
+                actor_id,
+            )
 
-                # 4. Qarzi qolmagan (debts jadvalida yo'q) mijozlarni tozalash
-                await conn.execute(
-                    """
-                    DELETE FROM clients
-                    WHERE id NOT IN (SELECT DISTINCT client_id FROM debts)
-                    """
-                )
+            # 3. debts jadvalidan o'chirish
+            result = await conn.execute(
+                "DELETE FROM debts WHERE status = 'trashed'"
+            )
+
+            # 4. Qarzi ham, to'lovi ham qolmagan mijozlarni tozalash
+            await conn.execute(
+                """
+                DELETE FROM clients c
+                WHERE NOT EXISTS (SELECT 1 FROM debts d WHERE d.client_id = c.id)
+                  AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.client_id = c.id)
+                """
+            )
 
         count_str = result.split()[-1] if result else "0"
         return int(count_str)
 
+    def _transaction(self):
+        """Purge uchun tranzaksiya konteksti (pool yoki mavjud connection)."""
+        return transaction_scope(self._db)
 
     @staticmethod
     def _map_row(row: asyncpg.Record) -> Debt:
@@ -342,4 +382,3 @@ class PgDebtRepository(DebtRepository):
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
-

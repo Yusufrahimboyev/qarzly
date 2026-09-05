@@ -5,6 +5,7 @@ import asyncpg
 
 from bot.domain.entities.user import User
 from bot.domain.repositories.user_repository import UserRepository
+from bot.infrastructure.database.repositories.executor import Executor
 
 
 class PgUserRepository(UserRepository):
@@ -14,30 +15,28 @@ class PgUserRepository(UserRepository):
     xaritalaydi.
     """
 
-    def __init__(self, pool: asyncpg.Pool) -> None:
-        self._pool = pool
+    def __init__(self, executor: Executor) -> None:
+        self._db = executor
 
     async def add(self, user: User) -> None:
-        async with self._pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO users (telegram_id, username, full_name)
-                VALUES ($1, $2, $3)
-                ON CONFLICT DO NOTHING
-                """,
-                user.telegram_id, user.username, user.full_name,
-            )
+        await self._db.execute(
+            """
+            INSERT INTO users (telegram_id, username, full_name)
+            VALUES ($1, $2, $3)
+            ON CONFLICT DO NOTHING
+            """,
+            user.telegram_id, user.username, user.full_name,
+        )
 
     async def get_by_telegram_id(self, telegram_id: int) -> User | None:
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT id, telegram_id, username, full_name, created_at
-                FROM users
-                WHERE telegram_id = $1
-                """,
-                telegram_id,
-            )
+        row = await self._db.fetchrow(
+            """
+            SELECT id, telegram_id, username, full_name, created_at
+            FROM users
+            WHERE telegram_id = $1
+            """,
+            telegram_id,
+        )
 
         if row is None:
             return None

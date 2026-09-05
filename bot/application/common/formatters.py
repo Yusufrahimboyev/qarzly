@@ -5,11 +5,12 @@ Pul summalari, telefon raqamlari va sanalarni to'g'ri qayta ishlash.
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from html import escape
 from zoneinfo import ZoneInfo
 
 from bot.domain.entities.currency import Currency
+from bot.domain.entities.debt import MAX_MONEY
 
 
 def esc_html(text: object) -> str:
@@ -44,9 +45,45 @@ def now_local() -> datetime:
     return datetime.now(_TASHKENT_TZ)
 
 
+def today() -> date:
+    """Bugungi sanani (Toshkent vaqti) `datetime.date` sifatida qaytaradi."""
+    return now_local().date()
+
+
 def today_str() -> str:
     """Bugungi sanani 'DD.MM.YYYY' ko'rinishida (Toshkent vaqti) qaytaradi."""
-    return now_local().strftime("%d.%m.%Y")
+    return format_date(today())
+
+
+def format_date(value: date | datetime | None) -> str:
+    """Sanani foydalanuvchiga ko'rsatiladigan 'DD.MM.YYYY' matniga aylantiradi.
+
+    Sana domainda va bazada `DATE` sifatida saqlanadi — matnli format faqat
+    shu yerda, presentation chegarasida hosil qilinadi.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        value = value.date()
+    return value.strftime("%d.%m.%Y")
+
+
+def to_date(value: date | datetime | str) -> date:
+    """Sanani `datetime.date` ga keltiradi (matn bo'lsa parse qiladi).
+
+    Servis va repository qatlamlari faqat `date` bilan ishlaydi; matnli sana
+    faqat tashqi chegarada (bot, API) qabul qilinadi.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    parsed = parse_date(str(value))
+    if parsed is None:
+        raise ValueError(
+            "Sana formati noto'g'ri (DD.MM.YYYY, masalan: 17.08.2026)."
+        )
+    return parsed
 
 
 def format_money(amount: int | float, currency: str | Currency = Currency.UZS) -> str:
@@ -84,29 +121,57 @@ def aggregate_remaining(summaries) -> dict[str, int]:
     return totals
 
 
+# Pul chegarasi domainda belgilangan (MAX_MONEY) — parser ham aynan shu
+# chegaraga tayanadi, ya'ni bitta manba.
+
+# "1 500 000", "1.500.000", "2,500,000" yoki "2500000" — guruhlar aynan
+# 3 xonali bo'lishi shart. Shu sababli "1.5" yoki "-100" qabul qilinmaydi.
+_MONEY_RE = re.compile(r"^\d{1,3}(?:[ \u00a0_.,]\d{3})+$|^\d+$")
+_MONEY_SUFFIX_RE = re.compile(
+    r"\s*(so\u2018m|so'm|som|sum|uzs|usd|dollar|\$)\.?$",
+    re.IGNORECASE,
+)
+
+
 def parse_money(text: str) -> int | None:
     """Foydalanuvchi kiritgan pul matnini butun songa aylantiradi.
 
     Masalan: "1 500 000", "1.500.000", "1500000 so'm", "2,500,000" -> 1500000.
-    Agar noto'g'ri yoki manfiy bo'lsa None qaytaradi.
+
+    Qat'iy parser: raqam bo'lmagan belgilarni jimgina tashlab yubormaydi.
+    "-100", "abc123", "1.5" kabi kiritmalar None qaytaradi — aks holda
+    foydalanuvchi kutmagan summa saqlanib qolardi.
     """
     if not text:
         return None
 
-    # Faqat raqamlarni ajratib olamiz
-    cleaned = re.sub(r"[^\d]", "", text.strip())
-    if not cleaned:
+    value = _MONEY_SUFFIX_RE.sub("", str(text).strip()).strip()
+    if not value or not _MONEY_RE.fullmatch(value):
         return None
 
+    digits = re.sub(r"[ \u00a0_.,]", "", value)
     try:
-        val = int(cleaned)
-        return val if val >= 0 else None
+        parsed = int(digits)
     except ValueError:
         return None
+    return parsed if 0 <= parsed <= MAX_MONEY else None
 
 
-def parse_date_input(text: str) -> str | None:
-    """Foydalanuvchi kiritgan sanani 'DD.MM.YYYY' formatiga standartlashtiradi.
+# Qo'llab-quvvatlanadigan sana formatlari (parse tartibi muhim).
+_DATE_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("%d.%m.%Y", r"^\d{1,2}\.\d{1,2}\.\d{4}$"),
+    ("%d/%m/%Y", r"^\d{1,2}/\d{1,2}/\d{4}$"),
+    ("%d-%m-%Y", r"^\d{1,2}-\d{1,2}-\d{4}$"),
+    ("%Y-%m-%d", r"^\d{4}-\d{1,2}-\d{1,2}$"),
+    ("%Y.%m.%d", r"^\d{4}\.\d{1,2}\.\d{1,2}$"),
+    ("%d.%m.%y", r"^\d{1,2}\.\d{1,2}\.\d{2}$"),
+)
+
+_TODAY_WORDS = ("bugun", "today", "hozir", "current")
+
+
+def parse_date(text: str) -> date | None:
+    """Foydalanuvchi kiritgan sanani `datetime.date` ga aylantiradi.
 
     Qo'llab-quvvatlaydi:
     - 'bugun', 'today' -> hozirgi sana
@@ -114,34 +179,30 @@ def parse_date_input(text: str) -> str | None:
     - '2026-08-16', '2026.08.16'
     - '16.08.26'
     """
-    cleaned = text.strip().lower()
-    now = now_local()
+    if not text:
+        return None
 
-    if cleaned in ("bugun", "today", "hozir", "current"):
-        return now.strftime("%d.%m.%Y")
+    cleaned = str(text).strip().lower()
+    if cleaned in _TODAY_WORDS:
+        return today()
 
-    # Turli xil sana formatlarini tekshirish
-    date_patterns = [
-        ("%d.%m.%Y", r"^\d{1,2}\.\d{1,2}\.\d{4}$"),
-        ("%d/%m/%Y", r"^\d{1,2}/\d{1,2}/\d{4}$"),
-        ("%d-%m-%Y", r"^\d{1,2}-\d{1,2}-\d{4}$"),
-        ("%Y-%m-%d", r"^\d{4}-\d{1,2}-\d{1,2}$"),
-        ("%Y.%m.%d", r"^\d{4}\.\d{1,2}\.\d{1,2}$"),
-        ("%d.%m.%y", r"^\d{1,2}\.\d{1,2}\.\d{2}$"),
-    ]
-
-    for fmt, regex in date_patterns:
+    for fmt, regex in _DATE_PATTERNS:
         if re.match(regex, cleaned):
             try:
                 dt = datetime.strptime(cleaned, fmt)
-                # Kelajak yoki o'tmish sanasini to'g'ri 4 xonali yil bilan formatlash
-                if dt.year < 100:
-                    dt = dt.replace(year=2000 + dt.year)
-                return dt.strftime("%d.%m.%Y")
             except ValueError:
                 continue
+            if dt.year < 100:
+                dt = dt.replace(year=2000 + dt.year)
+            return dt.date()
 
     return None
+
+
+def parse_date_input(text: str) -> str | None:
+    """`parse_date` ning matnli ko'rinishi ('DD.MM.YYYY' yoki None)."""
+    parsed = parse_date(text)
+    return format_date(parsed) if parsed is not None else None
 
 
 def normalize_phone(phone: str) -> str:

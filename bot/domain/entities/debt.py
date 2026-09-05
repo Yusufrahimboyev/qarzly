@@ -2,15 +2,24 @@
 
 Har bir qarz yozuvi (operatsiyasi) ning biznes modeli. Bir qarzda bir nechta
 tovar bo'lishi mumkin — har bir tovar DebtProduct sifatida saqlanadi.
+
+Sana domainda `datetime.date` sifatida saqlanadi: matnli ("DD.MM.YYYY")
+ko'rinish faqat presentation qatlamida hosil qilinadi. Aks holda saralash va
+FIFO taqsimoti matn tartibida ishlab, noto'g'ri natija berardi.
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
 from bot.domain.entities.currency import Currency
+
+# Domain invariantlari uchun chegaralar (BIGINT overflow va bema'ni
+# kiritmalardan himoya).
+MAX_MONEY = 9_000_000_000_000_000
+MAX_QUANTITY = 1_000_000
+MAX_PRODUCTS_PER_DEBT = 50
 
 
 class DebtStatus(StrEnum):
@@ -23,67 +32,69 @@ class DebtStatus(StrEnum):
 class DebtProduct:
     """Bitta tovar yozuvi (qarz tarkibidagi har bir tovar).
 
-    Har bir tovarning o'z valyutasi bor ("UZS" yoki "USD") — bir xaridda
+    Har bir tovarning o'z valyutasi bor (UZS yoki USD) — bir xaridda
     ba'zi tovarlar so'mda, ba'zilari dollarda bo'lishi mumkin.
     """
 
     name: str
     quantity: int = 1
     price_per_unit: int = 0
-    currency: str = Currency.UZS.value
+    currency: Currency = Currency.UZS
+
+    def __post_init__(self) -> None:
+        # Valyuta matn ko'rinishida ("USD") kelsa ham entity ichida har doim
+        # `Currency` bo'ladi — shu tufayli taqqoslash va serializatsiya
+        # bir xil ishlaydi.
+        if not isinstance(self.currency, Currency):
+            object.__setattr__(self, "currency", Currency(str(self.currency).upper()))
 
     @property
     def total_price(self) -> int:
         return self.quantity * self.price_per_unit
+
+    def validate(self) -> None:
+        """Tovar invariantlarini tekshiradi (nom, miqdor, narx chegaralari).
+
+        Bu tekshiruv API DTO'sidan mustaqil — bot, API yoki test qaysi yo'l
+        bilan kelmasin, noto'g'ri tovar bazaga yozilmaydi.
+        """
+        if not self.name.strip():
+            raise ValueError("Tovar nomi bo'sh bo'lishi mumkin emas.")
+        if len(self.name) > 80:
+            raise ValueError("Tovar nomi 80 belgidan uzun bo'lishi mumkin emas.")
+        if not 1 <= self.quantity <= MAX_QUANTITY:
+            raise ValueError(
+                f"Tovar miqdori 1 va {MAX_QUANTITY} oralig'ida bo'lishi kerak."
+            )
+        if not 0 < self.price_per_unit <= MAX_MONEY:
+            raise ValueError("Tovar narxi 0 dan katta va chegaradan kichik bo'lishi kerak.")
+        if self.total_price > MAX_MONEY:
+            raise ValueError("Tovarning jami narxi ruxsat etilgan chegaradan katta.")
+        if not isinstance(self.currency, Currency):
+            raise ValueError("Tovar valyutasi noto'g'ri (UZS yoki USD bo'lishi kerak).")
 
     def to_dict(self) -> dict:
         return {
             "name": self.name,
             "quantity": self.quantity,
             "price_per_unit": self.price_per_unit,
-            "currency": self.currency,
+            "currency": self.currency.value,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> DebtProduct:
+        raw_currency = str(d.get("currency", Currency.UZS.value)).upper()
+        try:
+            currency = Currency(raw_currency)
+        except ValueError:
+            # Eski yoki buzilgan yozuvlarda valyuta noma'lum — UZS deb olamiz
+            currency = Currency.UZS
         return cls(
             name=str(d.get("name", "")),
             quantity=int(d.get("quantity", 1)),
             price_per_unit=int(d.get("price_per_unit", 0)),
-            # Eski yozuvlarda currency yo'q — UZS deb olamiz
-            currency=str(d.get("currency", Currency.UZS.value)).upper(),
+            currency=currency,
         )
-
-    def to_json(self) -> str:
-        return json.dumps(self.to_dict(), ensure_ascii=False)
-
-    @classmethod
-    def from_json(cls, raw: str) -> DebtProduct:
-        return cls.from_dict(json.loads(raw))
-
-
-def parse_products_json(raw: str) -> list[DebtProduct]:
-    """JSON matndan tovarlar ro'yxatini parse qiladi.
-
-    Eski yozuvlarda products_json bo'lishi mumkin emas — shu holda bo'sh ro'yxat
-    qaytariladi.
-    """
-    if not raw or raw.strip() in ("", "[]"):
-        return []
-    try:
-        items = json.loads(raw)
-        if isinstance(items, list):
-            return [DebtProduct.from_dict(p) for p in items if isinstance(p, dict)]
-    except (json.JSONDecodeError, TypeError, KeyError):
-        pass
-    return []
-
-
-def serialize_products_json(products: list[DebtProduct]) -> str:
-    """Tovarlar ro'yxatini JSON matnga aylantiradi."""
-    return json.dumps(
-        [p.to_dict() for p in products], ensure_ascii=False
-    )
 
 
 def build_summary_name(products: list[DebtProduct]) -> str:
@@ -117,7 +128,7 @@ class Debt:
     """
 
     client_id: int
-    debt_date: str
+    debt_date: date
     product_name: str
     product_price: int
     original_debt: int

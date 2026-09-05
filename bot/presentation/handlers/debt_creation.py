@@ -545,7 +545,7 @@ async def _append_product_with_currency(
         name=product_name,
         quantity=quantity,
         price_per_unit=price,
-        currency=currency.value,
+        currency=currency,
     ))
     await state.update_data(_products=products)
 
@@ -716,7 +716,7 @@ async def process_exchange_price(message: Message, state: FSMContext) -> None:
     currency = Currency(data.get("exchange_currency", Currency.UZS.value))
     products = _get_products(data)
     total_in_currency = sum(
-        p.total_price for p in products if p.currency == currency.value
+        p.total_price for p in products if p.currency == currency
     )
 
     if ex_price is None or ex_price < 0:
@@ -826,7 +826,7 @@ async def process_given_money_amount(message: Message, state: FSMContext) -> Non
     currency = Currency(data.get("given_currency", Currency.UZS.value))
     products = _get_products(data)
     total_in_currency = sum(
-        p.total_price for p in products if p.currency == currency.value
+        p.total_price for p in products if p.currency == currency
     )
     exchange_currency = Currency(data.get("exchange_currency", Currency.UZS.value))
     exchange_price: int = (
@@ -920,7 +920,9 @@ async def cb_confirm_create_debt(
         # Valyutalar bo'yicha jami narxlar
         totals: dict[str, int] = {}
         for p in products:
-            totals[p.currency] = totals.get(p.currency, 0) + p.total_price
+            totals[p.currency.value] = (
+                totals.get(p.currency.value, 0) + p.total_price
+            )
 
         success_lines = [
             "✅ <b>QARZ MUVAFFAQIYATLI SAQLANDI!</b>\n",
@@ -996,7 +998,10 @@ def _get_products(data: dict[str, Any]) -> list[DebtProduct]:
     """State dan tovarlar ro'yxatini olish."""
     raw = data.get("_products", [])
     if isinstance(raw, list):
-        return [p if isinstance(p, DebtProduct) else DebtProduct(**p) for p in raw]
+        return [
+            p if isinstance(p, DebtProduct) else DebtProduct.from_dict(p)
+            for p in raw
+        ]
     return []
 
 
@@ -1021,7 +1026,7 @@ def _render_preview(data: dict[str, Any]) -> str:
     # Valyutalar bo'yicha jami narxlar
     totals: dict[str, int] = {}
     for p in products:
-        totals[p.currency] = totals.get(p.currency, 0) + p.total_price
+        totals[p.currency.value] = totals.get(p.currency.value, 0) + p.total_price
 
     # Har bir valyutada chegirmalarni hisoblab, qoldiqni topamiz
     remaining: dict[str, int] = dict(totals)

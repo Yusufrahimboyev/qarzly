@@ -4,7 +4,7 @@ Tashqi bazaga bog'lanmasdan tezkor va mustaqil unit testlarni ta'minlaydi.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 
@@ -16,6 +16,12 @@ from bot.domain.repositories.client_repository import ClientRepository
 from bot.domain.repositories.debt_repository import DebtRepository
 from bot.domain.repositories.payment_repository import PaymentRepository
 from bot.domain.repositories.user_repository import UserRepository
+
+
+def _page(items: list, limit: int | None, offset: int) -> list:
+    """Repository'lardagi LIMIT/OFFSET xulqini takrorlaydi."""
+    sliced = items[max(offset, 0):]
+    return sliced if limit is None else sliced[:limit]
 
 
 class FakeUserRepository(UserRepository):
@@ -78,6 +84,19 @@ class FakeClientRepository(ClientRepository):
                 return c
         return None
 
+    async def find_by_name_without_phone(self, full_name: str) -> Client | None:
+        clean = full_name.strip().lower()
+        for c in self._store.values():
+            if not c.phone and c.full_name.strip().lower() == clean:
+                return c
+        return None
+
+    async def get_or_create_by_phone(self, client: Client) -> tuple[Client, bool]:
+        existing = await self.find_by_phone(client.phone)
+        if existing is not None:
+            return existing, False
+        return await self.add(client), True
+
     async def get_all_alphabetical(self) -> list[Client]:
         return sorted(self._store.values(), key=lambda c: c.full_name.lower())
 
@@ -118,17 +137,27 @@ class FakeDebtRepository(DebtRepository):
         return self._store.get(debt_id)
 
     async def get_all_by_client_id(self, client_id: int) -> list[Debt]:
-        return [
+        visible = [
             d for d in self._store.values()
             if d.client_id == client_id and d.status != DebtStatus.TRASHED
         ]
+        return sorted(visible, key=lambda d: (d.debt_date, d.id or 0))
 
 
-    async def get_active_by_client_id(self, client_id: int) -> list[Debt]:
-        return [
+    async def get_active_by_client_id(
+        self,
+        client_id: int,
+        *,
+        for_update: bool = False,
+    ) -> list[Debt]:
+        # SQL bilan bir xil FIFO tartibi: sana, keyin id.
+        active = [
             d for d in self._store.values()
-            if d.client_id == client_id and d.status == DebtStatus.ACTIVE and d.remaining_debt > 0
+            if d.client_id == client_id
+            and d.status == DebtStatus.ACTIVE
+            and d.remaining_debt > 0
         ]
+        return sorted(active, key=lambda d: (d.debt_date, d.id or 0))
 
     async def get_all_active(self) -> list[Debt]:
         return [
@@ -145,14 +174,20 @@ class FakeDebtRepository(DebtRepository):
                 totals[d.client_id][cur] = (prev_sum + d.remaining_debt, prev_count + 1)
         return totals
 
-    async def get_client_latest_dates(self) -> dict[int, str]:
-        latest_dates: dict[int, str] = {}
+    async def get_client_latest_dates(self) -> dict[int, date]:
+        latest_dates: dict[int, date] = {}
         for d in self._store.values():
             if d.status != DebtStatus.TRASHED and d.debt_date:
-                curr = latest_dates.get(d.client_id, "")
-                if not curr or d.debt_date > curr:
+                curr = latest_dates.get(d.client_id)
+                if curr is None or d.debt_date > curr:
                     latest_dates[d.client_id] = d.debt_date
         return latest_dates
+
+    async def get_client_ids_with_paid_debts(self) -> set[int]:
+        return {
+            d.client_id for d in self._store.values()
+            if d.status == DebtStatus.PAID
+        }
 
     async def update_remaining_debt(
         self,
@@ -187,8 +222,13 @@ class FakeDebtRepository(DebtRepository):
     # Korzina (Trash) operatsiyalari
     # ------------------------------------------------------------------
 
-    async def get_all_paid(self) -> list[Debt]:
-        return [d for d in self._store.values() if d.status == DebtStatus.PAID]
+    async def get_all_paid(
+        self,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Debt]:
+        paid = [d for d in self._store.values() if d.status == DebtStatus.PAID]
+        return _page(paid, limit, offset)
 
     async def get_paid_by_client_id(self, client_id: int) -> list[Debt]:
         return [
@@ -236,10 +276,15 @@ class FakeDebtRepository(DebtRepository):
                 count += 1
         return count
 
-    async def get_all_trashed(self) -> list[Debt]:
-        return [d for d in self._store.values() if d.status == DebtStatus.TRASHED]
+    async def get_all_trashed(
+        self,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Debt]:
+        trashed = [d for d in self._store.values() if d.status == DebtStatus.TRASHED]
+        return _page(trashed, limit, offset)
 
-    async def purge_trash(self) -> int:
+    async def purge_trash(self, actor_id: int | None = None) -> int:
         """Barcha trashed qarzlarni in-memory store dan o'chiradi."""
         to_delete = [
             debt_id for debt_id, d in self._store.items()
