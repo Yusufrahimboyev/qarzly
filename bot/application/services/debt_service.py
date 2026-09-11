@@ -599,6 +599,7 @@ class DebtService:
             clients=await self._clients.get_all_alphabetical(),
             opening_given=await self._debts.sum_original_before(date_from),
             opening_repaid=await self._payments.sum_repayments_before(date_from),
+            repaid_by_debt=await self._payments.sum_repayments_by_debt(date_to),
             active_totals=await self._debts.get_active_totals(),
         )
 

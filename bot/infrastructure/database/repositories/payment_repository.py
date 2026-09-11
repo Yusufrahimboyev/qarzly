@@ -100,6 +100,20 @@ class PgPaymentRepository(PaymentRepository):
         )
         return {str(row[0]): int(row[1]) for row in rows}
 
+    async def sum_repayments_by_debt(self, until: date) -> dict[int, int]:
+        rows = await self._db.fetch(
+            """
+            SELECT debt_id, COALESCE(SUM(amount), 0)
+            FROM payments
+            WHERE debt_id IS NOT NULL
+              AND payment_date <= $1
+              AND payment_type IN ('full', 'partial')
+            GROUP BY debt_id
+            """,
+            until,
+        )
+        return {int(row[0]): int(row[1]) for row in rows}
+
     @staticmethod
     def _map_row(row: asyncpg.Record) -> Payment:
         return Payment(

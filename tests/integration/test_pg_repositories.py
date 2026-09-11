@@ -298,3 +298,65 @@ async def test_initial_payments_excluded_from_repayment_sum(
     rows = await payments.get_by_date_range(date(2025, 1, 1), date(2025, 12, 31))
     assert [p.payment_type.value for p in rows] == ["initial"]
 
+
+async def test_repayments_by_debt_respect_cutoff_date(database: Database) -> None:
+    """Davr oxiridan KEYINGI to'lov o'sha sanadagi qoldiqni kamaytirmasligi kerak."""
+    service, _, clients = _service(database)
+    payments = PgPaymentRepository(database.pool)
+    client = await clients.add(Client(full_name="Akmal", phone="+998901234567"))
+    assert client.id is not None
+
+    debt = await service.create_debt(
+        client_id=client.id,
+        debt_date=date(2026, 3, 1),
+        products=[DebtProduct(name="Shina", price_per_unit=1_000_000)],
+    )
+    assert debt.id is not None
+
+    await service.pay_partial_debt(
+        client_id=client.id,
+        amount=400_000,
+        currency=Currency.UZS,
+        payment_date=date(2026, 5, 1),
+    )
+    await service.pay_partial_debt(
+        client_id=client.id,
+        amount=600_000,
+        currency=Currency.UZS,
+        payment_date=date(2026, 9, 1),
+    )
+
+    until_june = await payments.sum_repayments_by_debt(date(2026, 6, 30))
+    until_today = await payments.sum_repayments_by_debt(date(2026, 12, 31))
+
+    # 30.06 holatida faqat birinchi to'lov hisobga olinadi.
+    assert until_june[debt.id] == 400_000
+    assert until_today[debt.id] == 1_000_000
+
+
+async def test_report_sheets_agree_for_past_period(database: Database) -> None:
+    """O'tgan davr hisobotida umumiy qoldiq va mijozlar kesimi mos kelishi shart."""
+    service, _, clients = _service(database)
+    client = await clients.add(Client(full_name="Akmal", phone="+998901234567"))
+    assert client.id is not None
+
+    await service.create_debt(
+        client_id=client.id,
+        debt_date=date(2026, 3, 1),
+        products=[DebtProduct(name="Shina", price_per_unit=1_000_000)],
+    )
+    # To'lov davrdan keyin tushadi — davr oxiridagi qoldiqqa ta'sir qilmaydi.
+    await service.pay_partial_debt(
+        client_id=client.id,
+        amount=1_000_000,
+        currency=Currency.UZS,
+        payment_date=date(2026, 9, 1),
+    )
+
+    report = await service.get_period_report(date(2026, 1, 1), date(2026, 8, 19))
+
+    rows_total = sum(row.remaining.get("UZS", 0) for row in report.client_rows)
+    assert report.closing_debt["UZS"] == 1_000_000
+    assert rows_total == 1_000_000
+    assert report.open_debts_count == 1
+

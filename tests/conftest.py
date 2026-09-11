@@ -356,6 +356,17 @@ class FakePaymentRepository(PaymentRepository):
         rows.sort(key=lambda p: (p.payment_date, p.id or 0))
         return rows
 
+    async def sum_repayments_by_debt(self, until: date) -> dict[int, int]:
+        totals: dict[int, int] = {}
+        for p in self._store.values():
+            if (
+                p.debt_id is not None
+                and p.payment_date <= until
+                and p.payment_type in (PaymentType.FULL, PaymentType.PARTIAL)
+            ):
+                totals[p.debt_id] = totals.get(p.debt_id, 0) + p.amount
+        return totals
+
     async def sum_repayments_before(self, before: date) -> dict[str, int]:
         totals: dict[str, int] = {}
         for p in self._store.values():

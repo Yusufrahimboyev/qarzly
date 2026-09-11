@@ -140,6 +140,7 @@ def _sample_report() -> object:
         clients=clients,
         opening_given={"UZS": 2_000_000},
         opening_repaid={"UZS": 500_000},
+        repaid_by_debt={1: 2_500_000, 2: 60},
         active_totals={1: {"UZS": (1_000_000, 1)}, 2: {"USD": (240, 1)}},
     )
 
@@ -237,6 +238,7 @@ def test_empty_report_still_produces_valid_workbook():
         clients=[],
         opening_given={},
         opening_repaid={},
+        repaid_by_debt={},
         active_totals={},
     )
     workbook = _load(report)

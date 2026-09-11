@@ -137,6 +137,8 @@ class PeriodReport:
     debts: tuple[Debt, ...] = ()
     payments: tuple[Payment, ...] = ()
     client_names: dict[int, str] = field(default_factory=dict)
+    remaining_as_of: dict[int, int] = field(default_factory=dict)
+    """{debt_id: davr oxiridagi qoldiq} — bugungi `remaining_debt` emas."""
 
     @property
     def is_empty(self) -> bool:

@@ -39,3 +39,13 @@ class PaymentRepository(ABC):
         uni qo'shish qoldiqni ikki marta kamaytirib yuborardi.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    async def sum_repayments_by_debt(self, until: date) -> dict[int, int]:
+        """`until` sanasigacha (o'zi ham kiradi) har bir qarzga tushgan to'lov.
+
+        Qaytaradi: {debt_id: jami_qaytarilgan}. Faqat 'full' va 'partial'.
+        Davr oxiriga qoldiqni hisoblash uchun: qarzning o'sha kundagi qoldig'i
+        `original_debt - sum_repayments_by_debt[debt_id]` ga teng.
+        """
+        raise NotImplementedError

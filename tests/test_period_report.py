@@ -71,6 +71,7 @@ def _build(**overrides):
         "clients": [],
         "opening_given": {},
         "opening_repaid": {},
+        "repaid_by_debt": {},
         "active_totals": {},
     }
     kwargs.update(overrides)
@@ -168,6 +169,7 @@ def test_debt_counts_by_status():
                 status=DebtStatus.TRASHED,
             ),
         ],
+        repaid_by_debt={2: 100, 3: 100},
     )
     assert (report.open_debts_count, report.closed_debts_count) == (1, 1)
     assert report.trashed_debts_count == 1
@@ -285,6 +287,7 @@ def test_client_row_given_minus_paid_equals_remaining():
                 remaining=400_000,
             )
         ],
+        repaid_by_debt={1: 600_000},
     )
     (row,) = report.client_rows
     assert row.full_name == "Akmal"
@@ -306,6 +309,7 @@ def test_client_row_is_closed_when_nothing_remains():
                 status=DebtStatus.PAID,
             )
         ],
+        repaid_by_debt={1: 500_000},
     )
     (row,) = report.client_rows
     assert row.is_closed
@@ -450,3 +454,94 @@ async def test_service_excludes_debts_outside_range(
     assert report.given_total == {"UZS": 200_000}
     assert report.opening_debt == {"UZS": 100_000}
     assert report.closing_debt == {"UZS": 300_000}
+
+
+# ==========================================
+# 7. Davr oxiridagi holat (regressiya: varaqlar mos kelishi)
+# ==========================================
+
+
+def test_client_rows_use_period_end_not_today():
+    """Davrdan KEYIN tushgan to'lov davr oxiridagi qoldiqni kamaytirmasligi kerak.
+
+    Real hodisa: 01.01-19.08 hisoboti chiqarilganda "Mijozlar kesimida"
+    ustuni bugungi `remaining_debt` ni olardi va "Umumiy natija" dagi davr
+    oxiridagi qarzdorlikdan kam chiqardi.
+    """
+    report = _build(
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 8, 19),
+        clients=[_client(1, "Akmal")],
+        debts=[
+            _debt(
+                debt_id=1,
+                client_id=1,
+                debt_date=date(2026, 3, 1),
+                original=1_000_000,
+                remaining=0,  # bugun to'liq yopilgan
+                status=DebtStatus.PAID,
+            )
+        ],
+        # ...ammo to'lov 19-avgustdan KEYIN tushgan, shuning uchun bu yerda yo'q.
+        repaid_by_debt={},
+    )
+
+    (row,) = report.client_rows
+    assert row.remaining["UZS"] == 1_000_000
+    assert row.paid.get("UZS", 0) == 0
+    assert row.status_label == "Qarzdor"
+    assert report.open_debts_count == 1
+    assert report.closed_debts_count == 0
+
+
+def test_client_remaining_total_matches_closing_debt():
+    """Ikki varaqning jamilari bir-biriga to'g'ri kelishi shart."""
+    report = _build(
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 8, 19),
+        clients=[_client(1, "Akmal"), _client(2, "Bobur")],
+        debts=[
+            _debt(
+                debt_id=1,
+                client_id=1,
+                debt_date=date(2026, 3, 1),
+                original=1_000_000,
+                remaining=0,
+            ),
+            _debt(
+                debt_id=2,
+                client_id=2,
+                debt_date=date(2026, 4, 1),
+                original=500_000,
+                remaining=200_000,
+            ),
+        ],
+        payments=[_payment(client_id=2, amount=300_000, payment_date=date(2026, 5, 1))],
+        repaid_by_debt={2: 300_000},
+    )
+
+    rows_total = sum(row.remaining.get("UZS", 0) for row in report.client_rows)
+    assert rows_total == report.closing_debt["UZS"] == 1_200_000
+
+
+def test_repaid_before_period_end_counts_as_paid():
+    report = _build(
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 8, 19),
+        clients=[_client(1, "Akmal")],
+        debts=[
+            _debt(
+                debt_id=1,
+                client_id=1,
+                debt_date=date(2026, 3, 1),
+                original=1_000_000,
+                remaining=1_000_000,
+            )
+        ],
+        repaid_by_debt={1: 400_000},
+    )
+
+    (row,) = report.client_rows
+    assert row.paid["UZS"] == 400_000
+    assert row.remaining["UZS"] == 600_000
+

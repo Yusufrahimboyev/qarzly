@@ -102,12 +102,17 @@ def build_period_report(
     clients: Iterable[Client],
     opening_given: MoneyMap,
     opening_repaid: MoneyMap,
+    repaid_by_debt: dict[int, int],
     active_totals: dict[int, dict[str, tuple[int, int]]],
 ) -> PeriodReport:
     """Davr hisobotini yig'adi.
 
     `debts` va `payments` — aynan [date_from; date_to] oralig'idagi yozuvlar.
     `opening_given` / `opening_repaid` — davr boshigacha bo'lgan agregatlar.
+    `repaid_by_debt` — {debt_id: `date_to` gacha qaytarilgan summa}; qarzning
+    DAVR OXIRIDAGI qoldig'i shundan hisoblanadi, `remaining_debt` (bugungi
+    qoldiq) dan emas — aks holda o'tgan davr hisobotida varaqlar bir-biriga
+    to'g'ri kelmasdi.
     `active_totals` — hozirgi ochiq qarzlar (eng katta qarzdorlar va qarzdorlar
     soni uchun; davr chegarasiga bog'liq emas).
     """
@@ -129,7 +134,7 @@ def build_period_report(
         _add(given_total, str(debt.currency), debt.original_debt)
         if debt.status == DebtStatus.TRASHED:
             trashed_count += 1
-        elif debt.status == DebtStatus.PAID or debt.remaining_debt <= 0:
+        elif debt.original_debt - repaid_by_debt.get(debt.id or 0, 0) <= 0:
             closed_count += 1
         else:
             open_count += 1
@@ -139,6 +144,13 @@ def build_period_report(
         _add(bucket, str(payment.currency), payment.amount)
 
     closing_debt = _combine(opening_debt, given_total, returned_total, signs=(1, 1, -1))
+
+    # Har bir qarzning davr oxiridagi qoldig'i (bugungi holat emas).
+    remaining_as_of = {
+        debt.id: max(debt.original_debt - repaid_by_debt.get(debt.id, 0), 0)
+        for debt in period_debts
+        if debt.id is not None
+    }
 
     return PeriodReport(
         date_from=date_from,
@@ -168,12 +180,14 @@ def build_period_report(
             payments=period_payments,
             client_names=client_names,
             client_phones=client_phones,
+            remaining_as_of=remaining_as_of,
         ),
         top_by_uzs=_build_top(active_totals, client_names, client_phones, "UZS"),
         top_by_usd=_build_top(active_totals, client_names, client_phones, "USD"),
         debts=period_debts,
         payments=period_payments,
         client_names=client_names,
+        remaining_as_of=remaining_as_of,
     )
 
 
@@ -234,13 +248,14 @@ def _build_client_rows(
     payments: Sequence[Payment],
     client_names: dict[int, str],
     client_phones: dict[int, str],
+    remaining_as_of: dict[int, int],
 ) -> tuple[PeriodClientRow, ...]:
-    """Mijozlar kesimi.
+    """Mijozlar kesimi (davr oxiridagi holat bo'yicha).
 
-    `given`, `paid`, `remaining` — faqat shu davrda ochilgan qarzlar bo'yicha,
-    shuning uchun har doim `given - paid == remaining`. `cash_paid` esa davr
-    ichida naqd tushgan pul (eski qarzlarga ham tegishli bo'lishi mumkin),
-    shu sababli alohida ustun sifatida saqlanadi.
+    `given`, `paid`, `remaining` — faqat shu davrda ochilgan qarzlar bo'yicha
+    va DAVR OXIRIGA hisoblangan, shuning uchun har doim
+    `given - paid == remaining`. `cash_paid` esa davr ichida naqd tushgan pul
+    (eski qarzlarga ham tegishli bo'lishi mumkin), shu sababli alohida ustun.
     """
     given: dict[int, MoneyMap] = {}
     paid: dict[int, MoneyMap] = {}
@@ -251,9 +266,10 @@ def _build_client_rows(
     for debt in debts:
         cid = debt.client_id
         currency = str(debt.currency)
+        left = remaining_as_of.get(debt.id or 0, debt.remaining_debt)
         _add(given.setdefault(cid, {}), currency, debt.original_debt)
-        _add(paid.setdefault(cid, {}), currency, debt.original_debt - debt.remaining_debt)
-        _add(remaining.setdefault(cid, {}), currency, debt.remaining_debt)
+        _add(paid.setdefault(cid, {}), currency, debt.original_debt - left)
+        _add(remaining.setdefault(cid, {}), currency, left)
         previous = latest_date.get(cid)
         if previous is None or debt.debt_date > previous:
             latest_date[cid] = debt.debt_date

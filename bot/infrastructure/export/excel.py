@@ -224,12 +224,16 @@ def _write_summary_sheet(sheet: Worksheet, report: PeriodReport) -> None:
             "Izoh 2: Korzinadagi qarzlar hisobotga kiradi, ammo korzina BUTUNLAY "
             "tozalangan (o'chirilgan) yozuvlar kirmaydi. Ular to'liq to'langan "
             "bo'lgani uchun qarz qoldig'i raqamlariga ta'sir qilmaydi, faqat "
-            "\"berilgan\" va \"qaytarilgan\" aylanmasi o'shancha kam ko'rinadi."
+            "\"berilgan\" va \"qaytarilgan\" aylanmasi o'shancha kam ko'rinadi.\n"
+            "Izoh 3: Barcha summalar DAVR OXIRIDAGI holat bo'yicha — qarz sanasi "
+            "(debt_date) va to'lov sanasi bo'yicha qayta qurilgan. Bot ekranidagi "
+            "\"jami qoldiq qarz\" esa HOZIRGI holatni ko'rsatadi, shuning uchun "
+            "o'tgan davr uchun hisobot bilan farq qilishi normal."
         ),
     )
     note.alignment = Alignment(wrap_text=True, vertical="top")
-    sheet.merge_cells(start_row=row, start_column=1, end_row=row + 3, end_column=3)
-    row += 5
+    sheet.merge_cells(start_row=row, start_column=1, end_row=row + 5, end_column=3)
+    row += 7
 
     # --- 6. Yakuniy xulosa ---
     row = _write_section(sheet, row, "6. YAKUNIY XULOSA")
@@ -462,9 +466,9 @@ def _write_debts_sheet(sheet: Worksheet, report: PeriodReport) -> None:
             "Exchange",
             "Berilgan pul",
             "Asl qarz",
-            "Qoldiq",
+            "Qoldiq (davr oxiriga)",
             "Valyuta",
-            "Holati",
+            "Holati (hozirgi)",
         ],
     )
 
@@ -481,7 +485,7 @@ def _write_debts_sheet(sheet: Worksheet, report: PeriodReport) -> None:
             debt.exchange_product_price,
             debt.given_money,
             debt.original_debt,
-            debt.remaining_debt,
+            report.remaining_as_of.get(debt.id or 0, debt.remaining_debt),
             currency,
             _STATUS_LABELS.get(debt.status, str(debt.status)),
         ]
