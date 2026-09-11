@@ -9,6 +9,7 @@ Muhim: `ADMIN_IDS` bo'sh bo'lsa ilova ishga tushmaydi. Ochiq rejim faqat
 paytida bitta o'zgaruvchi unutilishi mijozlar ma'lumotlarini ochib
 qo'ymasligi kerak (fail-closed).
 """
+from datetime import date
 from functools import lru_cache
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -38,6 +39,21 @@ class Settings(BaseSettings):
             "har qanday Telegram foydalanuvchisiga ruxsat beradi."
         ),
     )
+
+    # --- Kunlik hisobot (kanalga avtomatik yuborish) ---
+    report_channel_id: int = Field(
+        default=0,
+        description=(
+            "Kunlik Excel hisobot yuboriladigan kanal ID si (masalan "
+            "-1001234567890). 0 bo'lsa kunlik yuborish o'chiriladi."
+        ),
+    )
+    report_start_date: date = Field(
+        default=date(2026, 8, 18),
+        description="Kunlik hisobot qamrab oladigan davrning boshlanish sanasi.",
+    )
+    report_send_hour: int = Field(default=23, ge=0, le=23)
+    report_send_minute: int = Field(default=59, ge=0, le=59)
 
     # --- Web / hosting ---
     port: int = Field(default=8080, ge=1, le=65535)

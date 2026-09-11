@@ -143,6 +143,23 @@ def build_period_report(
         bucket = returned_total if _is_repayment(payment) else initial_total
         _add(bucket, str(payment.currency), payment.amount)
 
+    # Oxirgi kun (date_to) bo'yicha harakat — kunlik hisobotning "Bugun" varag'i.
+    day_given: MoneyMap = {}
+    day_returned: MoneyMap = {}
+    day_new = day_closed = 0
+
+    for debt in period_debts:
+        if debt.debt_date == date_to:
+            _add(day_given, str(debt.currency), debt.original_debt)
+            day_new += 1
+
+    for payment in period_payments:
+        if payment.payment_date != date_to or not _is_repayment(payment):
+            continue
+        _add(day_returned, str(payment.currency), payment.amount)
+        if payment.payment_type == PaymentType.FULL:
+            day_closed += 1
+
     closing_debt = _combine(opening_debt, given_total, returned_total, signs=(1, 1, -1))
 
     # Har bir qarzning davr oxiridagi qoldig'i (bugungi holat emas).
@@ -168,6 +185,10 @@ def build_period_report(
         closed_debts_count=closed_count,
         open_debts_count=open_count,
         trashed_debts_count=trashed_count,
+        day_given=day_given,
+        day_returned=day_returned,
+        day_new_debts=day_new,
+        day_closed_debts=day_closed,
         months=_build_months(
             date_from=date_from,
             date_to=date_to,

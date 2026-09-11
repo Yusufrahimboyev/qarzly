@@ -61,6 +61,7 @@ def build_period_workbook(report: PeriodReport) -> bytes:
     workbook.remove(workbook.active)
 
     _write_summary_sheet(workbook.create_sheet("Umumiy natija"), report)
+    _write_day_sheet(workbook.create_sheet("Bugun"), report)
     _write_monthly_sheet(workbook.create_sheet("Oyma-oy"), report)
     _write_clients_sheet(workbook.create_sheet("Mijozlar kesimida"), report)
     _write_top_sheet(workbook.create_sheet("Eng katta qarzdorlar"), report)
@@ -279,6 +280,129 @@ def _summary_text(report: PeriodReport) -> str:
         f"(jami {report.clients_total} mijozdan)."
     )
     return "\n".join(lines)
+
+
+# ==========================================
+# Bugun (hisobot kuni) — berilgan va yopilgan
+# ==========================================
+
+
+def _write_day_sheet(sheet: Worksheet, report: PeriodReport) -> None:
+    """Hisobot kunida (date_to) berilgan va yopilgan qarzlar."""
+    day = report.date_to
+    row = _write_title(sheet, 1, f"BUGUN: {day:%d.%m.%Y}", span=6)
+
+    row = _write_header(sheet, row, ["Ko'rsatkich", "So'm", "Dollar"])
+    row = _label_value_row(sheet, row, "Bugun berilgan qarz", report.day_given)
+    row = _label_value_row(sheet, row, "Bugun tushgan pul", report.day_returned)
+    row = _count_row(sheet, row, "Bugun ochilgan qarzlar soni", report.day_new_debts)
+    row = _count_row(sheet, row, "Bugun yopilgan qarzlar soni", report.day_closed_debts)
+    row += 2
+
+    row = _write_section(sheet, row, "BUGUN BERILGAN QARZLAR")
+    row = _write_day_debts(sheet, row, report, day)
+    row += 2
+
+    row = _write_section(sheet, row, "BUGUN YOPILGAN QARZLAR")
+    _write_day_closed(sheet, row, report, day)
+
+    _autosize(sheet, [30, 24, 34, 16, 16, 12])
+
+
+def _write_day_debts(
+    sheet: Worksheet,
+    row: int,
+    report: PeriodReport,
+    day: date,
+) -> int:
+    """Hisobot kunida ochilgan qarzlar ro'yxati."""
+    headers = ["Mijoz", "Tovar(lar)", "Tovar narxi", "Berilgan pul", "Qarz", "Valyuta"]
+    for index, title in enumerate(headers, start=1):
+        cell = sheet.cell(row=row, column=index, value=title)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.border = _BORDER
+    row += 1
+
+    debts = [d for d in report.debts if d.debt_date == day]
+    if not debts:
+        return _empty_row(sheet, row, "Bugun yangi qarz berilmagan", span=6)
+
+    for debt in debts:
+        currency = str(debt.currency)
+        values = [
+            report.client_names.get(debt.client_id, f"ID {debt.client_id}"),
+            debt.product_name,
+            debt.product_price,
+            debt.given_money,
+            debt.original_debt,
+            currency,
+        ]
+        for index, value in enumerate(values, start=1):
+            cell = sheet.cell(row=row, column=index, value=value)
+            cell.border = _BORDER
+            if 3 <= index <= 5:
+                cell.number_format = _money_format(currency)
+        row += 1
+
+    return row
+
+
+def _write_day_closed(
+    sheet: Worksheet,
+    row: int,
+    report: PeriodReport,
+    day: date,
+) -> int:
+    """Hisobot kunida to'liq yopilgan qarzlar.
+
+    `full` turidagi to'lov aynan "shu to'lov qarzni yopdi" degani — shuning
+    uchun yopilganlar to'lovlar ro'yxatidan aniqlanadi.
+    """
+    headers = ["Mijoz", "Tovar(lar)", "Yopilgan summa", "Valyuta"]
+    for index, title in enumerate(headers, start=1):
+        cell = sheet.cell(row=row, column=index, value=title)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.border = _BORDER
+    row += 1
+
+    debt_names: dict[int, str] = {
+        d.id: d.product_name for d in report.debts if d.id is not None
+    }
+    closed = [
+        p
+        for p in report.payments
+        if p.payment_date == day and p.payment_type == PaymentType.FULL
+    ]
+    if not closed:
+        return _empty_row(sheet, row, "Bugun yopilgan qarz yo'q", span=4)
+
+    for payment in closed:
+        currency = str(payment.currency)
+        values = [
+            report.client_names.get(payment.client_id, f"ID {payment.client_id}"),
+            debt_names.get(payment.debt_id or 0, ""),
+            payment.amount,
+            currency,
+        ]
+        for index, value in enumerate(values, start=1):
+            cell = sheet.cell(row=row, column=index, value=value)
+            cell.border = _BORDER
+            if index == 3:
+                cell.number_format = _money_format(currency)
+        row += 1
+
+    return row
+
+
+def _empty_row(sheet: Worksheet, row: int, text: str, span: int) -> int:
+    cell = sheet.cell(row=row, column=1, value=text)
+    cell.border = _BORDER
+    sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=span)
+    return row + 1
 
 
 # ==========================================

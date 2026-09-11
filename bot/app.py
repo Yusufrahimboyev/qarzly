@@ -42,6 +42,7 @@ from bot.infrastructure.database.repositories.user_repository import (
     PgUserRepository,
 )
 from bot.infrastructure.database.unit_of_work import create_unit_of_work_factory
+from bot.infrastructure.scheduler.daily_report import send_daily_report
 from bot.infrastructure.scheduler.scheduler import create_scheduler
 from bot.infrastructure.telegram.retry_middleware import RetryAfterMiddleware
 from bot.infrastructure.web.server import WebServer
@@ -133,7 +134,22 @@ async def run() -> None:
         register_handlers(dp)
 
         # --- Infrastructure: scheduler va web server ---
-        scheduler = create_scheduler(settings.render_external_url)
+        daily_report_job = None
+        if settings.report_channel_id:
+            async def daily_report_job() -> None:  # noqa: E306
+                await send_daily_report(
+                    bot=bot,
+                    debt_service=debt_service,
+                    channel_id=settings.report_channel_id,
+                    start_date=settings.report_start_date,
+                )
+
+        scheduler = create_scheduler(
+            settings.render_external_url,
+            daily_report_job=daily_report_job,
+            report_hour=settings.report_send_hour,
+            report_minute=settings.report_send_minute,
+        )
         await stack.enter_async_context(
             _closing(scheduler, lambda: scheduler.shutdown(wait=False))
         )

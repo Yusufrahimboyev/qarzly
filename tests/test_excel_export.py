@@ -153,6 +153,7 @@ def test_workbook_has_all_expected_sheets():
     workbook = _load(_sample_report())
     assert workbook.sheetnames == [
         "Umumiy natija",
+        "Bugun",
         "Oyma-oy",
         "Mijozlar kesimida",
         "Eng katta qarzdorlar",
@@ -242,7 +243,7 @@ def test_empty_report_still_produces_valid_workbook():
         active_totals={},
     )
     workbook = _load(report)
-    assert len(workbook.sheetnames) == 6
+    assert len(workbook.sheetnames) == 7
     assert workbook["Eng katta qarzdorlar"]["A8"].value == "Qarzdor yo'q"
 
 

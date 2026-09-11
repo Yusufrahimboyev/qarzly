@@ -127,6 +127,12 @@ class PeriodReport:
     open_debts_count: int = 0
     trashed_debts_count: int = 0
 
+    # Hisobot kuni (date_to) bo'yicha kunlik harakat
+    day_given: MoneyMap = field(default_factory=empty_money)
+    day_returned: MoneyMap = field(default_factory=empty_money)
+    day_new_debts: int = 0
+    day_closed_debts: int = 0
+
     # 3-5. Kesimlar
     months: tuple[PeriodMonthRow, ...] = ()
     client_rows: tuple[PeriodClientRow, ...] = ()
