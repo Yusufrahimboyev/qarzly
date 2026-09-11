@@ -14,6 +14,7 @@ from bot.presentation.keyboards.creation_kb import (
 from bot.presentation.keyboards.debt_table_kb import (
     get_client_report_keyboard,
     get_debt_table_keyboard,
+    get_export_date_keyboard,
 )
 from bot.presentation.keyboards.main_menu_kb import get_main_menu_keyboard
 from bot.presentation.keyboards.payment_kb import (
@@ -31,6 +32,7 @@ __all__ = [
     "get_debt_table_keyboard",
     "get_debtors_list_keyboard",
     "get_exchange_choice_keyboard",
+    "get_export_date_keyboard",
     "get_exchange_currency_keyboard",
     "get_given_currency_keyboard",
     "get_given_money_choice_keyboard",

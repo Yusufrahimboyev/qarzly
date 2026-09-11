@@ -1,6 +1,8 @@
 """Infrastructure qatlami: PaymentRepository PostgreSQL implementatsiyasi."""
 from __future__ import annotations
 
+from datetime import date
+
 import asyncpg
 
 from bot.domain.entities.currency import Currency
@@ -72,6 +74,31 @@ class PgPaymentRepository(PaymentRepository):
             debt_id,
         )
         return [self._map_row(row) for row in rows]
+
+    async def get_by_date_range(self, date_from: date, date_to: date) -> list[Payment]:
+        rows = await self._db.fetch(
+            f"""
+            SELECT {_SELECT_PAYMENT_COLS}
+            FROM payments
+            WHERE payment_date BETWEEN $1 AND $2
+            ORDER BY payment_date ASC, id ASC
+            """,
+            date_from,
+            date_to,
+        )
+        return [self._map_row(row) for row in rows]
+
+    async def sum_repayments_before(self, before: date) -> dict[str, int]:
+        rows = await self._db.fetch(
+            """
+            SELECT currency, COALESCE(SUM(amount), 0)
+            FROM payments
+            WHERE payment_date < $1 AND payment_type IN ('full', 'partial')
+            GROUP BY currency
+            """,
+            before,
+        )
+        return {str(row[0]): int(row[1]) for row in rows}
 
     @staticmethod
     def _map_row(row: asyncpg.Record) -> Payment:

@@ -67,6 +67,24 @@ class DebtRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def get_by_date_range(self, date_from: date, date_to: date) -> list[Debt]:
+        """Sana oralig'idagi (ikki chegara ham kiradi) barcha qarzlarni qaytaradi.
+
+        Status bo'yicha filtrlamaydi — hisobotda active, paid va trashed
+        yozuvlar birga ko'rinadi.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def sum_original_before(self, before: date) -> dict[str, int]:
+        """`before` sanasigacha (o'zi kirmaydi) berilgan qarzlar yig'indisi.
+
+        Davr boshidagi qarzdorlik qoldig'ini hisoblash uchun kerak; qatorlarni
+        yuklamasdan valyuta bo'yicha agregat qaytaradi.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_client_latest_dates(self) -> dict[int, date]:
         """Mijozlar bo'yicha eng oxirgi qarz sanalarini qaytaradi (client_id -> max_date)."""
         raise NotImplementedError

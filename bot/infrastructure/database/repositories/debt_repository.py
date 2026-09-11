@@ -161,6 +161,28 @@ class PgDebtRepository(DebtRepository):
             totals.setdefault(client_id, {})[currency_code] = (rem_amount, count)
         return totals
 
+    async def get_by_date_range(self, date_from: date, date_to: date) -> list[Debt]:
+        rows = await self._db.fetch(
+            f"SELECT{_SELECT_COLS} FROM debts"
+            " WHERE debt_date BETWEEN $1 AND $2"
+            " ORDER BY debt_date ASC, id ASC",
+            date_from,
+            date_to,
+        )
+        return [self._map_row(row) for row in rows]
+
+    async def sum_original_before(self, before: date) -> dict[str, int]:
+        rows = await self._db.fetch(
+            """
+            SELECT currency, COALESCE(SUM(original_debt), 0)
+            FROM debts
+            WHERE debt_date < $1
+            GROUP BY currency
+            """,
+            before,
+        )
+        return {str(row[0]): int(row[1]) for row in rows}
+
     async def get_client_latest_dates(self) -> dict[int, date]:
         rows = await self._db.fetch(
             """

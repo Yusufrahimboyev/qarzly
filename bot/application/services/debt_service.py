@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from bot.application.common.formatters import format_money, to_date
+from bot.application.common.period_report import build_period_report
 from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import (
     MAX_MONEY,
@@ -27,6 +28,7 @@ from bot.domain.entities.debt import (
     build_summary_name,
 )
 from bot.domain.entities.payment import Payment, PaymentType
+from bot.domain.entities.period_report import PeriodReport
 from bot.domain.entities.report import ClientDebtSummary, ClientReport
 from bot.domain.repositories.client_repository import ClientRepository
 from bot.domain.repositories.debt_repository import DebtRepository
@@ -576,6 +578,28 @@ class DebtService:
             total_original_debt=_sum_by(debts, "original_debt"),
             total_paid_after=_sum_by(paid_after, "amount"),
             total_remaining_debt=_sum_by(active_debts, "remaining_debt"),
+        )
+
+    async def get_period_report(self, date_from: date, date_to: date) -> PeriodReport:
+        """Sana oralig'i bo'yicha umumiy hisobotni yig'adi (Excel eksporti uchun).
+
+        Ikkala chegara ham oraliqqa kiradi. Hisob-kitob `build_period_report`
+        sof funksiyasida — bu metod faqat kerakli ma'lumotni o'qiydi.
+        """
+        if date_from > date_to:
+            raise ValueError(
+                "Boshlanish sanasi tugash sanasidan keyin bo'lishi mumkin emas."
+            )
+
+        return build_period_report(
+            date_from=date_from,
+            date_to=date_to,
+            debts=await self._debts.get_by_date_range(date_from, date_to),
+            payments=await self._payments.get_by_date_range(date_from, date_to),
+            clients=await self._clients.get_all_alphabetical(),
+            opening_given=await self._debts.sum_original_before(date_from),
+            opening_repaid=await self._payments.sum_repayments_before(date_from),
+            active_totals=await self._debts.get_active_totals(),
         )
 
     # ------------------------------------------------------------------

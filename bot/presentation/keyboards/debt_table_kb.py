@@ -5,7 +5,11 @@ import math
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.application.common.formatters import clip_button_text, format_money_map
+from bot.application.common.formatters import (
+    clip_button_text,
+    format_money_map,
+    today_str,
+)
 from bot.domain.entities.report import ClientDebtSummary
 
 
@@ -74,6 +78,36 @@ def get_debt_table_keyboard(
         )
 
     keyboard.append(nav_buttons)
+
+    # Excel hisobot butun jadvalga (sahifaga emas) tegishli — shuning uchun
+    # sahifalash tugmalaridan keyin, alohida qatorda turadi.
+    keyboard.append([
+        InlineKeyboardButton(
+            text="📊 Excel hisobot",
+            callback_data="export_start",
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_export_date_keyboard(*, with_today: bool) -> InlineKeyboardMarkup:
+    """Sana kiritish bosqichidagi tugmalar (Bugun / Ortga / Bekor qilish)."""
+    keyboard: list[list[InlineKeyboardButton]] = []
+
+    if with_today:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"📅 Bugun ({today_str()})",
+                callback_data="export_date_today",
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(text="🔙 Ortga", callback_data="back_to_debt_table"),
+        InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_export"),
+    ])
+
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 

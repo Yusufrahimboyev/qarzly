@@ -90,8 +90,16 @@ async def cb_debt_page(
 async def cb_back_to_debt_table(
     callback: CallbackQuery,
     client_service: ClientService,
+    state: FSMContext,
 ) -> None:
-    """Batafsil hisobotdan orqaga jadvalga qaytish."""
+    """Batafsil hisobotdan orqaga jadvalga qaytish.
+
+    Jadvalga qaytish boshlangan har qanday jarayonni (masalan Excel hisobot
+    sanalarini kiritish) yakunlaydi — aks holda FSM holati osilib qolar va
+    keyingi oddiy xabar o'sha jarayonga tushib ketardi.
+    """
+    await state.clear()
+
     if not isinstance(callback.message, Message):
         return
 

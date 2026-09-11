@@ -157,6 +157,13 @@ CREATE_INDEX_PAYMENTS_CLIENT = (
 CREATE_INDEX_PAYMENTS_DEBT = (
     "CREATE INDEX IF NOT EXISTS idx_payments_debt_id ON payments(debt_id);"
 )
+# Davr hisoboti (Excel eksport) sana oralig'i bo'yicha skanerlaydi.
+CREATE_INDEX_DEBTS_DATE = (
+    "CREATE INDEX IF NOT EXISTS idx_debts_debt_date ON debts(debt_date);"
+)
+CREATE_INDEX_PAYMENTS_DATE = (
+    "CREATE INDEX IF NOT EXISTS idx_payments_payment_date ON payments(payment_date);"
+)
 CREATE_INDEX_TRASH_CLIENT = (
     "CREATE INDEX IF NOT EXISTS idx_trash_client_id ON trash(client_id);"
 )
@@ -190,6 +197,8 @@ SCHEMA: tuple[str, ...] = (
     CREATE_INDEX_DEBTS_FIFO,
     CREATE_INDEX_PAYMENTS_CLIENT,
     CREATE_INDEX_PAYMENTS_DEBT,
+    CREATE_INDEX_DEBTS_DATE,
+    CREATE_INDEX_PAYMENTS_DATE,
     CREATE_INDEX_TRASH_CLIENT,
     CREATE_INDEX_TRASH_ORIGINAL,
     CREATE_INDEX_TRASH_PAYMENTS_CLIENT,

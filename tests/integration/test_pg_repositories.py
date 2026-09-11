@@ -214,3 +214,87 @@ async def test_purge_trash_archives_payments(database: Database) -> None:
         "SELECT COUNT(*) FROM trash WHERE original_id = $1", debt.id
     )
     assert archived_debt == 1
+
+
+async def test_date_range_includes_both_boundaries(database: Database) -> None:
+    """BETWEEN chegaralari SQL darajasida ham inklyuziv bo'lishi kerak."""
+    service, debts, clients = _service(database)
+    client = await clients.add(Client(full_name="Akmal", phone="+998901234567"))
+    assert client.id is not None
+
+    for debt_date in (
+        date(2025, 12, 31),
+        date(2026, 1, 1),
+        date(2026, 1, 15),
+        date(2026, 1, 31),
+        date(2026, 2, 1),
+    ):
+        await service.create_debt(
+            client_id=client.id,
+            debt_date=debt_date,
+            products=[DebtProduct(name="Moy", price_per_unit=100_000)],
+        )
+
+    rows = await debts.get_by_date_range(date(2026, 1, 1), date(2026, 1, 31))
+
+    assert [d.debt_date for d in rows] == [
+        date(2026, 1, 1),
+        date(2026, 1, 15),
+        date(2026, 1, 31),
+    ]
+
+
+async def test_opening_aggregates_exclude_period_itself(database: Database) -> None:
+    """Ochilish qoldig'i faqat davrdan OLDINGI yozuvlarni qamrashi kerak."""
+    service, debts, clients = _service(database)
+    client = await clients.add(Client(full_name="Akmal", phone="+998901234567"))
+    assert client.id is not None
+
+    await service.create_debt(
+        client_id=client.id,
+        debt_date=date(2025, 6, 1),
+        products=[DebtProduct(name="Shina", price_per_unit=1_000_000)],
+    )
+    await service.create_debt(
+        client_id=client.id,
+        debt_date=date(2026, 1, 5),
+        products=[DebtProduct(name="Moy", price_per_unit=400_000)],
+    )
+    await service.pay_partial_debt(
+        client_id=client.id,
+        amount=300_000,
+        currency=Currency.UZS,
+        payment_date=date(2025, 8, 1),
+    )
+
+    opening_given = await debts.sum_original_before(date(2026, 1, 1))
+    opening_repaid = await PgPaymentRepository(
+        database.pool
+    ).sum_repayments_before(date(2026, 1, 1))
+
+    assert opening_given == {"UZS": 1_000_000}
+    assert opening_repaid == {"UZS": 300_000}
+
+
+async def test_initial_payments_excluded_from_repayment_sum(
+    database: Database,
+) -> None:
+    """`initial` to'lov qaytarilgan pul yig'indisiga kirmasligi kerak."""
+    service, _, clients = _service(database)
+    payments = PgPaymentRepository(database.pool)
+    client = await clients.add(Client(full_name="Akmal", phone="+998901234567"))
+    assert client.id is not None
+
+    # given_money=200 000 -> 'initial' to'lov yoziladi.
+    await service.create_debt(
+        client_id=client.id,
+        debt_date=date(2025, 3, 1),
+        products=[DebtProduct(name="Shina", price_per_unit=1_000_000)],
+        given_money=200_000,
+    )
+
+    assert await payments.sum_repayments_before(date(2026, 1, 1)) == {}
+
+    rows = await payments.get_by_date_range(date(2025, 1, 1), date(2025, 12, 31))
+    assert [p.payment_type.value for p in rows] == ["initial"]
+

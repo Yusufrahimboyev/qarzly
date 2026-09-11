@@ -20,7 +20,11 @@ from dataclasses import dataclass
 
 import asyncpg
 
-from bot.infrastructure.database.schema import CREATE_UNIQUE_CLIENTS_PHONE
+from bot.infrastructure.database.schema import (
+    CREATE_INDEX_DEBTS_DATE,
+    CREATE_INDEX_PAYMENTS_DATE,
+    CREATE_UNIQUE_CLIENTS_PHONE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +221,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         # Mavjud bazada dublikat telefonlar bo'lsa index qo'yilmaydi — bu
         # deploy'ni to'xtatmasligi kerak, ammo ERROR log bilan ko'rinadi.
         required=False,
+    ),
+    Migration(
+        version="006_date_range_indexes",
+        description="Davr hisoboti uchun debt_date va payment_date indekslari",
+        statements=(CREATE_INDEX_DEBTS_DATE, CREATE_INDEX_PAYMENTS_DATE),
     ),
 )
 

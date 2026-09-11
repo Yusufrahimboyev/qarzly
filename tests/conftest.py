@@ -10,7 +10,7 @@ import pytest
 
 from bot.domain.entities.client import Client
 from bot.domain.entities.debt import Debt, DebtStatus
-from bot.domain.entities.payment import Payment
+from bot.domain.entities.payment import Payment, PaymentType
 from bot.domain.entities.user import User
 from bot.domain.repositories.client_repository import ClientRepository
 from bot.domain.repositories.debt_repository import DebtRepository
@@ -174,6 +174,22 @@ class FakeDebtRepository(DebtRepository):
                 totals[d.client_id][cur] = (prev_sum + d.remaining_debt, prev_count + 1)
         return totals
 
+    async def get_by_date_range(self, date_from: date, date_to: date) -> list[Debt]:
+        rows = [
+            d for d in self._store.values()
+            if date_from <= d.debt_date <= date_to
+        ]
+        rows.sort(key=lambda d: (d.debt_date, d.id or 0))
+        return rows
+
+    async def sum_original_before(self, before: date) -> dict[str, int]:
+        totals: dict[str, int] = {}
+        for d in self._store.values():
+            if d.debt_date < before:
+                cur = d.currency.value
+                totals[cur] = totals.get(cur, 0) + d.original_debt
+        return totals
+
     async def get_client_latest_dates(self) -> dict[int, date]:
         latest_dates: dict[int, date] = {}
         for d in self._store.values():
@@ -331,6 +347,25 @@ class FakePaymentRepository(PaymentRepository):
             p for p in self._store.values()
             if p.debt_id == debt_id
         ]
+
+    async def get_by_date_range(self, date_from: date, date_to: date) -> list[Payment]:
+        rows = [
+            p for p in self._store.values()
+            if date_from <= p.payment_date <= date_to
+        ]
+        rows.sort(key=lambda p: (p.payment_date, p.id or 0))
+        return rows
+
+    async def sum_repayments_before(self, before: date) -> dict[str, int]:
+        totals: dict[str, int] = {}
+        for p in self._store.values():
+            if p.payment_date < before and p.payment_type in (
+                PaymentType.FULL,
+                PaymentType.PARTIAL,
+            ):
+                cur = p.currency.value
+                totals[cur] = totals.get(cur, 0) + p.amount
+        return totals
 
 
 # ==========================================
