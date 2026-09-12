@@ -9,6 +9,7 @@ Summalar Excel'ga MATN emas, SON sifatida yoziladi (o'z number_format'i bilan)
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 from io import BytesIO
 
@@ -21,7 +22,7 @@ from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import DebtStatus
 from bot.domain.entities.payment import PaymentType
 from bot.domain.entities.period_report import PeriodReport
-from bot.domain.entities.report import MoneyMap
+from bot.domain.entities.report import ClientReport, MoneyMap
 
 UZS = Currency.UZS.value
 USD = Currency.USD.value
@@ -55,13 +56,24 @@ _PAYMENT_LABELS = {
 }
 
 
-def build_period_workbook(report: PeriodReport) -> bytes:
-    """Davr hisobotidan .xlsx fayl baytlarini yasaydi."""
+def build_period_workbook(
+    report: PeriodReport,
+    *,
+    include_day_sheet: bool = False,
+) -> bytes:
+    """Davr hisobotidan .xlsx fayl baytlarini yasaydi.
+
+    `include_day_sheet` — "Bugun" varag'i faqat kanalga ketadigan kunlik
+    hisobotda kerak. Botdan qo'lda eksport qilinganda ixtiyoriy davr
+    tanlanadi, u yerda "bugun" tushunchasi ma'nosiz bo'lgani uchun varaq
+    qo'shilmaydi.
+    """
     workbook = Workbook()
     workbook.remove(workbook.active)
 
     _write_summary_sheet(workbook.create_sheet("Umumiy natija"), report)
-    _write_day_sheet(workbook.create_sheet("Bugun"), report)
+    if include_day_sheet:
+        _write_day_sheet(workbook.create_sheet("Bugun"), report)
     _write_monthly_sheet(workbook.create_sheet("Oyma-oy"), report)
     _write_clients_sheet(workbook.create_sheet("Mijozlar kesimida"), report)
     _write_top_sheet(workbook.create_sheet("Eng katta qarzdorlar"), report)
@@ -71,6 +83,30 @@ def build_period_workbook(report: PeriodReport) -> bytes:
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
+
+
+def build_client_workbook(report: ClientReport) -> bytes:
+    """Bitta mijozning to'liq hisobotidan .xlsx fayl baytlarini yasaydi.
+
+    Botdagi matnli mijoz hisobotining Excel ko'rinishi: jami ko'rsatkichlar,
+    qarzlar tarixi va to'lovlar tarixi. Summalar shu yerda ham son sifatida
+    yoziladi — SUM va saralash ishlashi uchun.
+    """
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+
+    _write_client_summary_sheet(workbook.create_sheet("Hisobot"), report)
+    _write_client_payments_sheet(workbook.create_sheet("To'lovlar"), report)
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def build_client_file_name(client_name: str, today_date: date) -> str:
+    """Mijoz hisoboti uchun fayl nomi (ismdagi xavfli belgilar tozalanadi)."""
+    slug = re.sub(r"[^\w\-]+", "-", client_name, flags=re.UNICODE).strip("-")
+    return f"mijoz-hisobot_{slug or 'mijoz'}_{today_date:%d.%m.%Y}.xlsx"
 
 
 def build_file_name(date_from: date, date_to: date) -> str:
@@ -280,6 +316,132 @@ def _summary_text(report: PeriodReport) -> str:
         f"(jami {report.clients_total} mijozdan)."
     )
     return "\n".join(lines)
+
+
+# ==========================================
+# Bitta mijoz hisoboti
+# ==========================================
+
+
+def _write_client_summary_sheet(sheet: Worksheet, report: ClientReport) -> None:
+    """Mijoz ma'lumoti, jami ko'rsatkichlar va qarzlar tarixi."""
+    client = report.client
+    row = _write_title(sheet, 1, f"MIJOZ HISOBOTI: {client.full_name}", span=8)
+
+    phone = sheet.cell(row=row, column=1, value=f"📞 Telefon: {client.phone}")
+    phone.font = Font(size=11)
+    row += 2
+
+    row = _write_section(sheet, row, "JAMI KO'RSATKICHLAR")
+    row = _write_header(sheet, row, ["Ko'rsatkich", "So'm", "Dollar"])
+    row = _label_value_row(sheet, row, "Tovarlar jami narxi", report.total_product_price)
+    row = _label_value_row(sheet, row, "Exchange", report.total_exchange_price)
+    row = _label_value_row(sheet, row, "Berilgan pul", report.total_given_money)
+    row = _label_value_row(sheet, row, "Asl qarz", report.total_original_debt)
+    row = _label_value_row(sheet, row, "To'langan", report.total_paid_after)
+    row = _label_value_row(
+        sheet, row, "Qoldiq qarz", report.total_remaining_debt, bold=True
+    )
+    row += 2
+
+    row = _write_section(sheet, row, "QARZLAR TARIXI")
+    _write_client_debts(sheet, row, report)
+
+    _autosize(sheet, [30, 34, 8, 16, 14, 14, 16, 16, 10, 12])
+
+
+def _write_client_debts(sheet: Worksheet, row: int, report: ClientReport) -> int:
+    headers = [
+        "Sana",
+        "Tovar(lar)",
+        "Soni",
+        "Tovar narxi",
+        "Exchange",
+        "Berilgan pul",
+        "Asl qarz",
+        "Qoldiq",
+        "Valyuta",
+        "Holati",
+    ]
+    header_row = row
+    for index, title in enumerate(headers, start=1):
+        cell = sheet.cell(row=row, column=index, value=title)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.border = _BORDER
+    row += 1
+
+    if not report.debts:
+        return _empty_row(sheet, row, "Qarzlar mavjud emas", span=len(headers))
+
+    for debt in report.debts:
+        currency = str(debt.currency)
+        money_format = _money_format(currency)
+        values = [
+            debt.debt_date,
+            debt.product_name,
+            debt.product_quantity,
+            debt.product_price,
+            debt.exchange_product_price,
+            debt.given_money,
+            debt.original_debt,
+            debt.remaining_debt,
+            currency,
+            _STATUS_LABELS.get(debt.status, str(debt.status)),
+        ]
+        for index, value in enumerate(values, start=1):
+            cell = sheet.cell(row=row, column=index, value=value)
+            cell.border = _BORDER
+            if index == 1:
+                cell.number_format = _DATE_FORMAT
+            elif 4 <= index <= 8:
+                cell.number_format = money_format
+
+        status_cell = sheet.cell(row=row, column=len(headers))
+        status_cell.fill = (
+            _DEBTOR_FILL if debt.remaining_debt > 0 else _CLOSED_FILL
+        )
+        row += 1
+
+    sheet.auto_filter.ref = (
+        f"A{header_row}:{get_column_letter(len(headers))}{row - 1}"
+    )
+    return row
+
+
+def _write_client_payments_sheet(sheet: Worksheet, report: ClientReport) -> None:
+    """Mijozning to'lovlar tarixi."""
+    row = _write_title(
+        sheet, 1, f"TO'LOVLAR TARIXI: {report.client.full_name}", span=4
+    )
+    header_row = row
+    row = _write_header(sheet, row, ["Sana", "Summa", "Valyuta", "To'lov turi"])
+
+    if not report.payments:
+        _empty_row(sheet, row, "To'lovlar mavjud emas", span=4)
+        _autosize(sheet, [14, 18, 10, 26])
+        return
+
+    for payment in report.payments:
+        currency = str(payment.currency)
+        values = [
+            payment.payment_date,
+            payment.amount,
+            currency,
+            _PAYMENT_LABELS.get(payment.payment_type, str(payment.payment_type)),
+        ]
+        for index, value in enumerate(values, start=1):
+            cell = sheet.cell(row=row, column=index, value=value)
+            cell.border = _BORDER
+            if index == 1:
+                cell.number_format = _DATE_FORMAT
+            elif index == 2:
+                cell.number_format = _money_format(currency)
+        row += 1
+
+    sheet.auto_filter.ref = f"A{header_row}:D{row - 1}"
+    _autosize(sheet, [14, 18, 10, 26])
 
 
 # ==========================================

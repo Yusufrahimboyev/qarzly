@@ -132,6 +132,13 @@ def get_client_report_keyboard(client_id: int, has_debt: bool) -> InlineKeyboard
 
     buttons.append([
         InlineKeyboardButton(
+            text="📊 Excel hisobot",
+            callback_data=f"client_excel:{client_id}",
+        )
+    ])
+
+    buttons.append([
+        InlineKeyboardButton(
             text="🔙 Ro'yxatga qaytish",
             callback_data="back_to_debt_table",
         )

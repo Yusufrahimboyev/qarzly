@@ -17,6 +17,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from bot.application.common.formatters import (
+    esc_html,
     format_date,
     format_money_map,
     parse_date,
@@ -27,7 +28,13 @@ from bot.application.common.period_report import validate_period_bounds
 from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
 from bot.domain.entities.period_report import PeriodReport
-from bot.infrastructure.export.excel import build_file_name, build_period_workbook
+from bot.domain.entities.report import ClientReport
+from bot.infrastructure.export.excel import (
+    build_client_file_name,
+    build_client_workbook,
+    build_file_name,
+    build_period_workbook,
+)
 from bot.presentation.keyboards.debt_table_kb import get_export_date_keyboard
 from bot.presentation.keyboards.main_menu_kb import get_main_menu_keyboard
 from bot.presentation.states.report_export import ReportExportStates
@@ -255,4 +262,61 @@ def _caption(report: PeriodReport) -> str:
         f"<b>{format_money_map(report.closing_debt)}</b>\n\n"
         f"👥 <b>Qarzdorlar:</b> {report.debtors_total} nafar\n"
         f"🧾 <b>Qarz yozuvlari:</b> {len(report.debts)} ta"
+    )
+
+
+# ==========================================
+# 3. Bitta mijoz hisoboti
+# ==========================================
+
+
+@router.callback_query(F.data.startswith("client_excel:"))
+async def cb_client_excel(
+    callback: CallbackQuery,
+    debt_service: DebtService,
+) -> None:
+    """Tanlangan mijozning to'liq hisobotini Excel fayl sifatida yuboradi."""
+    if callback.data is None or not isinstance(callback.message, Message):
+        await callback.answer()
+        return
+
+    client_id = int(callback.data.split(":")[1])
+
+    try:
+        report = await debt_service.get_client_report(client_id)
+    except ValueError:
+        await callback.answer("Mijoz topilmadi.", show_alert=True)
+        return
+
+    await callback.answer("⏳ Hisobot tayyorlanmoqda...")
+
+    try:
+        content = await asyncio.to_thread(build_client_workbook, report)
+    except Exception:
+        logger.exception("Mijoz Excel hisoboti tayyorlanmadi: client_id=%s", client_id)
+        await callback.message.answer(
+            "❌ <b>Hisobotni tayyorlashda xatolik yuz berdi.</b>"
+        )
+        return
+
+    await callback.message.answer_document(
+        BufferedInputFile(
+            content,
+            filename=build_client_file_name(report.client.full_name, today()),
+        ),
+        caption=_client_caption(report),
+    )
+
+
+def _client_caption(report: ClientReport) -> str:
+    """Mijoz fayli ostidagi qisqacha xulosa."""
+    client = report.client
+    return (
+        f"👤 <b>MIJOZ HISOBOTI</b>\n\n"
+        f"<b>{esc_html(client.full_name)}</b>\n"
+        f"📞 {esc_html(client.phone)}\n\n"
+        f"📦 <b>Qarzlar:</b> {len(report.debts)} ta\n"
+        f"💵 <b>Asl qarz:</b> {format_money_map(report.total_original_debt)}\n"
+        f"✅ <b>To'langan:</b> {format_money_map(report.total_paid_after)}\n"
+        f"💳 <b>Qoldiq:</b> <b>{format_money_map(report.total_remaining_debt)}</b>"
     )

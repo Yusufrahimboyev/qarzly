@@ -153,7 +153,6 @@ def test_workbook_has_all_expected_sheets():
     workbook = _load(_sample_report())
     assert workbook.sheetnames == [
         "Umumiy natija",
-        "Bugun",
         "Oyma-oy",
         "Mijozlar kesimida",
         "Eng katta qarzdorlar",
@@ -243,10 +242,24 @@ def test_empty_report_still_produces_valid_workbook():
         active_totals={},
     )
     workbook = _load(report)
-    assert len(workbook.sheetnames) == 7
+    assert len(workbook.sheetnames) == 6
     assert workbook["Eng katta qarzdorlar"]["A8"].value == "Qarzdor yo'q"
 
 
 def test_file_name_contains_both_dates():
     name = build_file_name(date(2026, 1, 1), date(2026, 9, 11))
     assert name == "qarz-hisobot_01.01.2026_11.09.2026.xlsx"
+
+
+def test_manual_export_has_no_today_sheet():
+    """Botdan qo'lda eksportda "Bugun" varag'i bo'lmasligi kerak."""
+    workbook = _load(_sample_report())
+    assert "Bugun" not in workbook.sheetnames
+
+
+def test_day_sheet_added_only_when_requested():
+    """Kanalga ketadigan kunlik hisobotda esa varaq qo'shiladi."""
+    data = build_period_workbook(_sample_report(), include_day_sheet=True)
+    workbook = load_workbook(BytesIO(data))
+    assert workbook.sheetnames[1] == "Bugun"
+    assert len(workbook.sheetnames) == 7

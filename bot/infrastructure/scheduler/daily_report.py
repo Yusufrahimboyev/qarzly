@@ -48,7 +48,9 @@ async def send_daily_report(
 
     try:
         report = await debt_service.get_period_report(start_date, day)
-        content = await asyncio.to_thread(build_period_workbook, report)
+        content = await asyncio.to_thread(
+            build_period_workbook, report, include_day_sheet=True
+        )
         await bot.send_document(
             chat_id=channel_id,
             document=BufferedInputFile(

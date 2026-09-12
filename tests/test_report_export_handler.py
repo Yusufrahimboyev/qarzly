@@ -90,13 +90,17 @@ class StubMessage(Message):
 
 @dataclass
 class StubCallback:
-    """`answer()` va `message` maydoni bo'lgan minimal CallbackQuery."""
+    """`answer()`, `data` va `message` maydoni bo'lgan minimal CallbackQuery."""
 
     message: StubMessage
+    data: str = ""
     answered: bool = False
+    alert: str = ""
 
-    async def answer(self, *_args, **_kwargs) -> None:
+    async def answer(self, text: str = "", show_alert: bool = False, **_kwargs) -> None:
         self.answered = True
+        if show_alert:
+            self.alert = text
 
 
 @pytest.fixture
