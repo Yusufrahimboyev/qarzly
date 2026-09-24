@@ -12,6 +12,25 @@ if (tg) {
     } catch (e) {}
 }
 
+// Mavzu Telegram sozlamasiga moslanadi (tizim sozlamasi bilan farq qilishi mumkin)
+function applyTheme() {
+    const scheme = tg?.colorScheme;
+    if (scheme === 'dark' || scheme === 'light') {
+        document.documentElement.setAttribute('data-theme', scheme);
+    }
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--color-bg').trim();
+    try {
+        if (bg) {
+            tg?.setHeaderColor?.(bg);
+            tg?.setBackgroundColor?.(bg);
+        }
+    } catch (e) {}
+}
+applyTheme();
+try {
+    tg?.onEvent?.('themeChanged', applyTheme);
+} catch (e) {}
+
 function hapticSuccess() {
     try {
         tg?.HapticFeedback?.notificationOccurred('success');
@@ -56,6 +75,116 @@ function formatMoneyMap(map) {
     if ((map.UZS || 0) > 0) parts.push(formatMoney(map.UZS, 'UZS'));
     if ((map.USD || 0) > 0) parts.push(formatMoney(map.USD, 'USD'));
     return parts.length > 0 ? parts.join(' + ') : formatMoney(0);
+}
+
+// Har bir valyutani alohida qatorda ko'rsatadi (uzun "+ ..." qatorlar o'rniga)
+function formatMoneyLinesHTML(map) {
+    const parts = [];
+    if (map && (map.UZS || 0) > 0) parts.push(formatMoney(map.UZS, 'UZS'));
+    if (map && (map.USD || 0) > 0) parts.push(formatMoney(map.USD, 'USD'));
+    if (parts.length === 0) parts.push(formatMoney(0));
+    return parts.map(p => `<span class="money-line">${escapeHtml(p)}</span>`).join('');
+}
+
+function icon(name, extraClass = '') {
+    return `<svg class="icon ${extraClass}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+}
+
+function getInitials(name) {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    const first = parts[0][0] || '';
+    const second = parts.length > 1 ? (parts[1][0] || '') : '';
+    return (first + second).toUpperCase();
+}
+
+// Bo'sh / xato holatlari uchun yagona komponent
+function stateBlockHTML({ iconName = 'inbox', title, desc = '', action = null, isError = false }) {
+    const actionHtml = action
+        ? `<button type="button" class="btn btn-secondary btn-sm" data-state-action="${action.id}">${escapeHtml(action.label)}</button>`
+        : '';
+    return `
+        <div class="empty-state ${isError ? 'is-error' : ''}">
+            <div class="empty-state-icon">${icon(iconName)}</div>
+            <div class="empty-state-title">${escapeHtml(title)}</div>
+            ${desc ? `<div class="empty-state-desc">${escapeHtml(desc)}</div>` : ''}
+            ${actionHtml}
+        </div>
+    `;
+}
+
+function skeletonRowsHTML(count = 3) {
+    return '<div class="skeleton-row"></div>'.repeat(count);
+}
+
+// Tugmaning yuklanish holati: spinner + matn, keyin asl ko'rinishi qaytariladi
+function setButtonLoading(btn, isLoading, loadingText = '') {
+    if (!btn) return;
+    if (isLoading) {
+        if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.setAttribute('aria-busy', 'true');
+        btn.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span>${escapeHtml(loadingText)}`;
+    } else {
+        if (btn.dataset.originalHtml) btn.innerHTML = btn.dataset.originalHtml;
+        delete btn.dataset.originalHtml;
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+    }
+}
+
+// Inline validatsiya: xato maydon ostida ko'rsatiladi va maydonga fokus beriladi
+function setFieldError(input, message) {
+    if (!input) {
+        showToast(message, 'error');
+        return;
+    }
+    clearFieldError(input);
+    input.classList.add('is-invalid');
+    input.setAttribute('aria-invalid', 'true');
+    const err = document.createElement('div');
+    err.className = 'field-error';
+    err.id = `err-${Math.random().toString(36).slice(2, 9)}`;
+    err.innerHTML = `${icon('alert-circle')}<span>${escapeHtml(message)}</span>`;
+    const anchor = input.closest('.input-with-action, .select-field') || input;
+    anchor.insertAdjacentElement('afterend', err);
+    input.setAttribute('aria-describedby', err.id);
+    input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    try {
+        input.focus({ preventScroll: true });
+    } catch (e) {}
+    hapticError();
+}
+
+function clearFieldError(input) {
+    if (!input) return;
+    input.classList.remove('is-invalid');
+    input.removeAttribute('aria-invalid');
+    const errId = input.getAttribute('aria-describedby');
+    if (errId) {
+        document.getElementById(errId)?.remove();
+        input.removeAttribute('aria-describedby');
+    }
+}
+
+function clearFormErrors(form) {
+    if (!form) return;
+    form.querySelectorAll('.is-invalid').forEach(clearFieldError);
+    form.querySelectorAll('.field-error').forEach(el => el.remove());
+}
+
+// Sana maydoni: raqam kiritilganda nuqtalar avtomatik qo'yiladi (DD.MM.YYYY)
+function attachDateMask(input) {
+    if (!input) return;
+    input.addEventListener('input', (e) => {
+        if (e.inputType && e.inputType.startsWith('delete')) return;
+        const digits = input.value.replace(/\D/g, '').slice(0, 8);
+        let out = digits.slice(0, 2);
+        if (digits.length > 2) out += '.' + digits.slice(2, 4);
+        if (digits.length > 4) out += '.' + digits.slice(4, 8);
+        if (digits.length === 2 || digits.length === 4) out += '.';
+        input.value = out;
+    });
 }
 
 // Ikki valyuta xaritasini qo'shadi (UZS+UZS, USD+USD — valyutalar aralashmaydi)
@@ -107,27 +236,33 @@ function getTodayFormatted() {
     return `${d}.${m}.${y}`;
 }
 
-function showToast(message) {
+let toastTimer = null;
+
+// type: 'success' | 'error' | 'info'
+function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
     if (!toast) return;
-    toast.textContent = message;
+    const iconName = type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'alert-circle';
+    toast.className = `toast toast-${type}`;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    toast.innerHTML = `${icon(iconName)}<span>${escapeHtml(message)}</span>`;
+    // Reflow — ketma-ket toastlarda animatsiya qayta ishlaydi
+    void toast.offsetWidth;
     toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 3000);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), type === 'error' ? 4500 : 3000);
 }
 
 function showUnauthorizedState(message = "Ushbu tizimga faqat ruxsat berilgan Telegram foydalanuvchilari kira oladi.") {
     const app = document.getElementById('app') || document.body;
+    document.querySelector('.bottom-nav')?.remove();
     app.innerHTML = `
-        <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; background: #0f172a; color: #f8fafc;">
-            <div style="background: #1e293b; border: 1px solid #334155; border-radius: 20px; padding: 36px 24px; max-width: 380px; width: 100%; box-shadow: 0 12px 32px rgba(0,0,0,0.3);">
-                <div style="font-size: 3.5rem; margin-bottom: 16px;">⛔️</div>
-                <h2 style="font-size: 1.35rem; font-weight: 800; color: #f1f5f9; margin-bottom: 12px;">Kirish Cheklangan</h2>
-                <p style="color: #94a3b8; font-size: 0.95rem; line-height: 1.6; margin-bottom: 20px;">
-                    ${message}
-                </p>
-                <div style="font-size: 0.85rem; color: #64748b; border-top: 1px solid #334155; padding-top: 16px;">
-                    Ilovani faqat vakolatli Telegram akkauntingizdagi bot orqali oching.
-                </div>
+        <div class="gate">
+            <div class="card gate-card" role="alert">
+                <div class="gate-icon">${icon('lock')}</div>
+                <h2 class="gate-title">Kirish cheklangan</h2>
+                <p class="gate-text">${escapeHtml(message)}</p>
+                <div class="gate-hint">Ilovani vakolatli Telegram akkauntingizdagi bot orqali oching.</div>
             </div>
         </div>
     `;
@@ -151,13 +286,13 @@ async function apiFetch(url, options = {}) {
     }
     const res = await fetch(url, { ...options, headers });
     if (res.status === 429) {
-        showToast("⏳ So'rovlar juda tez-tez yuborildi. Biroz kuting...");
+        showToast("So'rovlar juda tez yuborildi. Biroz kutib, qayta urinib ko'ring.", 'error');
     } else if (res.status === 401) {
         showUnauthorizedState("Ruxsat berilmagan. Ilovani Telegram boti ichida oching.");
     } else if (res.status === 403) {
-        showUnauthorizedState("⛔️ Sizning Telegram ID'ingizga ushbu tizimdan foydalanish huquqi berilmagan.");
+        showUnauthorizedState("Sizning Telegram akkauntingizga ushbu tizimdan foydalanish huquqi berilmagan.");
     } else if (res.status === 502 || res.status === 503) {
-        showToast("⏳ Server yangilanmoqda, 10-20 soniyadan so'ng qayta urinib ko'ring...");
+        showToast("Server yangilanmoqda. 10–20 soniyadan so'ng qayta urinib ko'ring.", 'error');
     }
     return res;
 }
@@ -172,7 +307,9 @@ async function fetchStats() {
         if (res.status === 401 || res.status === 403) return;
         if (!res.ok) return;
         const data = await res.json();
-        document.getElementById('stat-total-debt').textContent = formatMoneyMap(data.total_debt);
+        const totalEl = document.getElementById('stat-total-debt');
+        totalEl.classList.remove('is-loading');
+        totalEl.innerHTML = formatMoneyLinesHTML(data.total_debt);
         document.getElementById('stat-debtors-count').textContent = `${data.debtors_count} ta`;
         document.getElementById('stat-clients-count').textContent = `${data.clients_count} ta`;
     } catch (err) {
@@ -180,26 +317,54 @@ async function fetchStats() {
     }
 }
 
+// Server ro'yxatlarni sahifalab beradi (default 200) — UI barcha yozuvlarni oladi
+const LIST_LIMIT = 1000;
+
 async function fetchSummaries() {
+    const container = document.getElementById('clients-list');
     try {
-        const res = await apiFetch('/api/summaries');
+        const res = await apiFetch(`/api/summaries?limit=${LIST_LIMIT}`);
         if (res.status === 401 || res.status === 403) {
             showUnauthorizedState();
             return;
         }
-        if (!res.ok) return;
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         state.summaries = await res.json();
+        state.summariesLoaded = true;
+        updateFilterCounts();
         renderClientsList();
         populatePaymentClients();
     } catch (err) {
         console.error('Error fetching summaries:', err);
-        document.getElementById('clients-list').innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">⚠️</div>
-                <p>Ma'lumotlarni yuklab bo'lmadi</p>
-            </div>
-        `;
+        // Avval yuklangan ro'yxat bo'lsa, uni saqlab qolamiz — faqat xabar beramiz
+        if (state.summariesLoaded) {
+            showToast("Ro'yxatni yangilab bo'lmadi. Internet aloqasini tekshiring.", 'error');
+            return;
+        }
+        if (container) {
+            container.removeAttribute('aria-busy');
+            container.innerHTML = stateBlockHTML({
+                iconName: 'alert-triangle',
+                title: "Ma'lumotlarni yuklab bo'lmadi",
+                desc: "Internet aloqasini tekshiring va qayta urinib ko'ring.",
+                action: { id: 'retry-summaries', label: 'Qayta urinish' },
+                isError: true,
+            });
+        }
     }
+}
+
+function updateFilterCounts() {
+    const debtors = state.summaries.filter(s => s.has_debt).length;
+    const counts = {
+        all: state.summaries.length,
+        debtors,
+        paid: state.summaries.length - debtors,
+    };
+    document.querySelectorAll('.chip-count').forEach(el => {
+        const key = el.getAttribute('data-count');
+        el.textContent = counts[key] !== undefined ? String(counts[key]) : '';
+    });
 }
 
 async function fetchClientReport(clientId) {
@@ -278,31 +443,41 @@ function getProcessedList() {
 }
 
 function renderClientCardHTML(item) {
+    const phoneHtml = item.phone
+        ? `<span class="row-meta-item">${icon('phone')}${escapeHtml(item.phone)}</span>`
+        : '<span class="row-meta-item">Telefon kiritilmagan</span>';
     const dateHtml = item.latest_debt_date
-        ? `<div class="client-date-tag">📅 ${escapeHtml(item.latest_debt_date)}</div>`
+        ? `<span class="row-meta-item">${icon('calendar')}${escapeHtml(item.latest_debt_date)}</span>`
         : '';
+    const amountHtml = item.has_debt
+        ? `<div class="row-amount client-debt-amount is-debt">${formatMoneyLinesHTML(item.remaining)}</div>`
+        : '';
+    const badgeHtml = item.has_debt
+        ? '<span class="badge badge-danger">Qarzdor</span>'
+        : '<span class="badge badge-success">Yopilgan</span>';
+    const ariaLabel = `${item.full_name}. ${item.has_debt ? `Qarzi: ${formatMoneyMap(item.remaining)}` : 'Qarzi yo\'q'}. Hisobotni ochish`;
     return `
-        <div class="client-item-card" data-client-id="${item.id}">
-            <div class="client-item-main">
-                <div class="client-name">${escapeHtml(item.full_name)}</div>
-                <div class="client-phone">${escapeHtml(item.phone || 'Telefonsiz')}</div>
-                ${dateHtml}
+        <div class="list-row client-item-card" data-client-id="${item.id}" role="button" tabindex="0" aria-label="${escapeHtml(ariaLabel)}">
+            <div class="avatar ${item.has_debt ? '' : 'is-muted'}" aria-hidden="true">${escapeHtml(getInitials(item.full_name))}</div>
+            <div class="row-main">
+                <div class="row-title">${escapeHtml(item.full_name)}</div>
+                <div class="row-meta">${phoneHtml}${dateHtml}</div>
             </div>
-            <div class="client-item-meta">
-                <div class="client-debt-badge">
-                    <div class="client-debt-amount ${item.has_debt ? '' : 'is-paid'}">
-                        ${item.has_debt ? formatMoneyMap(item.remaining) : formatMoney(0)}
-                    </div>
-                    <span class="client-status-pill ${item.has_debt ? 'pill-debt' : 'pill-paid'}">
-                        ${item.has_debt ? '🔴 Qarzdor' : '🟢 Yopilgan'}
-                    </span>
-                </div>
-                <button class="client-history-btn" data-client-id="${item.id}" title="Hisobot" aria-label="Hisobot">
-                    📊
-                </button>
+            <div class="row-side">
+                ${amountHtml}
+                ${badgeHtml}
             </div>
+            ${icon('chevron-right', 'row-chevron')}
         </div>
     `;
+}
+
+function updateResultCount() {
+    const el = document.getElementById('clients-result-count');
+    if (!el) return;
+    const total = state.summaries.length;
+    const shown = state.filteredList.length;
+    el.textContent = shown === total ? `${total} ta mijoz` : `${shown} / ${total} ta mijoz`;
 }
 
 function renderClientsList() {
@@ -311,14 +486,31 @@ function renderClientsList() {
 
     state.filteredList = getProcessedList();
     state.renderedCount = 0;
+    container.removeAttribute('aria-busy');
+    updateResultCount();
 
     if (state.filteredList.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">📂</div>
-                <p>Hech qanday mijoz topilmadi</p>
-            </div>
-        `;
+        if (state.summaries.length === 0) {
+            container.innerHTML = stateBlockHTML({
+                iconName: 'users',
+                title: "Hali mijozlar yo'q",
+                desc: "Birinchi qarz yozuvini yarating — mijoz avtomatik qo'shiladi.",
+                action: { id: 'go-create', label: "Yangi qarz qo'shish" },
+            });
+        } else if (state.searchQuery.trim()) {
+            container.innerHTML = stateBlockHTML({
+                iconName: 'search',
+                title: 'Hech narsa topilmadi',
+                desc: `"${state.searchQuery.trim()}" bo'yicha mijoz topilmadi. Ism yoki raqamni tekshiring.`,
+                action: { id: 'clear-search', label: 'Qidiruvni tozalash' },
+            });
+        } else {
+            container.innerHTML = stateBlockHTML({
+                iconName: 'inbox',
+                title: state.filter === 'debtors' ? "Qarzdor mijozlar yo'q" : "Qarzi yopilgan mijozlar yo'q",
+                desc: state.filter === 'debtors' ? "Barcha mijozlarning qarzi yopilgan." : '',
+            });
+        }
         return;
     }
 
@@ -350,12 +542,8 @@ function appendClientBatch() {
     if (state.renderedCount < state.filteredList.length) {
         const sentinel = document.createElement('div');
         sentinel.id = 'client-list-sentinel';
-        sentinel.style.height = '30px';
-        sentinel.style.margin = '10px 0';
-        sentinel.style.textAlign = 'center';
-        sentinel.style.color = 'var(--text-muted)';
-        sentinel.style.fontSize = '12px';
-        sentinel.textContent = 'Yuklanmoqda...';
+        sentinel.className = 'list-sentinel';
+        sentinel.textContent = 'Yuklanmoqda…';
         container.appendChild(sentinel);
 
         if (!listObserver) {
@@ -383,8 +571,11 @@ function startAddDebtForClient(person) {
     const banner = document.getElementById('create-client-banner');
     if (banner) {
         document.getElementById('banner-client-name').textContent = person.full_name || '-';
-        document.getElementById('banner-client-phone').textContent = person.phone || '-';
+        document.getElementById('banner-client-phone').textContent = person.phone || 'Telefon kiritilmagan';
         banner.style.display = 'flex';
+        // Ism/telefon allaqachon ma'lum — takroriy maydonlar yashiriladi
+        document.getElementById('create-debt-form')?.classList.add('has-selected-client');
+        clearFormErrors(document.getElementById('create-debt-form'));
     }
 
     // Sana har doim bugunga tenglanadi — keyingi qarz to'g'ri sanada yoziladi
@@ -406,7 +597,8 @@ async function loadExistingDebts(clientId) {
     if (!card || !listEl || !clientId) return;
 
     card.style.display = 'block';
-    listEl.innerHTML = '<div class="banner-debt-loading">Yuklanmoqda...</div>';
+    totalEl.textContent = '…';
+    listEl.innerHTML = '<div class="banner-debt-loading">Yuklanmoqda…</div>';
 
     const data = await fetchClientReport(clientId);
     if (!data) {
@@ -417,18 +609,19 @@ async function loadExistingDebts(clientId) {
     const remaining = data.total_remaining_debt || {};
     const hasDebt = Object.values(remaining).some(v => (Number(v) || 0) > 0);
     totalEl.textContent = hasDebt ? formatMoneyMap(remaining) : "Qarz yo'q";
+    totalEl.className = hasDebt ? 'text-danger' : 'text-success';
 
     const activeDebts = (data.debts || []).filter(d => d.status === 'active');
     if (activeDebts.length === 0) {
-        listEl.innerHTML = '<div class="banner-no-debt">🟢 Yopilmagan qarzi yo&#8217;q</div>';
+        listEl.innerHTML = '<div class="banner-no-debt">Yopilmagan qarzi yo&#8217;q</div>';
         return;
     }
 
     listEl.innerHTML = activeDebts.map(d => {
-        const qtyLabel = d.product_quantity > 1 ? ` — ${d.product_quantity} ta` : '';
+        const qtyLabel = d.product_quantity > 1 ? ` × ${d.product_quantity}` : '';
         return `
             <div class="banner-debt-item">
-                <span class="banner-debt-name">📅 ${d.debt_date} — ${escapeHtml(d.product_name)}${qtyLabel}</span>
+                <span class="banner-debt-name"><span class="banner-debt-date">${escapeHtml(d.debt_date)}</span>${escapeHtml(d.product_name)}${qtyLabel}</span>
                 <span class="banner-debt-sum">${formatMoney(d.remaining_debt, d.currency)}</span>
             </div>
         `;
@@ -441,6 +634,7 @@ function clearCreateClientBanner() {
     const debtsCard = document.getElementById('banner-debts-card');
     if (banner) banner.style.display = 'none';
     if (debtsCard) debtsCard.style.display = 'none';
+    document.getElementById('create-debt-form')?.classList.remove('has-selected-client');
     const nameInput = document.getElementById('create-client-name');
     const phoneInput = document.getElementById('create-client-phone');
     if (nameInput) nameInput.value = '';
@@ -448,136 +642,215 @@ function clearCreateClientBanner() {
 }
 
 function escapeHtml(str) {
-    return String(str || '')
+    return String(str ?? '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 // ==========================================
 // CLIENT REPORT MODAL
 // ==========================================
 
+let modalReturnFocus = null;
+let modalRequestId = 0;
+
+function onModalBackButton() {
+    closeClientReportModal();
+}
+
+function onModalKeydown(e) {
+    const modal = document.getElementById('report-modal');
+    if (!modal || modal.style.display === 'none') return;
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        closeClientReportModal();
+        return;
+    }
+    // Fokus dialog ichida aylanadi (focus trap)
+    if (e.key === 'Tab') {
+        const focusables = [...modal.querySelectorAll('button:not([disabled]), [href], input, select, [tabindex]:not([tabindex="-1"])')]
+            .filter(el => el.offsetParent !== null);
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    }
+}
+
+function historyEmptyHTML(text) {
+    return `<div class="history-empty">${escapeHtml(text)}</div>`;
+}
+
+function renderDebtHistoryCard(d) {
+    const products = d.products || [];
+    const productListHtml = products.length > 1
+        ? products.map((p, i) => {
+            const pCur = p.currency || d.currency;
+            const qtyPart = p.quantity > 1 ? ` · ${p.quantity} × ${formatMoney(p.price_per_unit, pCur)}` : '';
+            return `
+                <div class="history-card-detail is-sub">
+                    <span>${i + 1}. ${escapeHtml(p.name)}${qtyPart}</span>
+                    <span>${formatMoney(p.quantity * p.price_per_unit, pCur)}</span>
+                </div>
+            `;
+        }).join('')
+        : '';
+
+    const isActive = d.status === 'active';
+    const statusHtml = isActive
+        ? `<span class="history-amount text-danger">${formatMoney(d.remaining_debt, d.currency)}</span>`
+        : '<span class="badge badge-success">Yopilgan</span>';
+
+    return `
+        <div class="history-card">
+            <div class="history-card-header">
+                <span>${escapeHtml(d.product_name)}${d.product_quantity > 1 ? ` × ${d.product_quantity}` : ''}</span>
+                ${statusHtml}
+            </div>
+            ${productListHtml}
+            <div class="history-card-detail">
+                <span class="row-meta-item">${icon('calendar')}${escapeHtml(d.debt_date)}</span>
+                <span>Narxi: ${formatMoney(d.product_price, d.currency)}</span>
+            </div>
+            ${d.exchange_exists ? `
+            <div class="history-card-detail is-exchange">
+                <span>Exchange: ${escapeHtml(d.exchange_product_name || 'Tovar')}</span>
+                <span>−${formatMoney(d.exchange_product_price, d.currency)}</span>
+            </div>` : ''}
+            ${d.given_money > 0 ? `
+            <div class="history-card-detail is-given">
+                <span>Boshlang'ich to'lov</span>
+                <span>−${formatMoney(d.given_money, d.currency)}</span>
+            </div>` : ''}
+        </div>
+    `;
+}
+
 async function openClientReportModal(clientId) {
     hapticImpact();
     const modal = document.getElementById('report-modal');
     if (!modal) return;
+    const requestId = ++modalRequestId;
 
     // 1. Keshdagi mijoz ma'lumotlari orqali modalni DARHOL ochamiz (0ms kechikish)
     const cached = state.summaries.find(s => String(s.id) === String(clientId));
+    const remainingEl = document.getElementById('modal-total-remaining');
     if (cached) {
         document.getElementById('modal-client-name').textContent = cached.full_name;
-        document.getElementById('modal-client-phone').textContent = cached.phone || '-';
-        document.getElementById('modal-total-remaining').textContent = cached.has_debt ? formatMoneyMap(cached.remaining) : "Qarz yo'q";
-        document.getElementById('modal-total-products').textContent = '...';
-        document.getElementById('modal-total-paid').textContent = '...';
+        document.getElementById('modal-client-phone').textContent = cached.phone || 'Telefon kiritilmagan';
+        remainingEl.textContent = cached.has_debt ? formatMoneyMap(cached.remaining) : "Qarz yo'q";
     } else {
-        document.getElementById('modal-client-name').textContent = 'Mijoz Hisoboti';
-        document.getElementById('modal-client-phone').textContent = 'Yuklanmoqda...';
+        document.getElementById('modal-client-name').textContent = 'Mijoz hisoboti';
+        document.getElementById('modal-client-phone').textContent = 'Yuklanmoqda…';
+        remainingEl.textContent = '…';
     }
+    document.getElementById('modal-total-products').textContent = '…';
+    document.getElementById('modal-total-paid').textContent = '…';
 
     const debtsList = document.getElementById('modal-debts-list');
     const paymentsList = document.getElementById('modal-payments-list');
-    if (debtsList) debtsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:13px;">Tarix yuklanmoqda...</div>';
-    if (paymentsList) paymentsList.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:13px;">Yuklanmoqda...</div>';
+    if (debtsList) debtsList.innerHTML = '<div class="history-loading">Tarix yuklanmoqda…</div>';
+    if (paymentsList) paymentsList.innerHTML = '<div class="history-loading">Yuklanmoqda…</div>';
 
+    // Hisobot yuklanmaguncha amallar o'chiq turadi
+    const payBtn = document.getElementById('modal-pay-now-btn');
+    const addBtn = document.getElementById('modal-add-debt-btn');
+    if (payBtn) payBtn.disabled = true;
+    if (addBtn) addBtn.disabled = true;
+
+    const wasOpen = modal.style.display !== 'none';
     modal.style.display = 'flex';
+    if (!wasOpen) {
+        modalReturnFocus = document.activeElement;
+        document.body.classList.add('modal-open');
+        document.addEventListener('keydown', onModalKeydown);
+        try {
+            tg?.BackButton?.onClick(onModalBackButton);
+            tg?.BackButton?.show();
+        } catch (e) {}
+        document.getElementById('modal-close-btn')?.focus({ preventScroll: true });
+    }
 
     // 2. Fonda to'liq hisobotni yuklab, modalni to'ldiramiz
     const data = await fetchClientReport(clientId);
+    // Foydalanuvchi bu orada modalni yopgan yoki boshqa mijozni ochgan bo'lishi mumkin
+    if (requestId !== modalRequestId || modal.style.display === 'none') return;
     if (!data) {
-        showToast('Mijoz ma\'lumotlarini yuklab bo\'lmadi');
+        if (debtsList) debtsList.innerHTML = historyEmptyHTML("Hisobotni yuklab bo'lmadi");
+        if (paymentsList) paymentsList.innerHTML = historyEmptyHTML('—');
+        showToast("Mijoz ma'lumotlarini yuklab bo'lmadi", 'error');
         return;
     }
 
     state.selectedClientReport = data;
 
     document.getElementById('modal-client-name').textContent = data.client.full_name;
-    document.getElementById('modal-client-phone').textContent = data.client.phone || '-';
-    document.getElementById('modal-total-products').textContent = formatMoneyMap(data.total_product_price);
-    document.getElementById('modal-total-paid').textContent = formatMoneyMap(sumMaps(data.total_paid_after, data.total_given_money));
-    document.getElementById('modal-total-remaining').textContent = formatMoneyMap(data.total_remaining_debt);
+    document.getElementById('modal-client-phone').textContent = data.client.phone || 'Telefon kiritilmagan';
+    document.getElementById('modal-total-products').innerHTML = formatMoneyLinesHTML(data.total_product_price);
+    document.getElementById('modal-total-paid').innerHTML = formatMoneyLinesHTML(sumMaps(data.total_paid_after, data.total_given_money));
 
-    // Render Debts History — ko'p tovarli bo'lsa har bir tovarni alohida ko'rsatadi
-    if (data.debts.length === 0) {
-        debtsList.innerHTML = '<p class="text-muted" style="font-size:13px;">Qarzlar mavjud emas</p>';
-    } else {
-        debtsList.innerHTML = data.debts.map(d => {
-            const products = d.products || [];
-            const hasMultiProducts = products.length > 1;
-            const productListHtml = hasMultiProducts
-                ? products.map((p, i) => {
-                    const pCur = p.currency || d.currency;
-                    return `
-                    <div class="history-card-detail" style="padding-left:4px;">
-                        <span>  ${i + 1}. 📦 ${escapeHtml(p.name)}${p.quantity > 1 ? ` — ${p.quantity} × ${formatMoney(p.price_per_unit, pCur)}` : ''}</span>
-                        <span>${formatMoney(p.quantity * p.price_per_unit, pCur)}</span>
-                    </div>
-                `;}).join('')
-                : '';
+    const remainingValues = Object.values(data.total_remaining_debt || {});
+    const hasAnyDebt = remainingValues.some(v => (Number(v) || 0) > 0);
+    remainingEl.textContent = hasAnyDebt ? formatMoneyMap(data.total_remaining_debt) : "Qarz yo'q";
+    remainingEl.classList.toggle('text-danger', hasAnyDebt);
+    remainingEl.classList.toggle('text-success', !hasAnyDebt);
+    remainingEl.closest('.modal-kpi')?.classList.toggle('modal-kpi-primary', hasAnyDebt);
 
-            const statusText = d.status === 'active'
-                ? formatMoney(d.remaining_debt, d.currency)
-                : '🟢 Yopilgan';
-            const statusClass = d.status === 'active' ? 'text-danger' : 'text-success';
+    // Qarzlar tarixi — ko'p tovarli bo'lsa har bir tovar alohida ko'rsatiladi
+    debtsList.innerHTML = data.debts.length === 0
+        ? historyEmptyHTML('Qarzlar mavjud emas')
+        : data.debts.map(renderDebtHistoryCard).join('');
 
-            return `
-                <div class="history-card">
-                    <div class="history-card-header">
-                        <span>${escapeHtml(d.product_name)}${d.product_quantity > 1 ? ` — ${d.product_quantity} ta` : ''}</span>
-                        <span class="${statusClass}">${statusText}</span>
-                    </div>
-                    ${productListHtml}
-                    <div class="history-card-detail">
-                        <span>📅 ${d.debt_date}</span>
-                        <span>Narxi: ${formatMoney(d.product_price, d.currency)}</span>
-                    </div>
-                    ${d.exchange_exists ? `
-                    <div class="history-card-detail" style="color:var(--accent-yellow); margin-top:2px;">
-                        <span>🔄 Exchange: ${escapeHtml(d.exchange_product_name || 'Tovar')}</span>
-                        <span>-${formatMoney(d.exchange_product_price, d.currency)}</span>
-                    </div>` : ''}
-                    ${d.given_money > 0 ? `
-                    <div class="history-card-detail" style="color:var(--accent-green); margin-top:2px;">
-                        <span>💵 Berilgan pul:</span>
-                        <span>-${formatMoney(d.given_money, d.currency)}</span>
-                    </div>` : ''}
-                </div>
-            `;
-        }).join('');
-    }
-
-    // Render Payments History
+    // To'lovlar tarixi
     const actualPayments = data.payments.filter(p => p.payment_type !== 'initial');
-    if (actualPayments.length === 0) {
-        paymentsList.innerHTML = '<p class="text-muted" style="font-size:13px;">To\'lovlar mavjud emas</p>';
-    } else {
-        paymentsList.innerHTML = actualPayments.map(p => `
+    paymentsList.innerHTML = actualPayments.length === 0
+        ? historyEmptyHTML("To'lovlar mavjud emas")
+        : actualPayments.map(p => `
             <div class="history-card">
                 <div class="history-card-header">
-                    <span class="text-success">+${formatMoney(p.amount, p.currency)}</span>
-                    <span style="font-size:11px; text-transform:uppercase;">
-                        ${p.payment_type === 'full' ? 'To\'liq' : 'Qisman'}
-                    </span>
+                    <span class="history-amount text-success">+${formatMoney(p.amount, p.currency)}</span>
+                    <span class="badge badge-neutral">${p.payment_type === 'full' ? "To'liq" : 'Qisman'}</span>
                 </div>
                 <div class="history-card-detail">
-                    <span>📅 ${p.payment_date}</span>
+                    <span class="row-meta-item">${icon('calendar')}${escapeHtml(p.payment_date)}</span>
                 </div>
             </div>
         `).join('');
-    }
 
-    const payBtn = document.getElementById('modal-pay-now-btn');
-    const remainingValues = Object.values(data.total_remaining_debt || {});
-    const hasAnyDebt = remainingValues.some(v => (Number(v) || 0) > 0);
-    if (payBtn) payBtn.style.display = hasAnyDebt ? 'block' : 'none';
+    if (addBtn) addBtn.disabled = false;
+    if (payBtn) {
+        payBtn.disabled = false;
+        payBtn.style.display = hasAnyDebt ? '' : 'none';
+    }
+    modal.querySelector('.modal-footer')?.classList.toggle('single-action', !hasAnyDebt);
 }
 
 function closeClientReportModal() {
     const modal = document.getElementById('report-modal');
-    if (modal) modal.style.display = 'none';
+    if (!modal || modal.style.display === 'none') return;
+    modal.style.display = 'none';
     state.selectedClientReport = null;
+    document.body.classList.remove('modal-open');
+    document.removeEventListener('keydown', onModalKeydown);
+    try {
+        tg?.BackButton?.offClick(onModalBackButton);
+        tg?.BackButton?.hide();
+    } catch (e) {}
+    if (modalReturnFocus && document.contains(modalReturnFocus)) {
+        try {
+            modalReturnFocus.focus({ preventScroll: true });
+        } catch (e) {}
+    }
+    modalReturnFocus = null;
 }
 
 // ==========================================
@@ -585,36 +858,38 @@ function closeClientReportModal() {
 // ==========================================
 
 function createProductGroupHTML(index) {
+    const removeBtn = index > 0
+        ? `<button type="button" class="btn-remove-product" aria-label="${index + 1}-tovarni o'chirish">${icon('trash')}O'chirish</button>`
+        : '';
     return `
         <div class="product-group" data-product-index="${index}">
             <div class="product-group-header">
-                <span class="product-group-title">📦 ${index + 1}-tovar</span>
-                ${index > 0 ? '<button type="button" class="btn-remove-product" title="O\'chirish">&times;</button>' : ''}
+                <span class="product-group-title">${index + 1}-tovar</span>
+                ${removeBtn}
             </div>
             <div class="form-group">
-                <label>Tovar nomi</label>
-                <input type="text" class="product-name" placeholder="Masalan: Shina, Akkumulyator" required>
+                <label>Tovar nomi <span class="req" aria-hidden="true">*</span></label>
+                <input type="text" class="product-name" placeholder="Masalan: Shina, Akkumulyator" autocomplete="off" required>
             </div>
             <div class="product-row">
-                <div class="form-group product-row-item">
-                    <label>Nechta</label>
-                    <input type="number" class="product-qty" placeholder="1" min="1" step="1" value="1" required>
+                <div class="form-group">
+                    <label>Soni</label>
+                    <input type="number" class="product-qty" placeholder="1" min="1" step="1" value="1" inputmode="numeric" required>
                 </div>
-                <div class="form-group product-row-item">
-                    <label>Narxi</label>
-                    <input type="number" class="product-price" placeholder="2500000" min="1" step="1000" required>
-                </div>
-            </div>
-            <div class="product-currency-row">
-                <span class="product-currency-label">💱 Valyuta:</span>
-                <div class="currency-chips">
-                    <button type="button" class="cur-chip active" data-currency="UZS">💵 So'm</button>
-                    <button type="button" class="cur-chip" data-currency="USD">$ Dollar</button>
+                <div class="form-group">
+                    <label>Narxi (1 dona) <span class="req" aria-hidden="true">*</span></label>
+                    <input type="number" class="product-price" placeholder="0" min="1" step="1000" inputmode="numeric" required>
                 </div>
             </div>
-            <div class="product-subtotal">
-                <span>Jami:</span>
-                <strong class="product-subtotal-val">0 so'm</strong>
+            <div class="product-footer">
+                <div class="currency-chips" role="group" aria-label="Valyuta">
+                    <button type="button" class="cur-chip active" data-currency="UZS" aria-pressed="true">So'm</button>
+                    <button type="button" class="cur-chip" data-currency="USD" aria-pressed="false">Dollar</button>
+                </div>
+                <div class="product-subtotal">
+                    <span>Jami</span>
+                    <strong class="product-subtotal-val">0 so'm</strong>
+                </div>
             </div>
         </div>
     `;
@@ -633,7 +908,8 @@ function renumberProductGroups() {
     const groups = getProductGroups();
     groups.forEach((group, i) => {
         const title = group.querySelector('.product-group-title');
-        if (title) title.textContent = `📦 ${i + 1}-tovar`;
+        if (title) title.textContent = `${i + 1}-tovar`;
+        group.querySelector('.btn-remove-product')?.setAttribute('aria-label', `${i + 1}-tovarni o'chirish`);
         group.setAttribute('data-product-index', i);
     });
 }
@@ -662,8 +938,12 @@ function attachChipsListeners(container) {
     container.querySelectorAll('.cur-chip').forEach(chip => {
         chip.addEventListener('click', () => {
             // Faqat shu guruh ichidagi chipslardan aktivlikni olib tashlaymiz
-            chip.closest('.currency-chips').querySelectorAll('.cur-chip').forEach(c => c.classList.remove('active'));
+            chip.closest('.currency-chips').querySelectorAll('.cur-chip').forEach(c => {
+                c.classList.remove('active');
+                c.setAttribute('aria-pressed', 'false');
+            });
             chip.classList.add('active');
+            chip.setAttribute('aria-pressed', 'true');
             updateCreateCalculation();
             hapticImpact();
         });
@@ -744,7 +1024,10 @@ function updateCreateCalculation() {
 function attachProductGroupListeners(container) {
     // Narx/miqdor o'zgarganda subtotal + grand total yangilanadi
     container.querySelectorAll('.product-qty, .product-price, .product-name').forEach(el => {
-        el.addEventListener('input', updateCreateCalculation);
+        el.addEventListener('input', () => {
+            clearFieldError(el);
+            updateCreateCalculation();
+        });
     });
     // Valyuta chipslari
     attachChipsListeners(container);
@@ -774,11 +1057,23 @@ function setupCreateForm() {
     const givenAmountInput = document.getElementById('create-given-amount');
     const submitBtn = document.getElementById('btn-submit-debt');
 
+    const form = document.getElementById('create-debt-form');
+    const nameInput = document.getElementById('create-client-name');
+    const phoneInput = document.getElementById('create-client-phone');
+
+    // Enter tugmasi formani sahifa bo'ylab yubormasligi uchun
+    form?.addEventListener('submit', (e) => e.preventDefault());
+
     // Default Date to Today
     if (dateInput) dateInput.value = getTodayFormatted();
+    attachDateMask(dateInput);
+    [dateInput, nameInput, phoneInput].forEach(el => {
+        el?.addEventListener('input', () => clearFieldError(el));
+    });
     if (btnToday) {
         btnToday.addEventListener('click', () => {
             if (dateInput) dateInput.value = getTodayFormatted();
+            clearFieldError(dateInput);
             hapticImpact();
         });
     }
@@ -787,7 +1082,7 @@ function setupCreateForm() {
     const container = document.getElementById('products-container');
     if (container) attachProductGroupListeners(container);
 
-    // "➕ Yana tovar qo'shish" tugmasi
+    // "Yana tovar qo'shish" tugmasi
     if (btnAddProduct) {
         btnAddProduct.addEventListener('click', () => {
             const groups = getProductGroups();
@@ -833,7 +1128,10 @@ function setupCreateForm() {
     attachChipsListeners(document.getElementById('exchange-currency-chips') || document.createElement('div'));
     attachChipsListeners(document.getElementById('given-currency-chips') || document.createElement('div'));
     [exchangePriceInput, givenAmountInput].forEach(el => {
-        if (el) el.addEventListener('input', updateCreateCalculation);
+        if (el) el.addEventListener('input', () => {
+            clearFieldError(el);
+            updateCreateCalculation();
+        });
     });
 
     // Submit New Debt
@@ -854,30 +1152,46 @@ function setupCreateForm() {
             const givenCurrency = getChipsCurrency('given-currency-chips');
             const givenMoney = hasGiven ? (Number(givenAmountInput?.value) || 0) : 0;
 
+            clearFormErrors(form);
+            const hasSelectedClient = form?.classList.contains('has-selected-client');
+
             if (!clientName) {
-                showToast('Mijoz ismini kiriting');
+                if (hasSelectedClient) clearCreateClientBanner();
+                setFieldError(nameInput, 'Mijozning ism-familiyasini kiriting');
                 return;
             }
             if (clientPhone) {
                 const phoneDigits = clientPhone.replace(/\D/g, '');
                 if (phoneDigits.length < 7 || phoneDigits.length > 15) {
-                    showToast('Telefon raqami noto\'g\'ri (masalan: +998901234567)');
+                    setFieldError(phoneInput, "Telefon raqami noto'g'ri. Masalan: +998901234567");
                     return;
                 }
             }
             if (!isValidDateString(debtDate)) {
-                showToast('Sana noto\'g\'ri: DD.MM.YYYY ko\'rinishida kiriting');
+                setFieldError(dateInput, "Sana noto'g'ri. KK.OO.YYYY ko'rinishida kiriting, masalan: 16.08.2026");
                 return;
             }
-            if (products.length === 0) {
-                showToast('Kamida bitta tovar kiriting');
-                return;
-            }
-            for (let i = 0; i < products.length; i++) {
-                if (!products[i].name) {
-                    showToast(`${i + 1}-tovar nomini kiriting`);
+
+            // Har bir tovar kartasini tekshiramiz: yarim to'ldirilgan kartani o'tkazib yubormaymiz
+            const groups = [...getProductGroups()];
+            for (let i = 0; i < groups.length; i++) {
+                const nameEl = groups[i].querySelector('.product-name');
+                const priceEl = groups[i].querySelector('.product-price');
+                const hasName = !!nameEl?.value.trim();
+                const hasPrice = (Number(priceEl?.value) || 0) > 0;
+                if (hasName && !hasPrice) {
+                    setFieldError(priceEl, `${i + 1}-tovar narxini kiriting`);
                     return;
                 }
+                if (!hasName && hasPrice) {
+                    setFieldError(nameEl, `${i + 1}-tovar nomini kiriting`);
+                    return;
+                }
+            }
+            if (products.length === 0) {
+                const firstName = groups[0]?.querySelector('.product-name');
+                setFieldError(firstName, 'Kamida bitta tovar nomi va narxini kiriting');
+                return;
             }
 
             // Har bir valyutada chegirmalar tovarlar jami narxidan oshmasligi kerak
@@ -894,14 +1208,14 @@ function setupCreateForm() {
             }
             for (const cur of Object.keys(deductions)) {
                 if ((deductions[cur] || 0) > (totals[cur] || 0)) {
-                    const curLabel = cur === 'USD' ? 'dollar' : 'so\'m';
-                    showToast(`${curLabel}da exchange va berilgan pul tovarlar jami narxidan oshmasligi kerak`);
+                    const curLabel = cur === 'USD' ? 'dollar' : "so'm";
+                    const target = (hasGiven && givenCurrency === cur) ? givenAmountInput : exchangePriceInput;
+                    setFieldError(target, `Exchange va boshlang'ich to'lov ${curLabel}dagi tovarlar narxidan oshmasligi kerak`);
                     return;
                 }
             }
 
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Saqlanmoqda...';
+            setButtonLoading(submitBtn, true, 'Saqlanmoqda…');
 
             try {
                 const payload = {
@@ -934,8 +1248,8 @@ function setupCreateForm() {
                 hapticSuccess();
                 const remainingText = json.remaining_by_currency ? formatMoneyMap(json.remaining_by_currency) : '';
                 showToast(remainingText
-                    ? `✅ Saqlandi! Qarz: ${remainingText}`
-                    : '✅ Qarz muvaffaqiyatli saqlandi!');
+                    ? `Qarz saqlandi: ${clientName} — ${remainingText}`
+                    : 'Qarz muvaffaqiyatli saqlandi', 'success');
 
                 // Reset form — bitta tovar guruhigacha qisqartiramiz
                 const productsContainer = document.getElementById('products-container');
@@ -955,11 +1269,16 @@ function setupCreateForm() {
                 document.querySelectorAll('#exchange-currency-chips .cur-chip, #given-currency-chips .cur-chip').forEach(chip => {
                     chip.classList.toggle('active', chip.getAttribute('data-currency') === 'UZS');
                 });
+                document.querySelectorAll('#exchange-currency-chips .cur-chip, #given-currency-chips .cur-chip').forEach(chip => {
+                    chip.setAttribute('aria-pressed', String(chip.classList.contains('active')));
+                });
+                ['create-exchange-name', 'create-exchange-price', 'create-given-amount'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
                 // Banner va eski qarzlar ro'yxati yashiriladi
-                const banner = document.getElementById('create-client-banner');
-                if (banner) banner.style.display = 'none';
-                const debtsCard = document.getElementById('banner-debts-card');
-                if (debtsCard) debtsCard.style.display = 'none';
+                clearCreateClientBanner();
+                clearFormErrors(form);
 
                 updateCreateCalculation();
 
@@ -969,10 +1288,9 @@ function setupCreateForm() {
                 switchTab('tab-table');
             } catch (err) {
                 hapticError();
-                showToast(`❌ ${err.message}`);
+                showToast(err.message, 'error');
             } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = '✅ Qarzni Saqlash';
+                setButtonLoading(submitBtn, false);
             }
         });
     }
@@ -986,15 +1304,20 @@ function populatePaymentClients() {
     const select = document.getElementById('pay-client-select');
     if (!select) return;
 
+    const previous = select.value;
     const debtors = state.summaries.filter(s => s.has_debt);
-    select.innerHTML = '<option value="">-- Mijozni tanlang --</option>' +
+    select.innerHTML = `<option value="">${debtors.length ? 'Mijozni tanlang' : "Qarzdor mijozlar yo'q"}</option>` +
         debtors.map(d => `
-            <option value="${d.id}" data-phone="${escapeHtml(d.phone)}"
+            <option value="${d.id}" data-name="${escapeHtml(d.full_name)}" data-phone="${escapeHtml(d.phone)}"
                     data-remaining-uzs="${(d.remaining && d.remaining.UZS) || 0}"
                     data-remaining-usd="${(d.remaining && d.remaining.USD) || 0}">
-                ${escapeHtml(d.full_name)} (${formatMoneyMap(d.remaining)})
+                ${escapeHtml(d.full_name)} — ${formatMoneyMap(d.remaining)}
             </option>
         `).join('');
+    // Ro'yxat yangilanganda tanlangan mijoz saqlanib qoladi
+    if (previous && debtors.some(d => String(d.id) === previous)) {
+        select.value = previous;
+    }
 }
 
 function getPaymentCurrency() {
@@ -1008,6 +1331,7 @@ function getSelectedDebtInCurrency(opt, currency) {
 }
 
 function setupPaymentForm() {
+    const form = document.getElementById('payment-form');
     const select = document.getElementById('pay-client-select');
     const payDateInput = document.getElementById('pay-date');
     const btnPayToday = document.getElementById('btn-pay-set-today');
@@ -1020,17 +1344,23 @@ function setupPaymentForm() {
     const previewRemaining = document.getElementById('pay-preview-remaining');
     const submitBtn = document.getElementById('btn-submit-payment');
 
+    form?.addEventListener('submit', (e) => e.preventDefault());
+
     // Default Payment Date to Today
     if (payDateInput) payDateInput.value = getTodayFormatted();
+    attachDateMask(payDateInput);
+    payDateInput?.addEventListener('input', () => clearFieldError(payDateInput));
     if (btnPayToday) {
         btnPayToday.addEventListener('click', () => {
             if (payDateInput) payDateInput.value = getTodayFormatted();
+            clearFieldError(payDateInput);
             hapticImpact();
         });
     }
 
     if (select) {
         select.addEventListener('change', () => {
+            clearFieldError(select);
             const opt = select.selectedOptions[0];
             if (!opt || !opt.value) {
                 if (infoCard) infoCard.style.display = 'none';
@@ -1038,7 +1368,7 @@ function setupPaymentForm() {
                 return;
             }
 
-            const name = opt.text.split('(')[0].trim();
+            const name = opt.getAttribute('data-name') || opt.text.split('—')[0].trim();
             const phone = opt.getAttribute('data-phone');
             const remainingMap = {
                 UZS: getSelectedDebtInCurrency(opt, 'UZS'),
@@ -1046,10 +1376,19 @@ function setupPaymentForm() {
             };
 
             document.getElementById('pay-selected-client-name').textContent = name;
-            document.getElementById('pay-selected-client-phone').textContent = phone;
-            document.getElementById('pay-selected-client-debt').textContent = formatMoneyMap(remainingMap);
+            document.getElementById('pay-selected-client-phone').textContent = phone || 'Telefon kiritilmagan';
+            document.getElementById('pay-selected-client-debt').innerHTML = formatMoneyLinesHTML(remainingMap);
 
-            infoCard.style.display = 'block';
+            // Qarz faqat bitta valyutada bo'lsa, qisman to'lov valyutasi avtomatik tanlanadi
+            if (remainingMap.UZS <= 0 && remainingMap.USD > 0) {
+                const usdRadio = document.querySelector('input[name="payment_currency"][value="USD"]');
+                if (usdRadio) usdRadio.checked = true;
+            } else if (remainingMap.USD <= 0 && remainingMap.UZS > 0) {
+                const uzsRadio = document.querySelector('input[name="payment_currency"][value="UZS"]');
+                if (uzsRadio) uzsRadio.checked = true;
+            }
+
+            infoCard.style.display = 'flex';
             optionsWrapper.style.display = 'block';
             updatePaymentCalculation();
             hapticImpact();
@@ -1060,9 +1399,10 @@ function setupPaymentForm() {
         radio.addEventListener('change', () => {
             const isPartial = radio.value === 'partial';
             if (partialGroup) partialGroup.style.display = isPartial ? 'block' : 'none';
-            if (isPartial && payDateInput && !payDateInput.value) {
+            if (payDateInput && !payDateInput.value) {
                 payDateInput.value = getTodayFormatted();
             }
+            clearFieldError(partialInput);
             updatePaymentCalculation();
             hapticImpact();
         });
@@ -1071,13 +1411,17 @@ function setupPaymentForm() {
     // Valyuta almashtirilganda hisob yangilanadi
     document.querySelectorAll('input[name="payment_currency"]').forEach(radio => {
         radio.addEventListener('change', () => {
+            clearFieldError(partialInput);
             updatePaymentCalculation();
             hapticImpact();
         });
     });
 
     if (partialInput) {
-        partialInput.addEventListener('input', updatePaymentCalculation);
+        partialInput.addEventListener('input', () => {
+            clearFieldError(partialInput);
+            updatePaymentCalculation();
+        });
     }
 
     // Quick chip buttons
@@ -1092,6 +1436,7 @@ function setupPaymentForm() {
             } else {
                 if (partialInput) partialInput.value = Number(quick) || 0;
             }
+            clearFieldError(partialInput);
             updatePaymentCalculation();
             hapticImpact();
         });
@@ -1099,27 +1444,39 @@ function setupPaymentForm() {
 
     function updatePaymentCalculation() {
         const opt = select?.selectedOptions[0];
-        const currency = getPaymentCurrency();
-        const totalDebt = getSelectedDebtInCurrency(opt, currency);
-        const otherCurrency = currency === 'USD' ? 'UZS' : 'USD';
-        const otherDebt = getSelectedDebtInCurrency(opt, otherCurrency);
         const mode = document.querySelector('input[name="payment_mode"]:checked')?.value || 'full';
+        const remainingMap = {
+            UZS: getSelectedDebtInCurrency(opt, 'UZS'),
+            USD: getSelectedDebtInCurrency(opt, 'USD'),
+        };
+
+        if (mode === 'full') {
+            // To'liq yopish serverda BARCHA valyutadagi qarzni yopadi
+            if (previewAmount) previewAmount.innerHTML = formatMoneyLinesHTML(remainingMap);
+            if (previewRemaining) {
+                previewRemaining.textContent = formatMoney(0);
+                previewRemaining.className = 'text-success';
+            }
+            return;
+        }
+
+        const currency = getPaymentCurrency();
+        const totalDebt = remainingMap[currency];
+        const otherCurrency = currency === 'USD' ? 'UZS' : 'USD';
+        const otherDebt = remainingMap[otherCurrency];
 
         // Quick-chips valyutaga moslanadi: so'mda 100k/500k/1M, dollarda 10/50/100
         updateQuickChips(currency);
 
-        let payAmount = totalDebt;
-        if (mode === 'partial') {
-            payAmount = Number(partialInput?.value) || 0;
-        }
-
+        const payAmount = Number(partialInput?.value) || 0;
         const remaining = Math.max(0, totalDebt - Math.min(payAmount, totalDebt));
-        if (previewAmount) previewAmount.textContent = formatMoney(payAmount, currency);
+        if (previewAmount) {
+            previewAmount.textContent = formatMoney(payAmount, currency);
+            previewAmount.className = payAmount > totalDebt ? 'text-danger' : 'text-success';
+        }
         if (previewRemaining) {
-            const totalText = otherDebt > 0
-                ? `${formatMoney(remaining, currency)} + ${formatMoney(otherDebt, otherCurrency)}`
-                : formatMoney(remaining, currency);
-            previewRemaining.textContent = totalText;
+            const remMap = { [currency]: remaining, [otherCurrency]: otherDebt };
+            previewRemaining.innerHTML = formatMoneyLinesHTML(remMap);
             previewRemaining.className = (remaining === 0 && otherDebt === 0) ? 'text-success' : 'text-danger';
         }
     }
@@ -1128,8 +1485,8 @@ function setupPaymentForm() {
         const chips = document.querySelectorAll('#partial-amount-group .btn-chip');
         if (chips.length === 0) return;
         const values = currency === 'USD'
-            ? [{ v: 10, label: '10$' }, { v: 50, label: '50$' }, { v: 100, label: '100$' }, { v: 'half', label: '50%' }]
-            : [{ v: 100000, label: '100k' }, { v: 500000, label: '500k' }, { v: 1000000, label: '1M' }, { v: 'half', label: '50%' }];
+            ? [{ v: 10, label: '10 $' }, { v: 50, label: '50 $' }, { v: 100, label: '100 $' }, { v: 'half', label: '50%' }]
+            : [{ v: 100000, label: '100 ming' }, { v: 500000, label: '500 ming' }, { v: 1000000, label: '1 mln' }, { v: 'half', label: '50%' }];
         chips.forEach((chip, i) => {
             chip.setAttribute('data-quick', String(values[i].v));
             chip.textContent = values[i].label;
@@ -1145,13 +1502,15 @@ function setupPaymentForm() {
             const totalDebt = getSelectedDebtInCurrency(opt, currency);
             const payDate = payDateInput?.value.trim() || getTodayFormatted();
 
+            clearFormErrors(form);
+
             if (!clientId) {
-                showToast('Qarzdor mijozni tanlang');
+                setFieldError(select, 'Qarzdor mijozni tanlang');
                 return;
             }
 
             if (!isValidDateString(payDate)) {
-                showToast('To\'lov sanasi noto\'g\'ri (masalan: 20.08.2026)');
+                setFieldError(payDateInput, "To'lov sanasi noto'g'ri. Masalan: 20.08.2026");
                 return;
             }
 
@@ -1159,17 +1518,20 @@ function setupPaymentForm() {
             if (mode === 'partial') {
                 amount = Number(partialInput?.value) || 0;
                 if (amount <= 0) {
-                    showToast('To\'lov summasini kiriting');
+                    setFieldError(partialInput, "To'lov summasini kiriting");
+                    return;
+                }
+                if (totalDebt <= 0) {
+                    setFieldError(partialInput, `Mijozning ${currency === 'USD' ? 'dollar' : "so'm"}dagi qarzi yo'q. Boshqa valyutani tanlang`);
                     return;
                 }
                 if (amount > totalDebt) {
-                    showToast('To\'lov summasi tanlangan valyutadagi qarzdan oshmasligi kerak');
+                    setFieldError(partialInput, `Summa qarzdan oshmasligi kerak (maksimal: ${formatMoney(totalDebt, currency)})`);
                     return;
                 }
             }
 
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Qabul qilinmoqda...';
+            setButtonLoading(submitBtn, true, 'Qabul qilinmoqda…');
 
             try {
                 const res = await apiFetch('/api/payments', {
@@ -1189,14 +1551,15 @@ function setupPaymentForm() {
 
                 const json = await res.json();
                 if (!res.ok || json.error) {
-                    throw new Error(json.error || 'To\'lovni qabul qilishda xatolik');
+                    throw new Error(json.error || "To'lovni qabul qilishda xatolik");
                 }
 
                 hapticSuccess();
-                showToast('✅ To\'lov muvaffaqiyatli qabul qilindi!');
+                showToast(json.is_closed ? "To'lov qabul qilindi — qarz to'liq yopildi" : "To'lov muvaffaqiyatli qabul qilindi", 'success');
 
                 // Reset payment form
-                document.getElementById('payment-form').reset();
+                form?.reset();
+                clearFormErrors(form);
                 if (payDateInput) payDateInput.value = getTodayFormatted();
                 if (infoCard) infoCard.style.display = 'none';
                 if (optionsWrapper) optionsWrapper.style.display = 'none';
@@ -1208,10 +1571,9 @@ function setupPaymentForm() {
                 switchTab('tab-table');
             } catch (err) {
                 hapticError();
-                showToast(`❌ ${err.message}`);
+                showToast(err.message, 'error');
             } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = '✅ To\'lovni Qabul Qilish';
+                setButtonLoading(submitBtn, false);
             }
         });
     }
@@ -1226,8 +1588,14 @@ function switchTab(tabId) {
         tab.classList.toggle('active', tab.id === tabId);
     });
     document.querySelectorAll('.nav-item').forEach(btn => {
-        btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
+        const isActive = btn.getAttribute('data-tab') === tabId;
+        btn.classList.toggle('active', isActive);
+        if (isActive) btn.setAttribute('aria-current', 'page');
+        else btn.removeAttribute('aria-current');
     });
+    // Boshqa tabga o'tilganda tanlash rejimi yopiladi — amal paneli boshqa sahifada qolib ketmasin
+    if (tabId !== 'tab-paid' && paidState.isSelecting) exitPaidSelection();
+    if (tabId !== 'tab-trash' && trashState.isSelecting) exitTrashSelection();
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     if (tabId === 'tab-paid') fetchAndRenderPaidDebts();
@@ -1255,33 +1623,61 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshBtn.addEventListener('click', async () => {
             refreshBtn.classList.add('rotating');
             hapticImpact();
+            refreshBtn.disabled = true;
             await Promise.all([
                 fetchStats(),
                 fetchSummaries(),
                 fetchAndRenderPaidDebts(),
                 fetchAndRenderTrash(),
             ]);
-            setTimeout(() => refreshBtn.classList.remove('rotating'), 600);
-            showToast('Yangilandi');
+            setTimeout(() => {
+                refreshBtn.classList.remove('rotating');
+                refreshBtn.disabled = false;
+            }, 400);
+            showToast("Ma'lumotlar yangilandi", 'success');
         });
     }
+
+    // Bo'sh / xato holatlaridagi tugmalar (delegation — kontent dinamik)
+    document.addEventListener('click', (e) => {
+        const actionBtn = e.target.closest('[data-state-action]');
+        if (!actionBtn) return;
+        const action = actionBtn.getAttribute('data-state-action');
+        hapticImpact();
+        if (action === 'retry-summaries') {
+            const list = document.getElementById('clients-list');
+            if (list) list.innerHTML = skeletonRowsHTML(4);
+            fetchStats();
+            fetchSummaries();
+        } else if (action === 'go-create') {
+            switchTab('tab-create');
+        } else if (action === 'clear-search') {
+            document.getElementById('clear-search-btn')?.click();
+        } else if (action === 'retry-paid') {
+            fetchAndRenderPaidDebts();
+        } else if (action === 'retry-trash') {
+            fetchAndRenderTrash();
+        }
+    });
 
     // Event delegation on clients list container (Single listener for entire list)
     const clientsListContainer = document.getElementById('clients-list');
     if (clientsListContainer) {
         clientsListContainer.addEventListener('click', (e) => {
-            const historyBtn = e.target.closest('.client-history-btn');
-            if (historyBtn) {
-                e.stopPropagation();
-                const clientId = historyBtn.getAttribute('data-client-id');
-                if (clientId) openClientReportModal(clientId);
-                return;
-            }
             const card = e.target.closest('.client-item-card');
             if (card) {
                 const clientId = card.getAttribute('data-client-id');
                 if (clientId) openClientReportModal(clientId);
             }
+        });
+        // Klaviatura: Enter/Space qator bosilishiga teng
+        clientsListContainer.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            const card = e.target.closest('.client-item-card');
+            if (!card) return;
+            e.preventDefault();
+            const clientId = card.getAttribute('data-client-id');
+            if (clientId) openClientReportModal(clientId);
         });
     }
 
@@ -1296,13 +1692,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         searchInput.addEventListener('input', (e) => {
             const val = e.target.value;
-            if (clearSearchBtn) clearSearchBtn.style.display = val ? 'block' : 'none';
+            if (clearSearchBtn) clearSearchBtn.style.display = val ? 'grid' : 'none';
             handleSearch(val);
         });
     }
     if (clearSearchBtn) {
         clearSearchBtn.addEventListener('click', () => {
-            if (searchInput) searchInput.value = '';
+            if (searchInput) {
+                searchInput.value = '';
+                searchInput.focus({ preventScroll: true });
+            }
             state.searchQuery = '';
             clearSearchBtn.style.display = 'none';
             renderClientsList();
@@ -1323,8 +1722,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Filter Chips
     document.querySelectorAll('.chip').forEach(chip => {
         chip.addEventListener('click', () => {
-            document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.chip').forEach(c => {
+                c.classList.remove('active');
+                c.setAttribute('aria-pressed', 'false');
+            });
             chip.classList.add('active');
+            chip.setAttribute('aria-pressed', 'true');
             state.filter = chip.getAttribute('data-filter') || 'all';
             renderClientsList();
             hapticImpact();
@@ -1356,6 +1759,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (select) {
                 select.value = String(clientId);
                 select.dispatchEvent(new Event('change'));
+                if (!select.value) showToast("Bu mijozda to'lanadigan qarz topilmadi", 'info');
             }
         });
     }
@@ -1390,7 +1794,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // pastki navigatsiya bar ekranning o'rtasiga ko'tarilib qolmasligi uchun
     // yashiriladi, foküs ketganda qaytib chiqadi
     const bottomNav = document.querySelector('.bottom-nav');
-    const isFormField = (el) => !!el && ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName);
+    // Checkbox/radio/switch klaviatura ochmaydi — faqat matn kiritish maydonlari hisobga olinadi
+    const isFormField = (el) => !!el && (
+        el.tagName === 'TEXTAREA' ||
+        (el.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit'].includes(el.type))
+    );
     if (bottomNav) {
         document.addEventListener('focusin', (e) => {
             if (isFormField(e.target)) bottomNav.classList.add('nav-keyboard-hidden');
@@ -1497,6 +1905,28 @@ function attachCardGesture(card, onLongPress, onClick) {
 // TAB: YOPILGANLAR (CLOSED DEBTS)
 // ==========================================
 
+// Yopilgan / Korzina qatorlari uchun yagona shablon
+function renderDebtRowHTML(item, { isSelected, cbClass, statusHtml }) {
+    const qty = item.product_quantity > 1 ? ` × ${item.product_quantity}` : '';
+    return `
+        <div class="list-row trash-item ${isSelected ? 'selected' : ''}" data-id="${item.id}">
+            <input type="checkbox" class="trash-item-checkbox ${cbClass}" data-id="${item.id}" ${isSelected ? 'checked' : ''}
+                   aria-label="${escapeHtml(item.product_name)} — ${escapeHtml(item.client_name)}ni tanlash">
+            <div class="row-main">
+                <div class="row-title">${escapeHtml(item.product_name)}${qty}</div>
+                <div class="row-meta">
+                    <span class="row-meta-item">${icon('user')}${escapeHtml(item.client_name)}</span>
+                    <span class="row-meta-item">${icon('calendar')}${escapeHtml(item.debt_date)}</span>
+                </div>
+            </div>
+            <div class="row-side">
+                <div class="row-amount">${formatMoney(item.original_debt, item.currency)}</div>
+                ${statusHtml}
+            </div>
+        </div>
+    `;
+}
+
 const paidState = {
     items: [],
     selected: new Set(),
@@ -1568,35 +1998,23 @@ function renderPaidDebts() {
 
     if (badge) badge.textContent = `${paidState.items.length} ta`;
 
+    document.getElementById('btn-paid-enter-select')?.toggleAttribute('disabled', paidState.items.length === 0);
+
     if (paidState.items.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">🟢</div>
-                <p>Yopilgan qarzlar yo'q</p>
-            </div>
-        `;
+        container.innerHTML = stateBlockHTML({
+            iconName: 'check-circle',
+            title: "Yopilgan qarzlar yo'q",
+            desc: "To'liq to'langan qarzlar shu yerda ko'rinadi.",
+        });
         exitPaidSelection();
         return;
     }
 
-    container.innerHTML = paidState.items.map(item => {
-        const isSelected = paidState.selected.has(item.id);
-        return `
-            <div class="trash-item ${isSelected ? 'selected' : ''}" data-id="${item.id}">
-                <input type="checkbox" class="trash-item-checkbox paid-cb"
-                       data-id="${item.id}" ${isSelected ? 'checked' : ''}>
-                <div class="trash-item-body">
-                    <div class="trash-item-name">${escapeHtml(item.product_name)}${item.product_quantity > 1 ? ` — ${item.product_quantity} ta` : ''}</div>
-                    <div class="trash-item-client">👤 ${escapeHtml(item.client_name)}</div>
-                    <div class="trash-item-meta">
-                        <span>📅 ${item.debt_date}</span>
-                        <span>💰 ${formatMoney(item.original_debt, item.currency)}</span>
-                    </div>
-                </div>
-                <div class="trash-item-price">🟢 Yopilgan</div>
-            </div>
-        `;
-    }).join('');
+    container.innerHTML = paidState.items.map(item => renderDebtRowHTML(item, {
+        isSelected: paidState.selected.has(item.id),
+        cbClass: 'paid-cb',
+        statusHtml: '<span class="badge badge-success">Yopilgan</span>',
+    })).join('');
 
     if (paidState.isSelecting) {
         container.classList.add('selection-active');
@@ -1643,17 +2061,15 @@ function updatePaidToolbar() {
     const cnt = paidState.selected.size;
 
     if (countLabel) {
-        countLabel.textContent = `${cnt} ta tanlandi`;
+        countLabel.textContent = cnt > 0 ? `${cnt} ta tanlandi` : 'Yozuvlarni tanlang';
     }
-    if (moveBtn) {
+    if (moveBtn && !moveBtn.dataset.originalHtml) {
         moveBtn.disabled = cnt === 0;
-        moveBtn.textContent = cnt > 0
-            ? `🗑 Tanlanganlarni Korzinaga Yuborish (${cnt})`
-            : `🗑 Tanlanganlarni Korzinaga Yuborish`;
+        moveBtn.innerHTML = `${icon('trash')}${cnt > 0 ? `Korzinaga yuborish (${cnt})` : 'Korzinaga yuborish'}`;
     }
     if (allBtn) {
         const allSelected = paidState.items.length > 0 && cnt === paidState.items.length;
-        allBtn.textContent = allSelected ? '◻️ Bekor' : '☑️ Barchasi';
+        allBtn.textContent = allSelected ? 'Hech biri' : 'Barchasi';
     }
 }
 
@@ -1661,30 +2077,37 @@ async function fetchAndRenderPaidDebts() {
     const container = document.getElementById('paid-debts-list');
     if (!container) return;
     try {
-        const res = await apiFetch('/api/paid-debts');
-        if (!res.ok) throw new Error('Yuklab bo\'lmadi');
+        const res = await apiFetch(`/api/paid-debts?limit=${LIST_LIMIT}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         paidState.items = await res.json();
         paidState.selected.clear();
         renderPaidDebts();
     } catch (err) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${err.message}</p></div>`;
+        console.error('Error fetching paid debts:', err);
+        container.innerHTML = stateBlockHTML({
+            iconName: 'alert-triangle',
+            title: "Yopilgan qarzlarni yuklab bo'lmadi",
+            desc: "Internet aloqasini tekshiring va qayta urinib ko'ring.",
+            action: { id: 'retry-paid', label: 'Qayta urinish' },
+            isError: true,
+        });
     }
 }
 
 function setupPaidTab() {
-    // "🔘 Tanlash" tugmasi
+    // "Tanlash" tugmasi
     document.getElementById('btn-paid-enter-select')?.addEventListener('click', () => {
         enterPaidSelection();
         hapticImpact();
     });
 
-    // "✕ Bekor" tugmasi
+    // "Bekor qilish" tugmasi
     document.getElementById('btn-paid-cancel-select')?.addEventListener('click', () => {
         exitPaidSelection();
         hapticImpact();
     });
 
-    // "☑️ Barchasi" tugmasi
+    // "Barchasi / Hech biri" tugmasi
     document.getElementById('btn-paid-select-all-toggle')?.addEventListener('click', () => {
         const listEl = document.getElementById('paid-debts-list');
         if (paidState.selected.size === paidState.items.length) {
@@ -1700,15 +2123,14 @@ function setupPaidTab() {
         hapticImpact();
     });
 
-    // "🗑 Tanlanganlarni Korzinaga Yuborish" tugmasi
+    // "Korzinaga yuborish" tugmasi
     const moveBtn = document.getElementById('btn-move-to-trash');
     if (moveBtn) {
         moveBtn.addEventListener('click', async () => {
             const ids = [...paidState.selected];
             if (ids.length === 0) return;
 
-            moveBtn.disabled = true;
-            moveBtn.textContent = 'Yuborilmoqda...';
+            setButtonLoading(moveBtn, true, 'Yuborilmoqda…');
 
             try {
                 const res = await apiFetch('/api/trash/move', {
@@ -1719,7 +2141,8 @@ function setupPaidTab() {
                 const json = await res.json();
                 if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
                 hapticSuccess();
-                showToast(`🗑 ${json.moved} ta qarz korzinaga yuborildi`);
+                showToast(`${json.moved} ta yozuv korzinaga yuborildi`, 'success');
+                setButtonLoading(moveBtn, false);
                 exitPaidSelection();
                 await Promise.all([
                     fetchStats(),
@@ -1729,8 +2152,8 @@ function setupPaidTab() {
                 ]);
             } catch (err) {
                 hapticError();
-                showToast(`❌ ${err.message}`);
-                moveBtn.disabled = false;
+                showToast(err.message, 'error');
+                setButtonLoading(moveBtn, false);
                 updatePaidToolbar();
             }
         });
@@ -1813,13 +2236,14 @@ function renderTrash() {
 
     if (badge) badge.textContent = `${trashState.items.length} ta`;
 
+    document.getElementById('btn-trash-enter-select')?.toggleAttribute('disabled', trashState.items.length === 0);
+
     if (trashState.items.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">🗑</div>
-                <p>Korzina bo'sh</p>
-            </div>
-        `;
+        container.innerHTML = stateBlockHTML({
+            iconName: 'trash',
+            title: "Korzina bo'sh",
+            desc: "Yopilgan bo'limidan yuborilgan yozuvlar shu yerda saqlanadi.",
+        });
         if (purgeBar) purgeBar.style.display = 'none';
         exitTrashSelection();
         return;
@@ -1827,24 +2251,11 @@ function renderTrash() {
 
     if (purgeBar) purgeBar.style.display = 'flex';
 
-    container.innerHTML = trashState.items.map(item => {
-        const isSelected = trashState.selected.has(item.id);
-        return `
-            <div class="trash-item ${isSelected ? 'selected' : ''}" data-id="${item.id}">
-                <input type="checkbox" class="trash-item-checkbox trash-cb"
-                       data-id="${item.id}" ${isSelected ? 'checked' : ''}>
-                <div class="trash-item-body">
-                    <div class="trash-item-name">${escapeHtml(item.product_name)}${item.product_quantity > 1 ? ` — ${item.product_quantity} ta` : ''}</div>
-                    <div class="trash-item-client">👤 ${escapeHtml(item.client_name)}</div>
-                    <div class="trash-item-meta">
-                        <span>📅 ${item.debt_date}</span>
-                        <span>💰 ${formatMoney(item.original_debt, item.currency)}</span>
-                    </div>
-                </div>
-                <div class="trash-item-price" style="color: var(--text-muted);">🗑</div>
-            </div>
-        `;
-    }).join('');
+    container.innerHTML = trashState.items.map(item => renderDebtRowHTML(item, {
+        isSelected: trashState.selected.has(item.id),
+        cbClass: 'trash-cb',
+        statusHtml: '<span class="badge badge-neutral">Korzinada</span>',
+    })).join('');
 
     if (trashState.isSelecting) {
         container.classList.add('selection-active');
@@ -1889,17 +2300,15 @@ function updateTrashToolbar() {
     const cnt = trashState.selected.size;
 
     if (countLabel) {
-        countLabel.textContent = `${cnt} ta tanlandi`;
+        countLabel.textContent = cnt > 0 ? `${cnt} ta tanlandi` : 'Yozuvlarni tanlang';
     }
-    if (restoreBtn) {
+    if (restoreBtn && !restoreBtn.dataset.originalHtml) {
         restoreBtn.disabled = cnt === 0;
-        restoreBtn.textContent = cnt > 0
-            ? `↩️ Tanlanganlarni Yopilganga Qaytarish (${cnt})`
-            : `↩️ Tanlanganlarni Yopilganga Qaytarish`;
+        restoreBtn.innerHTML = `${icon('restore')}${cnt > 0 ? `Yopilganlarga qaytarish (${cnt})` : 'Yopilganlarga qaytarish'}`;
     }
     if (allBtn) {
         const allSelected = trashState.items.length > 0 && cnt === trashState.items.length;
-        allBtn.textContent = allSelected ? '◻️ Bekor' : '☑️ Barchasi';
+        allBtn.textContent = allSelected ? 'Hech biri' : 'Barchasi';
     }
 }
 
@@ -1907,16 +2316,24 @@ function updateTrashToolbar() {
 async function fetchAndRenderTrash() {
     const container = document.getElementById('trash-list');
     if (!container) return;
-    container.innerHTML = '<div class="empty-state"><p>Yuklanmoqda...</p></div>';
+    if (!trashState.items.length) container.innerHTML = skeletonRowsHTML(2);
     try {
-        const res = await apiFetch('/api/trash');
-        if (!res.ok) throw new Error('Yuklab bo\'lmadi');
+        const res = await apiFetch(`/api/trash?limit=${LIST_LIMIT}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         trashState.items = await res.json();
         trashState.selected.clear();
         trashState.isSelecting = false;
         renderTrash();
     } catch (err) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${err.message}</p></div>`;
+        console.error('Error fetching trash:', err);
+        container.innerHTML = stateBlockHTML({
+            iconName: 'alert-triangle',
+            title: "Korzinani yuklab bo'lmadi",
+            desc: "Internet aloqasini tekshiring va qayta urinib ko'ring.",
+            action: { id: 'retry-trash', label: 'Qayta urinish' },
+            isError: true,
+        });
+        document.getElementById('trash-purge-bar')?.style.setProperty('display', 'none');
     }
 }
 
@@ -1924,30 +2341,41 @@ async function fetchAndRenderTrash() {
 function showPurgeConfirm() {
     const bar = document.getElementById('trash-purge-bar');
     if (!bar) return;
+    hapticImpact();
     bar.innerHTML = `
-        <span class="purge-bar-text">⚠️ Ishonchingiz komilmi? Bu amalni bekor qilib bo'lmaydi!</span>
-        <div style="display:flex;gap:8px;">
-            <button id="btn-purge-cancel" class="btn btn-secondary btn-sm">Bekor</button>
-            <button id="btn-purge-confirm" class="btn btn-danger btn-sm">Ha, tozala</button>
+        <div class="danger-zone-texts" role="alert">
+            <span class="danger-zone-title">${trashState.items.length} ta yozuv butunlay o'chirilsinmi?</span>
+            <span class="purge-bar-text">Bu amalni ortga qaytarib bo'lmaydi.</span>
+        </div>
+        <div class="danger-zone-actions">
+            <button id="btn-purge-cancel" class="btn btn-secondary btn-sm" type="button">Bekor qilish</button>
+            <button id="btn-purge-confirm" class="btn btn-danger btn-sm" type="button">Ha, o'chirish</button>
         </div>
     `;
     document.getElementById('btn-purge-cancel')?.addEventListener('click', hidePurgeConfirm);
     document.getElementById('btn-purge-confirm')?.addEventListener('click', executePurge);
+    document.getElementById('btn-purge-cancel')?.focus({ preventScroll: true });
 }
 
 function hidePurgeConfirm() {
     const bar = document.getElementById('trash-purge-bar');
     if (!bar) return;
     bar.innerHTML = `
-        <span class="purge-bar-text">⚠️ Tozalangandan so'ng qayta tiklab bo'lmaydi</span>
-        <button id="btn-purge-trash" class="btn btn-danger btn-sm">🗑 Korzinani Tozalash</button>
+        <div class="danger-zone-texts">
+            <span class="danger-zone-title">Korzinani tozalash</span>
+            <span class="purge-bar-text">Barcha yozuvlar butunlay o'chiriladi. Bu amalni ortga qaytarib bo'lmaydi.</span>
+        </div>
+        <button id="btn-purge-trash" class="btn btn-danger-outline btn-sm" type="button">${icon('trash')} Tozalash</button>
     `;
     document.getElementById('btn-purge-trash')?.addEventListener('click', showPurgeConfirm);
 }
 
 async function executePurge() {
     const bar = document.getElementById('trash-purge-bar');
-    if (bar) bar.innerHTML = '<span class="purge-bar-text">Tozalanmoqda...</span>';
+    const confirmBtn = document.getElementById('btn-purge-confirm');
+    setButtonLoading(confirmBtn, true, 'O\'chirilmoqda…');
+    const cancelBtn = document.getElementById('btn-purge-cancel');
+    if (cancelBtn) cancelBtn.disabled = true;
     try {
         const res = await apiFetch('/api/trash/purge', {
             method: 'POST',
@@ -1956,7 +2384,8 @@ async function executePurge() {
         const json = await res.json();
         if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
         hapticSuccess();
-        showToast(`🗑 ${json.deleted} ta yozuv butunlay o'chirildi`);
+        showToast(`${json.deleted} ta yozuv butunlay o'chirildi`, 'success');
+        hidePurgeConfirm();
         exitTrashSelection();
         await Promise.all([
             fetchStats(),
@@ -1966,25 +2395,25 @@ async function executePurge() {
         ]);
     } catch (err) {
         hapticError();
-        showToast(`❌ ${err.message}`);
+        showToast(err.message, 'error');
         hidePurgeConfirm();
     }
 }
 
 function setupTrashTab() {
-    // "🔘 Tanlash" tugmasi
+    // "Tanlash" tugmasi
     document.getElementById('btn-trash-enter-select')?.addEventListener('click', () => {
         enterTrashSelection();
         hapticImpact();
     });
 
-    // "✕ Bekor" tugmasi
+    // "Bekor qilish" tugmasi
     document.getElementById('btn-trash-cancel-select')?.addEventListener('click', () => {
         exitTrashSelection();
         hapticImpact();
     });
 
-    // "☑️ Barchasi" tugmasi
+    // "Barchasi / Hech biri" tugmasi
     document.getElementById('btn-trash-select-all-toggle')?.addEventListener('click', () => {
         if (trashState.selected.size === trashState.items.length) {
             trashState.selected.clear();
@@ -2003,8 +2432,7 @@ function setupTrashTab() {
             const ids = [...trashState.selected];
             if (ids.length === 0) return;
 
-            restoreBtn.disabled = true;
-            restoreBtn.textContent = 'Qaytarilmoqda...';
+            setButtonLoading(restoreBtn, true, 'Qaytarilmoqda…');
             try {
                 const res = await apiFetch('/api/trash/restore', {
                     method: 'POST',
@@ -2014,7 +2442,8 @@ function setupTrashTab() {
                 const json = await res.json();
                 if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
                 hapticSuccess();
-                showToast(`✅ ${json.restored} ta qarz yopilganga qaytarildi`);
+                showToast(`${json.restored} ta yozuv yopilganlarga qaytarildi`, 'success');
+                setButtonLoading(restoreBtn, false);
                 exitTrashSelection();
                 await Promise.all([
                     fetchStats(),
@@ -2024,8 +2453,8 @@ function setupTrashTab() {
                 ]);
             } catch (err) {
                 hapticError();
-                showToast(`❌ ${err.message}`);
-                restoreBtn.disabled = false;
+                showToast(err.message, 'error');
+                setButtonLoading(restoreBtn, false);
                 updateTrashToolbar();
             }
         });
