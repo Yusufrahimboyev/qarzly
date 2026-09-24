@@ -89,7 +89,7 @@ function formatMoneyLinesHTML(map) {
 }
 
 function icon(name, extraClass = '') {
-    return `<svg class="icon ${extraClass}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+    return `<svg width="20" height="20" class="icon ${extraClass}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 }
 
 function getInitials(name) {

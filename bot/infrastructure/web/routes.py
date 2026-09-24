@@ -10,8 +10,10 @@ balki birinchi so'rovning javobini qaytaradi.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -245,11 +247,59 @@ async def health_check(request: web.Request) -> web.Response:
     )
 
 
+_STATIC_REF_RE = re.compile(r'(["\'])/static/([^"\'?#]+)\1')
+
+
+def _asset_version(rel_path: str) -> str | None:
+    """Static fayl mazmunidan qisqa hash — fayl o'zgarsa URL ham o'zgaradi."""
+    asset = (_STATIC_DIR / rel_path).resolve()
+    if _STATIC_DIR.resolve() not in asset.parents or not asset.is_file():
+        return None
+    return hashlib.sha256(asset.read_bytes()).hexdigest()[:12]
+
+
+def render_index_html(html: str) -> str:
+    """`/static/...` havolalariga `?v=<hash>` qo'shadi (cache busting).
+
+    iOS Telegram (WKWebView) versiyasiz CSS/JS'ni uzoq keshlaydi: yangi HTML
+    eski CSS bilan ochilib, interfeys buziladi. Versiyali URL har deployda
+    brauzerni yangi faylni yuklashga majbur qiladi.
+    """
+
+    def _sub(match: re.Match[str]) -> str:
+        quote, rel = match.group(1), match.group(2)
+        version = _asset_version(rel)
+        if version is None:
+            return match.group(0)
+        return f"{quote}/static/{rel}?v={version}{quote}"
+
+    return _STATIC_REF_RE.sub(_sub, html)
+
+
+@web.middleware
+async def static_cache_middleware(request: web.Request, handler):
+    """Versiyali static fayllar uzoq keshlanadi, versiyasizlari har safar tekshiriladi."""
+    response = await handler(request)
+    if request.path.startswith("/static/") and response.status == 200:
+        if request.query.get("v"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 async def index_handler(request: web.Request) -> web.StreamResponse:
     """Mini App bosh sahifasini (index.html) qaytaradi."""
     index_path = _TEMPLATES_DIR / "index.html"
     if index_path.exists():
-        return web.FileResponse(index_path)
+        html = render_index_html(index_path.read_text(encoding="utf-8"))
+        return web.Response(
+            text=html,
+            content_type="text/html",
+            charset="utf-8",
+            # HTML hech qachon keshdan olinmaydi — har ochilishda eng yangi asset versiyalari
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     return web.Response(
         text="<h1>Qarz Daftar WebApp</h1><p>Frontend fayllari topilmadi.</p>",
         content_type="text/html",

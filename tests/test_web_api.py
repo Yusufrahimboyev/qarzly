@@ -18,6 +18,7 @@ from bot.infrastructure.web.routes import (
     CLIENT_SERVICE_KEY,
     DEBT_SERVICE_KEY,
     setup_routes,
+    static_cache_middleware,
 )
 from bot.infrastructure.web.telegram_auth import (
     INIT_DATA_HEADER,
@@ -90,6 +91,7 @@ def make_app(
     app = web.Application(
         middlewares=[
             security_headers_middleware,
+            static_cache_middleware,
             create_auth_middleware(
                 settings.token,
                 settings.admin_id_list,
@@ -874,3 +876,32 @@ async def test_rate_limit_returns_429(
 
     assert statuses[:3] == [200, 200, 200]
     assert 429 in statuses[3:]
+
+
+@pytest.mark.asyncio
+async def test_index_assets_are_versioned_and_html_not_cached(
+    aiohttp_app: web.Application,
+) -> None:
+    """iOS WKWebView eski CSS'ni keshdan olmasligi uchun asset URL'lari versiyali."""
+    import re
+
+    from aiohttp.test_utils import TestClient, TestServer
+    client = TestClient(TestServer(aiohttp_app))
+    await client.start_server()
+    try:
+        resp = await client.get("/")
+        assert resp.status == 200
+        assert "no-store" in resp.headers["Cache-Control"]
+        html = await resp.text()
+        css = re.search(r'/static/css/style\.css\?v=([0-9a-f]{12})', html)
+        js = re.search(r'/static/js/app\.js\?v=([0-9a-f]{12})', html)
+        assert css and js
+
+        versioned = await client.get(f"/static/css/style.css?v={css.group(1)}")
+        assert versioned.status == 200
+        assert "immutable" in versioned.headers["Cache-Control"]
+
+        plain = await client.get("/static/css/style.css")
+        assert plain.headers["Cache-Control"] == "no-cache"
+    finally:
+        await client.close()
