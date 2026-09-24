@@ -2,565 +2,587 @@
 <html lang="uz">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Qarz Daftar — Telegram Mini App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <title>Qarz Daftar</title>
     <!-- Telegram WebApp Script -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <!-- Ambient Mesh Background Glows for Glassmorphism -->
-    <div class="ambient-mesh">
-        <div class="ambient-glow glow-1"></div>
-        <div class="ambient-glow glow-2"></div>
-        <div class="ambient-glow glow-3"></div>
-    </div>
+    <!-- Icon sprite: bir xil uslubdagi (24px, stroke) ikonkalar to'plami -->
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+        <symbol id="i-logo" viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/></symbol>
+        <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+        <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+        <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></symbol>
+        <symbol id="i-alert-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></symbol>
+        <symbol id="i-alert-triangle" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+        <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h14a2 2 0 0 1 2 2v3"/><path d="M3 5v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M21 12h-4a2 2 0 0 0 0 4h4z"/></symbol>
+        <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+        <symbol id="i-plus-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+        <symbol id="i-card" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></symbol>
+        <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></symbol>
+        <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+        <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+        <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+        <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></symbol>
+        <symbol id="i-package" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></symbol>
+        <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></symbol>
+        <symbol id="i-banknote" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></symbol>
+        <symbol id="i-restore" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5"/></symbol>
+        <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+        <symbol id="i-select" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></symbol>
+        <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M2 2l20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 12.86a10 10 0 0 1 5.17-2.7M19 12.86a10 10 0 0 0-2.07-1.5"/><path d="M2 8.82a15 15 0 0 1 4.18-2.64M22 8.82a15 15 0 0 0-11.29-3.76"/><path d="M12 20h.01"/></symbol>
+        <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
+        <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></symbol>
+    </svg>
 
     <div id="app" class="app-wrapper">
         <!-- Top App Bar -->
         <header class="app-header">
-            <div class="header-content">
-                <div class="brand">
-                    <div class="brand-icon">📖</div>
-                    <div>
-                        <h1 class="brand-title">Qarz Daftar</h1>
-                        <p class="brand-subtitle">Hisob-kitob tizimi</p>
-                    </div>
-                </div>
-                <button id="btn-refresh" class="icon-btn" title="Yangilash" aria-label="Yangilash">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-                    </svg>
-                </button>
-            </div>
-
-            <!-- Stats Overview Cards -->
-            <div class="stats-grid">
-                <div class="stat-card stat-debt stat-hero">
-                    <div class="stat-hero-main">
-                        <div class="stat-hero-icon">💰</div>
-                        <div class="stat-hero-texts">
-                            <span class="stat-label">Jami Qoldiq Qarz</span>
-                            <span id="stat-total-debt" class="stat-value stat-hero-val">0 so'm</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="stat-card stat-sub">
-                    <div class="stat-sub-inner">
-                        <span class="stat-sub-icon">🔴</span>
-                        <div class="stat-sub-info">
-                            <span class="stat-label">Qarzdorlar</span>
-                            <span id="stat-debtors-count" class="stat-value">0 ta</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="stat-card stat-sub">
-                    <div class="stat-sub-inner">
-                        <span class="stat-sub-icon">👥</span>
-                        <div class="stat-sub-info">
-                            <span class="stat-label">Mijozlar</span>
-                            <span id="stat-clients-count" class="stat-value">0 ta</span>
-                        </div>
-                    </div>
+            <div class="brand">
+                <div class="brand-icon" aria-hidden="true"><svg class="icon"><use href="#i-logo"/></svg></div>
+                <div class="brand-texts">
+                    <h1 class="brand-title">Qarz Daftar</h1>
+                    <p class="brand-subtitle">Mijozlar qarzi hisobi</p>
                 </div>
             </div>
+            <button id="btn-refresh" class="icon-btn" type="button" title="Ma'lumotlarni yangilash" aria-label="Ma'lumotlarni yangilash">
+                <svg class="icon"><use href="#i-refresh"/></svg>
+            </button>
         </header>
 
-        <!-- Main Content Area with 3 Tabs -->
+        <!-- Tarmoq holati (offline) -->
+        <div id="network-banner" class="alert alert-warning network-banner" role="status" hidden>
+            <svg class="icon" aria-hidden="true"><use href="#i-wifi-off"/></svg>
+            <span>Internet aloqasi yo'q. Ko'rsatilgan ma'lumotlar eskirgan bo'lishi mumkin.</span>
+        </div>
+
         <main class="app-main">
-            <!-- TAB 1: JADVAL (DEBTS TABLE) -->
-            <section id="tab-table" class="tab-pane active">
-                <div class="search-bar-wrapper">
-                    <div class="search-input-group">
-                        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                        </svg>
-                        <input type="text" id="table-search-input" placeholder="Mijoz ismi yoki telefon..." autocomplete="off">
-                        <button id="clear-search-btn" class="clear-btn" style="display: none;">&times;</button>
+            <!-- TAB: MIJOZLAR (JADVAL) -->
+            <section id="tab-table" class="tab-pane active" aria-labelledby="clients-heading">
+                <h2 id="clients-heading" class="visually-hidden">Mijozlar</h2>
+                <!-- Umumiy ko'rsatkichlar -->
+                <div class="kpi-card" aria-live="polite">
+                    <div class="kpi-main">
+                        <span class="kpi-main-label">Jami qoldiq qarz</span>
+                        <span id="stat-total-debt" class="kpi-main-value is-loading">—</span>
+                    </div>
+                    <div class="kpi-metrics">
+                        <div class="kpi-metric">
+                            <span class="kpi-metric-icon tone-danger" aria-hidden="true"><svg class="icon"><use href="#i-alert-circle"/></svg></span>
+                            <div class="kpi-metric-texts">
+                                <span class="kpi-metric-label">Qarzdorlar</span>
+                                <span id="stat-debtors-count" class="kpi-metric-value">—</span>
+                            </div>
+                        </div>
+                        <div class="kpi-metric">
+                            <span class="kpi-metric-icon tone-neutral" aria-hidden="true"><svg class="icon"><use href="#i-users"/></svg></span>
+                            <div class="kpi-metric-texts">
+                                <span class="kpi-metric-label">Mijozlar</span>
+                                <span id="stat-clients-count" class="kpi-metric-value">—</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Filter & Sort Toolbar -->
-                <div class="filter-sort-bar">
-                    <div class="filter-chips">
-                        <button class="chip active" data-filter="all">Barchasi</button>
-                        <button class="chip" data-filter="debtors">🔴 Qarzdorlar</button>
-                        <button class="chip" data-filter="paid">🟢 Yopilganlar</button>
-                    </div>
-                    <div class="sort-select-wrapper">
-                        <select id="table-sort-select" class="sort-select" aria-label="Saralash">
-                            <option value="name_asc">🔤 Ism (A → Z)</option>
-                            <option value="name_desc">🔤 Ism (Z → A)</option>
-                            <option value="date_desc">📅 Sana (Eng yangi)</option>
-                            <option value="date_asc">📅 Sana (Eng eski)</option>
-                            <option value="debt_desc">💰 Qarz (Katta → Kichik)</option>
-                            <option value="debt_asc">💰 Qarz (Kichik → Katta)</option>
+                <!-- Qidiruv -->
+                <div class="search-field">
+                    <svg class="icon search-icon" aria-hidden="true"><use href="#i-search"/></svg>
+                    <input type="search" id="table-search-input" placeholder="Ism yoki telefon raqami" autocomplete="off" aria-label="Mijozlarni qidirish" enterkeyhint="search">
+                    <button id="clear-search-btn" class="clear-btn" type="button" aria-label="Qidiruvni tozalash" style="display: none;">
+                        <svg class="icon"><use href="#i-x"/></svg>
+                    </button>
+                </div>
+
+                <!-- Filtr va saralash -->
+                <div class="segmented" role="group" aria-label="Holat bo'yicha filtr">
+                    <button type="button" class="chip active" data-filter="all" aria-pressed="true">Barchasi <span class="chip-count" data-count="all"></span></button>
+                    <button type="button" class="chip" data-filter="debtors" aria-pressed="false">Qarzdorlar <span class="chip-count" data-count="debtors"></span></button>
+                    <button type="button" class="chip" data-filter="paid" aria-pressed="false">Qarzsiz <span class="chip-count" data-count="paid"></span></button>
+                </div>
+
+                <div class="list-toolbar">
+                    <span id="clients-result-count" class="list-toolbar-count" aria-live="polite"></span>
+                    <label class="sort-field">
+                        <span class="visually-hidden">Saralash</span>
+                        <select id="table-sort-select" aria-label="Saralash">
+                            <option value="name_asc">Ism: A → Z</option>
+                            <option value="name_desc">Ism: Z → A</option>
+                            <option value="date_desc">Sana: avval yangilari</option>
+                            <option value="date_asc">Sana: avval eskilari</option>
+                            <option value="debt_desc">Qarz: kattasidan</option>
+                            <option value="debt_asc">Qarz: kichigidan</option>
                         </select>
-                    </div>
+                        <svg class="icon sort-chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+                    </label>
                 </div>
 
-                <!-- Client List Container -->
-                <div id="clients-list" class="clients-list">
-                    <div class="loading-spinner">Yuklanmoqda...</div>
+                <!-- Mijozlar ro'yxati -->
+                <div id="clients-list" class="list" aria-busy="true">
+                    <div class="skeleton-row"></div>
+                    <div class="skeleton-row"></div>
+                    <div class="skeleton-row"></div>
+                    <div class="skeleton-row"></div>
                 </div>
             </section>
 
-            <!-- TAB 2: YARATISH (NEW DEBT WIZARD) -->
-            <section id="tab-create" class="tab-pane">
-                <div class="form-container">
-                    <div class="form-header">
-                        <h2>➕ Yangi Qarz Yozuvi</h2>
-                        <p>Tovar, exchange va boshlang'ich pulni kiriting</p>
-                    </div>
+            <!-- TAB: YANGI QARZ -->
+            <section id="tab-create" class="tab-pane" aria-labelledby="nav-tab-create">
+                <div class="page-header">
+                    <h2 class="page-title">Yangi qarz</h2>
+                    <p class="page-desc">Mijoz, tovarlar va chegirmalarni kiriting — qarz summasi avtomatik hisoblanadi.</p>
+                </div>
 
-                    <form id="create-debt-form" onsubmit="return false;">
-                        <!-- Sana -->
-                        <div class="form-group">
-                            <label for="create-date">📅 Qarz olingan sana</label>
-                            <div class="input-with-action">
-                                <input type="text" id="create-date" placeholder="DD.MM.YYYY (masalan: 16.08.2026)" required>
-                                <button type="button" id="btn-set-today" class="btn-sm">Bugun</button>
+                <form id="create-debt-form" novalidate>
+                    <!-- 1. Mijoz -->
+                    <div class="card form-section">
+                        <h3 class="section-heading"><span class="step-num">1</span> Mijoz</h3>
+
+                        <!-- Tanlangan mavjud mijoz banneri (jadval yoki hisobotdan) -->
+                        <div id="create-client-banner" class="selected-client" style="display: none;">
+                            <div class="avatar" aria-hidden="true"><svg class="icon"><use href="#i-user"/></svg></div>
+                            <div class="selected-client-texts">
+                                <span class="selected-client-name" id="banner-client-name">-</span>
+                                <span class="selected-client-phone" id="banner-client-phone">-</span>
                             </div>
+                            <button type="button" id="banner-clear-btn" class="btn btn-ghost btn-sm" title="Boshqa mijoz kiritish">Almashtirish</button>
                         </div>
 
-                        <!-- Mijoz Ma'lumotlari -->
-                        <div class="form-group">
-                            <label for="create-client-name">👤 Qarz oluvchi (Ism-Familiya)</label>
-                            <input type="text" id="create-client-name" placeholder="Masalan: Aliyev Anvar" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="create-client-phone">📞 Telefon raqami (ixtiyoriy)</label>
-                            <input type="tel" id="create-client-phone" placeholder="+998901234567 (ixtiyoriy)">
-                        </div>
-
-                        <!-- Tanlangan mavjud mijoz banneri (jadvaldan bosilganda) -->
-                        <div id="create-client-banner" class="create-client-banner" style="display: none;">
-                            <div class="banner-icon">➕</div>
-                            <div class="banner-texts">
-                                <span class="banner-title" id="banner-client-name">-</span>
-                                <span class="banner-phone" id="banner-client-phone">-</span>
+                        <!-- Tanlangan mijozning joriy qarzlari -->
+                        <div id="banner-debts-card" class="existing-debts" style="display: none;">
+                            <div class="existing-debts-total">
+                                <span>Joriy qarzi</span>
+                                <strong id="banner-client-debt" class="text-danger">-</strong>
                             </div>
-                            <button type="button" id="banner-clear-btn" class="banner-clear" title="Boshqa mijoz kiriting">&times;</button>
-                        </div>
-
-                        <!-- Tanlangan mijozning joriy qarzlari (eski qarzlar) -->
-                        <div id="banner-debts-card" class="banner-debts-card" style="display: none;">
-                            <div class="banner-debt-total">
-                                <span>🔴 Joriy qarzi:</span>
-                                <strong id="banner-client-debt">-</strong>
-                            </div>
-                            <div class="banner-debts-title">📦 Eski qarzlari:</div>
+                            <div class="existing-debts-title">Yopilmagan qarzlari</div>
                             <div id="banner-debts-list"></div>
                         </div>
 
-                        <!-- Tovarlar ro'yxati (dinamik, har biri o'z valyutasida) -->
+                        <div class="client-fields">
+                            <div class="form-group">
+                                <label for="create-client-name">Ism-familiya <span class="req" aria-hidden="true">*</span></label>
+                                <div class="combobox">
+                                    <input type="text" id="create-client-name" placeholder="Yangi yoki mavjud mijoz ismi" autocomplete="off" autocapitalize="words" required
+                                           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="client-suggestions">
+                                    <div id="client-suggestions" class="dropdown" role="listbox" aria-label="Mavjud mijozlar" hidden></div>
+                                </div>
+                                <div id="client-duplicate-hint" class="alert alert-info field-alert" role="status" hidden></div>
+                            </div>
+                            <div class="form-group">
+                                <label for="create-client-phone">Telefon raqami <span class="optional">ixtiyoriy</span></label>
+                                <input type="tel" id="create-client-phone" placeholder="+998 90 123 45 67" autocomplete="off" inputmode="tel">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="create-date">Qarz sanasi <span class="req" aria-hidden="true">*</span></label>
+                            <div class="input-with-action">
+                                <input type="text" id="create-date" class="date-input" placeholder="KK.OO.YYYY" inputmode="numeric" maxlength="10" autocomplete="off" required>
+                                <button type="button" id="btn-set-today" class="btn btn-secondary btn-sm">Bugun</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. Tovarlar -->
+                    <div class="card form-section">
+                        <h3 class="section-heading"><span class="step-num">2</span> Tovarlar</h3>
                         <div id="products-container">
                             <div class="product-group" data-product-index="0">
+                                <div class="product-group-header">
+                                    <span class="product-group-title">1-tovar</span>
+                                </div>
                                 <div class="form-group">
-                                    <label>📦 <span class="product-label-num">1</span>-tovar nomi</label>
-                                    <input type="text" class="product-name" placeholder="Masalan: Shina, Akkumulyator" required>
+                                    <label>Tovar nomi <span class="req" aria-hidden="true">*</span></label>
+                                    <input type="text" class="product-name" placeholder="Masalan: Shina, Akkumulyator" autocomplete="off" required>
                                 </div>
                                 <div class="product-row">
-                                    <div class="form-group product-row-item">
-                                        <label>🔢 Nechta</label>
-                                        <input type="number" class="product-qty" placeholder="1" min="1" step="1" value="1" required>
+                                    <div class="form-group">
+                                        <label>Soni</label>
+                                        <input type="number" class="product-qty" placeholder="1" min="1" step="1" value="1" inputmode="numeric" required>
                                     </div>
-                                    <div class="form-group product-row-item">
-                                        <label>💰 Narxi</label>
-                                        <input type="number" class="product-price" placeholder="2500000" min="1" step="1000" required>
-                                    </div>
-                                </div>
-                                <div class="product-currency-row">
-                                    <span class="product-currency-label">💱 Valyuta:</span>
-                                    <div class="currency-chips">
-                                        <button type="button" class="cur-chip active" data-currency="UZS">💵 So'm</button>
-                                        <button type="button" class="cur-chip" data-currency="USD">$ Dollar</button>
+                                    <div class="form-group">
+                                        <label>Narxi (1 dona) <span class="req" aria-hidden="true">*</span></label>
+                                        <input type="number" class="product-price" placeholder="0" min="1" step="1000" inputmode="numeric" required>
                                     </div>
                                 </div>
-                                <div class="product-subtotal">
-                                    <span>Jami:</span>
-                                    <strong class="product-subtotal-val">0 so'm</strong>
+                                <div class="product-footer">
+                                    <div class="currency-chips" role="group" aria-label="Valyuta">
+                                        <button type="button" class="cur-chip active" data-currency="UZS" aria-pressed="true">So'm</button>
+                                        <button type="button" class="cur-chip" data-currency="USD" aria-pressed="false">Dollar</button>
+                                    </div>
+                                    <div class="product-subtotal">
+                                        <span>Jami</span>
+                                        <strong class="product-subtotal-val">0 so'm</strong>
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
-                        <button type="button" id="btn-add-product" class="btn btn-outline btn-add-product">
-                            ➕ Yana tovar qo'shish
+                        <button type="button" id="btn-add-product" class="btn btn-dashed btn-block">
+                            <svg class="icon"><use href="#i-plus"/></svg> Yana tovar qo'shish
                         </button>
+                    </div>
 
-                        <!-- Exchange (Ayirboshlash) Toggle -->
-                        <div class="toggle-card">
+                    <!-- 3. Chegirmalar -->
+                    <div class="card form-section">
+                        <h3 class="section-heading"><span class="step-num">3</span> Chegirmalar <span class="optional">ixtiyoriy</span></h3>
+
+                        <div class="toggle-row">
                             <div class="toggle-header">
-                                <div class="toggle-info">
-                                    <span class="toggle-title">🔄 Ayirboshlash (Exchange)</span>
-                                    <span class="toggle-desc">Mijoz o'rniga boshqa tovar berdimi?</span>
-                                </div>
-                                <label class="switch">
-                                    <input type="checkbox" id="create-exchange-toggle">
-                                    <span class="slider"></span>
+                                <span class="toggle-icon" aria-hidden="true"><svg class="icon"><use href="#i-repeat"/></svg></span>
+                                <label class="toggle-info" for="create-exchange-toggle">
+                                    <span class="toggle-title">Ayirboshlash (exchange)</span>
+                                    <span class="toggle-desc">Mijoz evaziga boshqa tovar berdimi?</span>
                                 </label>
+                                <span class="switch">
+                                    <input type="checkbox" id="create-exchange-toggle" role="switch">
+                                    <span class="slider" aria-hidden="true"></span>
+                                </span>
                             </div>
-
                             <div id="exchange-fields" class="toggle-body" style="display: none;">
                                 <div class="form-group">
                                     <label for="create-exchange-name">Exchange tovar nomi</label>
-                                    <input type="text" id="create-exchange-name" placeholder="Masalan: Eski shina">
+                                    <input type="text" id="create-exchange-name" placeholder="Masalan: Eski shina" autocomplete="off">
                                 </div>
                                 <div class="form-group">
                                     <label for="create-exchange-price">Exchange tovar narxi</label>
-                                    <input type="number" id="create-exchange-price" placeholder="800000" min="0" step="1000">
+                                    <input type="number" id="create-exchange-price" placeholder="0" min="0" step="1000" inputmode="numeric">
                                 </div>
-                                <div class="product-currency-row">
-                                    <span class="product-currency-label">💱 Valyuta:</span>
-                                    <div class="currency-chips" id="exchange-currency-chips">
-                                        <button type="button" class="cur-chip active" data-currency="UZS">💵 So'm</button>
-                                        <button type="button" class="cur-chip" data-currency="USD">$ Dollar</button>
-                                    </div>
+                                <div class="currency-chips" id="exchange-currency-chips" role="group" aria-label="Exchange valyutasi">
+                                    <button type="button" class="cur-chip active" data-currency="UZS" aria-pressed="true">So'm</button>
+                                    <button type="button" class="cur-chip" data-currency="USD" aria-pressed="false">Dollar</button>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Berilgan Pul Toggle -->
-                        <div class="toggle-card">
+                        <div class="toggle-row">
                             <div class="toggle-header">
-                                <div class="toggle-info">
-                                    <span class="toggle-title">💵 Boshlang'ich to'lov</span>
-                                    <span class="toggle-desc">Qarzdan oldindan pul berildimi?</span>
-                                </div>
-                                <label class="switch">
-                                    <input type="checkbox" id="create-given-toggle">
-                                    <span class="slider"></span>
+                                <span class="toggle-icon" aria-hidden="true"><svg class="icon"><use href="#i-banknote"/></svg></span>
+                                <label class="toggle-info" for="create-given-toggle">
+                                    <span class="toggle-title">Boshlang'ich to'lov</span>
+                                    <span class="toggle-desc">Mijoz hozir qisman pul berdimi?</span>
                                 </label>
+                                <span class="switch">
+                                    <input type="checkbox" id="create-given-toggle" role="switch">
+                                    <span class="slider" aria-hidden="true"></span>
+                                </span>
                             </div>
-
                             <div id="given-money-fields" class="toggle-body" style="display: none;">
                                 <div class="form-group">
                                     <label for="create-given-amount">Berilgan pul summasi</label>
-                                    <input type="number" id="create-given-amount" placeholder="200000" min="0" step="1000">
+                                    <input type="number" id="create-given-amount" placeholder="0" min="0" step="1000" inputmode="numeric">
                                 </div>
-                                <div class="product-currency-row">
-                                    <span class="product-currency-label">💱 Valyuta:</span>
-                                    <div class="currency-chips" id="given-currency-chips">
-                                        <button type="button" class="cur-chip active" data-currency="UZS">💵 So'm</button>
-                                        <button type="button" class="cur-chip" data-currency="USD">$ Dollar</button>
-                                    </div>
+                                <div class="currency-chips" id="given-currency-chips" role="group" aria-label="To'lov valyutasi">
+                                    <button type="button" class="cur-chip active" data-currency="UZS" aria-pressed="true">So'm</button>
+                                    <button type="button" class="cur-chip" data-currency="USD" aria-pressed="false">Dollar</button>
                                 </div>
                             </div>
                         </div>
-
-                        <!-- Live Calculation Summary Card -->
-                        <div class="calc-summary-card">
-                            <div class="calc-row">
-                                <span>Tovarlar narxi (jami):</span>
-                                <strong id="calc-product-price">0 so'm</strong>
-                            </div>
-                            <div class="calc-row" id="calc-exchange-row" style="display: none;">
-                                <span>Exchange tovar:</span>
-                                <span id="calc-exchange-price" class="text-deduct">-0 so'm</span>
-                            </div>
-                            <div class="calc-row" id="calc-given-row" style="display: none;">
-                                <span>Berilgan pul:</span>
-                                <span id="calc-given-price" class="text-deduct">-0 so'm</span>
-                            </div>
-                            <div class="calc-divider"></div>
-                            <div class="calc-row calc-total">
-                                <span>💳 Qarz summasi:</span>
-                                <strong id="calc-total-debt" class="text-highlight">0 so'm</strong>
-                            </div>
-                        </div>
-
-                        <button type="button" id="btn-submit-debt" class="btn btn-primary btn-block">
-                            ✅ Qarzni Saqlash
-                        </button>
-                    </form>
-                </div>
-            </section>
-
-            <!-- TAB 3: TO'LOV (PAYMENT) -->
-            <section id="tab-payment" class="tab-pane">
-                <div class="form-container">
-                    <div class="form-header">
-                        <h2>💰 Qarz To'lovi</h2>
-                        <p>Qarzdor mijozni tanlang va to'lovni qabul qiling</p>
                     </div>
 
-                    <form id="payment-form" onsubmit="return false;">
-                        <div class="form-group">
-                            <label for="pay-client-select">👤 Qarzdor mijozni tanlang</label>
-                            <select id="pay-client-select" required>
-                                <option value="">-- Mijozni tanlang --</option>
-                            </select>
+                    <!-- Hisob-kitob va saqlash -->
+                    <div class="summary-card">
+                        <div class="summary-row">
+                            <span>Tovarlar narxi</span>
+                            <strong id="calc-product-price">0 so'm</strong>
                         </div>
+                        <div class="summary-row" id="calc-exchange-row" style="display: none;">
+                            <span>Exchange tovar</span>
+                            <span id="calc-exchange-price" class="text-deduct">-0 so'm</span>
+                        </div>
+                        <div class="summary-row" id="calc-given-row" style="display: none;">
+                            <span>Berilgan pul</span>
+                            <span id="calc-given-price" class="text-deduct">-0 so'm</span>
+                        </div>
+                        <div class="summary-divider"></div>
+                        <div class="summary-row summary-total">
+                            <span>Qarz summasi</span>
+                            <strong id="calc-total-debt">0 so'm</strong>
+                        </div>
+                        <button type="button" id="btn-submit-debt" class="btn btn-primary btn-lg btn-block">
+                            Qarzni saqlash
+                        </button>
+                    </div>
+                </form>
+            </section>
 
-                        <div id="pay-client-info-card" class="client-info-banner" style="display: none;">
-                            <div class="banner-title" id="pay-selected-client-name">-</div>
-                            <div class="banner-phone" id="pay-selected-client-phone">-</div>
-                            <div class="banner-debt">
-                                <span>Joriy qarz:</span>
-                                <strong id="pay-selected-client-debt">0 so'm</strong>
+            <!-- TAB: TO'LOV -->
+            <section id="tab-payment" class="tab-pane" aria-labelledby="nav-tab-payment">
+                <div class="page-header">
+                    <h2 class="page-title">Qarz to'lovi</h2>
+                    <p class="page-desc">Qarzdor mijozni tanlang va to'lovni qabul qiling.</p>
+                </div>
+
+                <form id="payment-form" novalidate>
+                    <div class="card form-section">
+                        <div class="form-group">
+                            <label for="pay-client-select">Qarzdor mijoz <span class="req" aria-hidden="true">*</span></label>
+                            <div class="search-field search-field-sm" id="pay-client-search-wrap" hidden>
+                                <svg class="icon search-icon" aria-hidden="true"><use href="#i-search"/></svg>
+                                <input type="search" id="pay-client-search" placeholder="Ro'yxatni ism yoki telefon bo'yicha filtrlash" autocomplete="off" aria-label="Qarzdorlarni filtrlash" aria-controls="pay-client-select" enterkeyhint="search">
+                            </div>
+                            <div class="select-field">
+                                <select id="pay-client-select" required>
+                                    <option value="">Mijozni tanlang</option>
+                                </select>
+                                <svg class="icon select-chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>
                             </div>
                         </div>
 
-                        <div id="pay-options-wrapper" style="display: none;">
-                            <div class="form-group">
-                                <label>To'lov turi:</label>
+                        <div id="pay-client-info-card" class="selected-client selected-client-debt" style="display: none;">
+                            <div class="avatar" aria-hidden="true"><svg class="icon"><use href="#i-user"/></svg></div>
+                            <div class="selected-client-texts">
+                                <span class="selected-client-name" id="pay-selected-client-name">-</span>
+                                <span class="selected-client-phone" id="pay-selected-client-phone">-</span>
+                            </div>
+                            <div class="selected-client-amount">
+                                <span class="selected-client-amount-label">Joriy qarz</span>
+                                <strong id="pay-selected-client-debt" class="text-danger">0 so'm</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="pay-options-wrapper" style="display: none;">
+                        <div class="card form-section">
+                            <fieldset class="form-group">
+                                <legend>To'lov turi</legend>
                                 <div class="radio-cards">
                                     <label class="radio-card">
                                         <input type="radio" name="payment_mode" value="full" checked>
-                                        <div class="radio-content">
-                                            <span class="radio-title">🟢 To'liq yopish</span>
-                                            <span class="radio-desc">Barcha qarz 0 ga tushadi</span>
-                                        </div>
+                                        <span class="radio-content">
+                                            <span class="radio-title">To'liq yopish</span>
+                                            <span class="radio-desc">Barcha valyutadagi qarz yopiladi</span>
+                                        </span>
                                     </label>
                                     <label class="radio-card">
                                         <input type="radio" name="payment_mode" value="partial">
-                                        <div class="radio-content">
-                                            <span class="radio-title">🟡 Qisman to'lash</span>
-                                            <span class="radio-desc">Ma'lum miqdorni to'lash</span>
-                                        </div>
+                                        <span class="radio-content">
+                                            <span class="radio-title">Qisman to'lash</span>
+                                            <span class="radio-desc">Ma'lum summani to'lash</span>
+                                        </span>
                                     </label>
+                                </div>
+                            </fieldset>
+
+                            <div class="form-group">
+                                <label for="pay-date">To'lov sanasi <span class="req" aria-hidden="true">*</span></label>
+                                <div class="input-with-action">
+                                    <input type="text" id="pay-date" class="date-input" placeholder="KK.OO.YYYY" inputmode="numeric" maxlength="10" autocomplete="off" required>
+                                    <button type="button" id="btn-pay-set-today" class="btn btn-secondary btn-sm">Bugun</button>
                                 </div>
                             </div>
 
-                            <div id="partial-amount-group" class="form-group" style="display: none;">
-                                <!-- 📅 Qisman to'lov sanasi -->
-                                <div class="form-group" style="margin-bottom: 12px;">
-                                    <label for="pay-date">📅 To'lov sanasi</label>
-                                    <div class="input-with-action">
-                                        <input type="text" id="pay-date" placeholder="DD.MM.YYYY (masalan: 20.08.2026)" required>
-                                        <button type="button" id="btn-pay-set-today" class="btn-sm">Bugun</button>
+                            <div id="partial-amount-group" style="display: none;">
+                                <fieldset class="form-group">
+                                    <legend>To'lov valyutasi</legend>
+                                    <div class="radio-cards radio-cards-compact">
+                                        <label class="radio-card">
+                                            <input type="radio" name="payment_currency" value="UZS" checked>
+                                            <span class="radio-content"><span class="radio-title">So'm</span></span>
+                                        </label>
+                                        <label class="radio-card">
+                                            <input type="radio" name="payment_currency" value="USD">
+                                            <span class="radio-content"><span class="radio-title">Dollar</span></span>
+                                        </label>
+                                    </div>
+                                </fieldset>
+
+                                <div class="form-group">
+                                    <label for="pay-partial-amount">To'lanayotgan summa <span class="req" aria-hidden="true">*</span></label>
+                                    <input type="number" id="pay-partial-amount" placeholder="0" min="1" step="1000" inputmode="numeric">
+                                    <div class="quick-amounts" role="group" aria-label="Tezkor summalar">
+                                        <button type="button" class="btn-chip" data-quick="100000">100k</button>
+                                        <button type="button" class="btn-chip" data-quick="500000">500k</button>
+                                        <button type="button" class="btn-chip" data-quick="1000000">1M</button>
+                                        <button type="button" class="btn-chip" data-quick="half">50%</button>
                                     </div>
                                 </div>
-
-                                <label>💱 To'lov valyutasi</label>
-                                <div class="radio-cards">
-                                    <label class="radio-card">
-                                        <input type="radio" name="payment_currency" value="UZS" checked>
-                                        <div class="radio-content">
-                                            <span class="radio-title">💵 So'm</span>
-                                        </div>
-                                    </label>
-                                    <label class="radio-card">
-                                        <input type="radio" name="payment_currency" value="USD">
-                                        <div class="radio-content">
-                                            <span class="radio-title">$ Dollar</span>
-                                        </div>
-                                    </label>
-                                </div>
-
-                                <label for="pay-partial-amount" style="margin-top: 10px;">To'lanayotgan summa</label>
-                                <input type="number" id="pay-partial-amount" placeholder="Masalan: 500000" min="1" step="1000">
-
-                                <div class="quick-amounts">
-                                    <button type="button" class="btn-chip" data-quick="100000">100k</button>
-                                    <button type="button" class="btn-chip" data-quick="500000">500k</button>
-                                    <button type="button" class="btn-chip" data-quick="1000000">1M</button>
-                                    <button type="button" class="btn-chip" data-quick="half">50%</button>
-                                </div>
                             </div>
+                        </div>
 
-                            <!-- Live Payment Result Preview -->
-                            <div class="calc-summary-card">
-                                <div class="calc-row">
-                                    <span>To'lanadigan summa:</span>
-                                    <strong id="pay-preview-amount" class="text-success">0 so'm</strong>
-                                </div>
-                                <div class="calc-row">
-                                    <span>To'lovdan keyingi qoldiq:</span>
-                                    <strong id="pay-preview-remaining">0 so'm</strong>
-                                </div>
+                        <!-- To'lov natijasi -->
+                        <div class="summary-card">
+                            <div class="summary-row">
+                                <span>To'lanadigan summa</span>
+                                <strong id="pay-preview-amount" class="text-success">0 so'm</strong>
                             </div>
-
-                            <button type="button" id="btn-submit-payment" class="btn btn-success btn-block">
-                                ✅ To'lovni Qabul Qilish
+                            <div class="summary-divider"></div>
+                            <div class="summary-row summary-total">
+                                <span>To'lovdan keyingi qoldiq</span>
+                                <strong id="pay-preview-remaining">0 so'm</strong>
+                            </div>
+                            <button type="button" id="btn-submit-payment" class="btn btn-success btn-lg btn-block">
+                                To'lovni qabul qilish
                             </button>
                         </div>
-                    </form>
-                </div>
+                    </div>
+                </form>
             </section>
 
-            <!-- TAB: YOPILGANLAR (CLOSED DEBTS) -->
-            <section id="tab-paid" class="tab-pane">
-                <!-- Normal Mode Toolbar -->
+            <!-- TAB: YOPILGAN QARZLAR -->
+            <section id="tab-paid" class="tab-pane" aria-labelledby="nav-tab-paid">
                 <div id="paid-normal-bar" class="tab-sub-toolbar">
                     <div class="sub-toolbar-info">
-                        <span class="sub-toolbar-title">🟢 Yopilgan Qarzlar</span>
-                        <span id="paid-total-badge" class="sub-toolbar-badge">0 ta</span>
+                        <h2 class="page-title">Yopilgan qarzlar <span id="paid-total-badge" class="count-badge">0 ta</span></h2>
+                        <p class="page-desc">Korzinaga yuborish uchun yozuvlarni tanlang.</p>
                     </div>
-                    <button id="btn-paid-enter-select" class="btn btn-outline-sm">
-                        🔘 Tanlash
+                    <button id="btn-paid-enter-select" class="btn btn-secondary btn-sm" type="button">
+                        <svg class="icon"><use href="#i-select"/></svg> Tanlash
                     </button>
                 </div>
 
-                <!-- Selection Mode Toolbar (Active when selecting) -->
                 <div id="paid-select-bar" class="tab-sub-toolbar selection-bar" style="display:none;">
-                    <button id="btn-paid-cancel-select" class="btn-cancel-select">
-                        ✕ Bekor
-                    </button>
-                    <span id="paid-selected-count-label" class="selection-count-label">0 ta tanlandi</span>
-                    <button id="btn-paid-select-all-toggle" class="btn-select-all-toggle">
-                        ☑️ Barchasi
-                    </button>
+                    <button id="btn-paid-cancel-select" class="btn btn-ghost btn-sm" type="button">Bekor qilish</button>
+                    <span id="paid-selected-count-label" class="selection-count-label" aria-live="polite">0 ta tanlandi</span>
+                    <button id="btn-paid-select-all-toggle" class="btn btn-ghost btn-sm" type="button">Barchasi</button>
                 </div>
 
-                <!-- List container -->
-                <div id="paid-debts-list" class="trash-list">
-                    <div class="empty-state">
-                        <div class="empty-state-icon">🟢</div>
-                        <p>Yopilgan qarzlar yo'q</p>
-                    </div>
+                <div id="paid-debts-list" class="list">
+                    <div class="skeleton-row"></div>
+                    <div class="skeleton-row"></div>
+                    <div class="skeleton-row"></div>
                 </div>
             </section>
 
-            <!-- TAB: KORZINA (TRASH) -->
-            <section id="tab-trash" class="tab-pane">
-                <!-- Normal Mode Toolbar -->
+            <!-- TAB: KORZINA -->
+            <section id="tab-trash" class="tab-pane" aria-labelledby="nav-tab-trash">
                 <div id="trash-normal-bar" class="tab-sub-toolbar">
                     <div class="sub-toolbar-info">
-                        <span class="sub-toolbar-title">🗑 Korzina</span>
-                        <span id="trash-total-badge" class="sub-toolbar-badge">0 ta</span>
+                        <h2 class="page-title">Korzina <span id="trash-total-badge" class="count-badge">0 ta</span></h2>
+                        <p class="page-desc">Yozuvlarni qayta tiklash yoki butunlay o'chirish.</p>
                     </div>
-                    <div style="display:flex;gap:8px;">
-                        <button id="btn-trash-enter-select" class="btn btn-outline-sm">
-                            🔘 Tanlash
-                        </button>
-                    </div>
+                    <button id="btn-trash-enter-select" class="btn btn-secondary btn-sm" type="button">
+                        <svg class="icon"><use href="#i-select"/></svg> Tanlash
+                    </button>
                 </div>
 
-                <!-- Selection Mode Toolbar -->
                 <div id="trash-select-bar" class="tab-sub-toolbar selection-bar" style="display:none;">
-                    <button id="btn-trash-cancel-select" class="btn-cancel-select">
-                        ✕ Bekor
-                    </button>
-                    <span id="trash-selected-count-label" class="selection-count-label">0 ta tanlandi</span>
-                    <button id="btn-trash-select-all-toggle" class="btn-select-all-toggle">
-                        ☑️ Barchasi
-                    </button>
+                    <button id="btn-trash-cancel-select" class="btn btn-ghost btn-sm" type="button">Bekor qilish</button>
+                    <span id="trash-selected-count-label" class="selection-count-label" aria-live="polite">0 ta tanlandi</span>
+                    <button id="btn-trash-select-all-toggle" class="btn btn-ghost btn-sm" type="button">Barchasi</button>
                 </div>
 
-                <!-- List container -->
-                <div id="trash-list" class="trash-list">
-                    <div class="empty-state">
-                        <div class="empty-state-icon">🗑</div>
-                        <p>Korzina bo'sh</p>
+                <div id="trash-list" class="list">
+                    <div class="skeleton-row"></div>
+                    <div class="skeleton-row"></div>
+                </div>
+
+                <!-- Xavfli amal: korzinani tozalash -->
+                <div id="trash-purge-bar" class="danger-zone" style="display:none;">
+                    <div class="danger-zone-texts">
+                        <span class="danger-zone-title">Korzinani tozalash</span>
+                        <span class="purge-bar-text">Barcha yozuvlar butunlay o'chiriladi. Bu amalni ortga qaytarib bo'lmaydi.</span>
                     </div>
-                </div>
-
-                <!-- Purge section at bottom of Korzina -->
-                <div id="trash-purge-bar" class="purge-bar" style="display:none;">
-                    <span class="purge-bar-text">⚠️ Tozalangandan so'ng qayta tiklab bo'lmaydi</span>
-                    <button id="btn-purge-trash" class="btn btn-danger btn-sm">
-                        🗑 Korzinani Tozalash
+                    <button id="btn-purge-trash" class="btn btn-danger-outline btn-sm" type="button">
+                        <svg class="icon"><use href="#i-trash"/></svg> Tozalash
                     </button>
                 </div>
             </section>
-
         </main>
 
-        <!-- Floating Action Bars (Selection Mode overlay over bottom dock) -->
+        <!-- Tanlash rejimidagi amal paneli (pastki navigatsiya o'rnida) -->
         <div id="paid-floating-action-bar" class="floating-action-bar" style="display:none;">
-            <button id="btn-move-to-trash" class="btn btn-danger btn-block btn-action-lg" disabled>
-                🗑 Tanlanganlarni Korzinaga Yuborish
+            <button id="btn-move-to-trash" class="btn btn-danger btn-lg btn-block" type="button" disabled>
+                Korzinaga yuborish
             </button>
         </div>
 
         <div id="trash-floating-action-bar" class="floating-action-bar" style="display:none;">
-            <button id="btn-restore-from-trash" class="btn btn-primary btn-block btn-action-lg" disabled>
-                ↩️ Tanlanganlarni Yopilganga Qaytarish
+            <button id="btn-restore-from-trash" class="btn btn-primary btn-lg btn-block" type="button" disabled>
+                Yopilganlarga qaytarish
             </button>
         </div>
 
-        <!-- Bottom Navigation Bar (5 tabs) -->
-        <nav class="bottom-nav">
-            <button class="nav-item active" data-tab="tab-table">
-                <span class="nav-icon">📋</span>
-                <span class="nav-label">Jadval</span>
+        <!-- Pastki navigatsiya (foydalanish chastotasi bo'yicha tartiblangan) -->
+        <nav class="bottom-nav" aria-label="Asosiy bo'limlar">
+            <button class="nav-item active" id="nav-tab-table" data-tab="tab-table" type="button" aria-current="page">
+                <svg class="icon nav-icon" aria-hidden="true"><use href="#i-list"/></svg>
+                <span class="nav-label">Mijozlar</span>
             </button>
-            <button class="nav-item" data-tab="tab-paid">
-                <span class="nav-icon">🟢</span>
+            <button class="nav-item" id="nav-tab-create" data-tab="tab-create" type="button">
+                <svg class="icon nav-icon" aria-hidden="true"><use href="#i-plus-circle"/></svg>
+                <span class="nav-label">Yangi qarz</span>
+            </button>
+            <button class="nav-item" id="nav-tab-payment" data-tab="tab-payment" type="button">
+                <svg class="icon nav-icon" aria-hidden="true"><use href="#i-card"/></svg>
+                <span class="nav-label">To'lov</span>
+            </button>
+            <button class="nav-item" id="nav-tab-paid" data-tab="tab-paid" type="button">
+                <svg class="icon nav-icon" aria-hidden="true"><use href="#i-check-circle"/></svg>
                 <span class="nav-label">Yopilgan</span>
             </button>
-            <button class="nav-item" data-tab="tab-trash">
-                <span class="nav-icon">🗑</span>
+            <button class="nav-item" id="nav-tab-trash" data-tab="tab-trash" type="button">
+                <svg class="icon nav-icon" aria-hidden="true"><use href="#i-trash"/></svg>
                 <span class="nav-label">Korzina</span>
-            </button>
-            <button class="nav-item" data-tab="tab-create">
-                <span class="nav-icon">➕</span>
-                <span class="nav-label">Yaratish</span>
-            </button>
-            <button class="nav-item" data-tab="tab-payment">
-                <span class="nav-icon">💰</span>
-                <span class="nav-label">To'lov</span>
             </button>
         </nav>
     </div>
 
-
-    <!-- CLIENT REPORT MODAL -->
+    <!-- MIJOZ HISOBOTI (BOTTOM SHEET) -->
     <div id="report-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-card">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-client-name">
             <div class="modal-header">
                 <div class="modal-client-info">
-                    <h3 id="modal-client-name" class="modal-title">Mijoz Hisoboti</h3>
-                    <p id="modal-client-phone" class="modal-subtitle">+998901234567</p>
+                    <h3 id="modal-client-name" class="modal-title">Mijoz hisoboti</h3>
+                    <p id="modal-client-phone" class="modal-subtitle">-</p>
                 </div>
-                <button id="modal-close-btn" class="modal-close" aria-label="Yopish">&times;</button>
+                <button id="modal-close-btn" class="icon-btn" type="button" aria-label="Yopish">
+                    <svg class="icon"><use href="#i-x"/></svg>
+                </button>
             </div>
 
             <div class="modal-body">
-                <!-- Summary KPI bar -->
-                <div class="modal-kpi-grid">
+                <div class="modal-kpis">
+                    <div class="modal-kpi modal-kpi-primary">
+                        <span class="kpi-label">Qoldiq qarz</span>
+                        <span id="modal-total-remaining" class="kpi-val text-danger">0 so'm</span>
+                    </div>
                     <div class="modal-kpi">
-                        <span class="kpi-label">Jami mahsulotlar</span>
+                        <span class="kpi-label">Jami tovarlar</span>
                         <span id="modal-total-products" class="kpi-val">0 so'm</span>
                     </div>
                     <div class="modal-kpi">
                         <span class="kpi-label">Jami to'langan</span>
                         <span id="modal-total-paid" class="kpi-val text-success">0 so'm</span>
                     </div>
-                    <div class="modal-kpi modal-kpi-highlight">
-                        <span class="kpi-label">Qoldiq Qarz</span>
-                        <span id="modal-total-remaining" class="kpi-val text-danger">0 so'm</span>
-                    </div>
                 </div>
 
-                <!-- Debts History Section -->
                 <div class="modal-section">
-                    <h4 class="section-title">📦 Qarzlar Tarixi</h4>
-                    <div id="modal-debts-list" class="history-list">
-                        <!-- Items injected by JS -->
-                    </div>
+                    <h4 class="section-title">Qarzlar tarixi</h4>
+                    <div id="modal-debts-list" class="history-list"></div>
                 </div>
 
-                <!-- Payments History Section -->
                 <div class="modal-section">
-                    <h4 class="section-title">💳 To'lovlar Tarixi</h4>
-                    <div id="modal-payments-list" class="history-list">
-                        <!-- Items injected by JS -->
-                    </div>
+                    <h4 class="section-title">To'lovlar tarixi</h4>
+                    <div id="modal-payments-list" class="history-list"></div>
                 </div>
             </div>
 
             <div class="modal-footer">
-                <div class="modal-footer-btns">
-                    <button id="modal-add-debt-btn" class="btn btn-secondary">
-                        ➕ Yana qarz
-                    </button>
-                    <button id="modal-pay-now-btn" class="btn btn-primary">
-                        💰 To'lash
-                    </button>
-                </div>
+                <button id="modal-add-debt-btn" class="btn btn-secondary btn-lg" type="button">
+                    <svg class="icon"><use href="#i-plus"/></svg> Yangi qarz
+                </button>
+                <button id="modal-pay-now-btn" class="btn btn-primary btn-lg" type="button">
+                    <svg class="icon"><use href="#i-card"/></svg> To'lov qabul qilish
+                </button>
             </div>
         </div>
     </div>
 
-    <!-- TOAST NOTIFICATION -->
-    <div id="toast" class="toast"></div>
+    <!-- TOAST -->
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js" defer></script>
 </body>
 </html>
