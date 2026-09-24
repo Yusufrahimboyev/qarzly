@@ -79,4 +79,42 @@ Komponentlar: `.btn` (`-primary`, `-success`, `-danger`, `-secondary`, `-ghost`,
 `.danger-zone`, `.bottom-nav`, `.floating-action-bar`.
 
 JS yordamchilari: `icon()`, `stateBlockHTML()`, `skeletonRowsHTML()`, `setButtonLoading()`,
-`setFieldError()` / `clearFieldError()`, `showToast(message, type)`, `formatMoneyLinesHTML()`.
+`setFieldError()` / `clearFieldError()`, `showToast(message, type)`, `formatMoneyLinesHTML()`,
+`apiJson()` / `ApiError` / `notifyError()`, `normalizeText()` / `matchesClientQuery()`,
+`createSelectableList()`, `attachListGestures()`.
+
+## 3. Ikkinchi bosqich (QA + polish)
+
+Qizil jamoa usulida edge-case'lar (juda uzun matn, katta summalar, API xatolari, sekin tarmoq,
+offline, sessiya tugashi, 1000 ta yozuv) sinab ko'rildi. Topilgan va tuzatilgan muammolar:
+
+| Sev | Muammo | Yechim |
+|-----|--------|--------|
+| HIGH | Mavjud mijoz ismini telefonsiz yozish serverda **dublikat mijoz** yaratardi (server telefon yoki telefonsiz ism bo'yicha moslaydi). | Ism maydoniga mijoz takliflari (combobox, klaviatura bilan) + aynan shu ism mavjud bo'lsa ogohlantirish va "Tanlash". |
+| HIGH | 320px da katta summa ism/telefon ustiga chiqib ketardi; modal KPI'da "so'm" kesilardi. | Qator flex modeli qayta qurildi (nom `basis: 0`, summa kontent bo'yicha, max 58%), raqam hech qachon o'rtasidan bo'linmaydi, tor ekranda avatar yashiriladi. |
+| HIGH | 502 HTML javobi foydalanuvchiga `Unexpected token '<'…` bo'lib chiqardi; `fetch` timeout'siz — sekin tarmoqda skeleton abadiy aylanardi. | `apiJson()`: 20s timeout, xavfsiz JSON, status bo'yicha tushunarli xabarlar. |
+| MEDIUM | Statistika yuklanmasa KPI skeleton abadiy; offline holat ko'rsatilmasdi; "Yangilash" xato bo'lsa ham "yangilandi" derdi. | Xato holati "—", offline banner + aloqa tiklanganda avtomatik yangilash, natijaga mos toast. |
+| MEDIUM | To'lovda yuzlab qarzdorlar uchun qidiruvsiz select. | 8+ qarzdorda filtr maydoni (tanlangan mijoz filtrdan qat'i nazar saqlanadi). |
+| MEDIUM | Sessiya muddati tugaganda (24 soat) noto'g'ri matn va chiqish yo'li yo'q. | "Sessiya tugadi" ekrani + "Ilovani yopish" (`tg.close`). |
+| MEDIUM | Yopilgan/Korzina ~250 qator takroriy kod, har qatorda 4–5 listener, 1000 yozuv birdan chiziladi. | Yagona `createSelectableList()` komponenti, event delegation, 40 talik bo'laklab chizish. |
+| MEDIUM | Saqlashdan keyin ma'lumot ikki marta so'ralardi (4 so'rov, navigatsiya kechikardi). | Bitta yangilash; darhol jadvalga o'tish. |
+| MEDIUM | `telegram-web-app.js` `<head>`da sinxron — birinchi chizishni bloklardi. | `defer` (ikkala skript, tartib saqlanadi). |
+| LOW | "Yopilgan" ham qarzsiz mijoz, ham yopilgan qarz yozuvi ma'nosida. | Mijoz darajasida — "Qarzsiz", qarz darajasida — "Yopilgan". |
+| LOW | Qidiruv `o‘`/`o'`/`oʻ` va `90 123` kabi formatlarni topmasdi. | Apostrof va telefon raqamlari normalizatsiyasi. |
+| LOW | Korzina/Yopilgan qatorlari klaviatura bilan tanlanmasdi; kichik touch target'lar (28–30px). | `listbox`/`option` + `aria-selected`, Enter/Space; min 32px. |
+
+Performance (1000 mijoz + 1000 yopilgan yozuv, CPU 4× sekinlashtirilgan):
+
+| Ko'rsatkich | Oldin | Keyin |
+|---|---|---|
+| DOM tugunlari | 50 599 | 9 539 |
+| JS event listener'lar | 6 068 / 12 081 | 91 / 104 |
+| JS heap | 4.4 MB | 1.6 MB |
+| Yopilgan tabini ochish | 304 ms | 125 ms |
+| "Barchasini tanlash" | 725 ms | 55 ms |
+
+Qolgan tavsiyalar (biznes qarori talab qilinadi, shuning uchun o'zgartirilmadi):
+- `enableClosingConfirmation()` har doim yoqilgan — faqat saqlanmagan forma bo'lganda yoqish qulayroq.
+- Yopilgan tabida qatorni bosish darhol tanlash rejimini yoqadi; bosish — mijoz hisobotini ochish,
+  uzoq bosish — tanlash (platforma konvensiyasi) ko'rib chiqilishi mumkin.
+- Bot `/help` matni mavjud bo'lmagan "ℹ️ Yordam" tugmasini tilga oladi va Mini App'ni eslatmaydi.

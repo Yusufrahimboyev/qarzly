@@ -58,6 +58,8 @@ const state = {
     selectedClientReport: null,
     renderedCount: 0,
     filteredList: [],
+    summariesLoaded: false,
+    gateShown: false,
 };
 
 // Utilities
@@ -253,19 +255,33 @@ function showToast(message, type = 'info') {
     toastTimer = setTimeout(() => toast.classList.remove('show'), type === 'error' ? 4500 : 3000);
 }
 
-function showUnauthorizedState(message = "Ushbu tizimga faqat ruxsat berilgan Telegram foydalanuvchilari kira oladi.") {
+function showUnauthorizedState(message = "Ushbu tizimga faqat ruxsat berilgan Telegram foydalanuvchilari kira oladi.", { title = 'Kirish cheklangan', canClose = true } = {}) {
+    if (state.gateShown) return;
+    state.gateShown = true;
+    closeClientReportModal();
+    // Eski toast (masalan, "yangilandi") kirish ekrani ustida qolib ketmasin
+    clearTimeout(toastTimer);
+    document.getElementById('toast')?.classList.remove('show');
     const app = document.getElementById('app') || document.body;
-    document.querySelector('.bottom-nav')?.remove();
+    const closeBtn = canClose && typeof tg?.close === 'function'
+        ? `<button type="button" class="btn btn-primary btn-block" id="gate-close-btn">Ilovani yopish</button>`
+        : '';
     app.innerHTML = `
         <div class="gate">
             <div class="card gate-card" role="alert">
                 <div class="gate-icon">${icon('lock')}</div>
-                <h2 class="gate-title">Kirish cheklangan</h2>
+                <h2 class="gate-title">${escapeHtml(title)}</h2>
                 <p class="gate-text">${escapeHtml(message)}</p>
-                <div class="gate-hint">Ilovani vakolatli Telegram akkauntingizdagi bot orqali oching.</div>
+                ${closeBtn}
+                <div class="gate-hint">Ilovani bot menyusidagi «Mini App» tugmasi orqali qayta oching.</div>
             </div>
         </div>
     `;
+    document.getElementById('gate-close-btn')?.addEventListener('click', () => {
+        try {
+            tg.close();
+        } catch (e) {}
+    });
 }
 
 // Har bir yozuv so'rovi uchun bir martalik kalit: tarmoq retry'i yoki
@@ -277,6 +293,27 @@ function newIdempotencyKey() {
     return `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
 }
 
+// Foydalanuvchiga ko'rsatiladigan xato: texnik tafsilotlar (JSON parse, TypeError) chiqmaydi
+class ApiError extends Error {
+    constructor(message, status = 0, { handled = false } = {}) {
+        super(message);
+        this.name = 'ApiError';
+        this.status = status;
+        // true — xato allaqachon UI'da ko'rsatilgan (masalan, kirish cheklangan ekrani)
+        this.handled = handled;
+    }
+}
+
+const API_TIMEOUT_MS = 20000;
+
+function statusErrorMessage(status) {
+    if (status === 429) return "So'rovlar juda tez yuborildi. Biroz kutib, qayta urinib ko'ring.";
+    if (status === 502 || status === 503 || status === 504) return "Server vaqtincha ishlamayapti (yangilanmoqda). 10–20 soniyadan so'ng qayta urinib ko'ring.";
+    if (status >= 500) return "Serverda xatolik yuz berdi. Birozdan so'ng qayta urinib ko'ring.";
+    if (status === 404) return "Ma'lumot topilmadi. Ro'yxatni yangilab, qayta urinib ko'ring.";
+    return `So'rovni bajarib bo'lmadi (kod ${status}).`;
+}
+
 // Barcha API so'rovlarini Telegram initData imzosi bilan yuboradi.
 // Server imzoni tekshiradi — begona shaxs URLni bilsa ham ma'lumot ololmaydi.
 async function apiFetch(url, options = {}) {
@@ -284,36 +321,86 @@ async function apiFetch(url, options = {}) {
     if (tg && tg.initData) {
         headers['X-Telegram-Init-Data'] = tg.initData;
     }
-    const res = await fetch(url, { ...options, headers });
-    if (res.status === 429) {
-        showToast("So'rovlar juda tez yuborildi. Biroz kutib, qayta urinib ko'ring.", 'error');
-    } else if (res.status === 401) {
-        showUnauthorizedState("Ruxsat berilmagan. Ilovani Telegram boti ichida oching.");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options.timeout || API_TIMEOUT_MS);
+    let res;
+    try {
+        res = await fetch(url, { ...options, headers, signal: controller.signal });
+    } catch (err) {
+        if (err && err.name === 'AbortError') {
+            throw new ApiError("Server javob bermayapti. Internet tezligini tekshirib, qayta urinib ko'ring.");
+        }
+        throw new ApiError(navigator.onLine === false
+            ? "Internet aloqasi yo'q. Ulanishni tekshirib, qayta urinib ko'ring."
+            : "Serverga ulanib bo'lmadi. Internet aloqasini tekshirib, qayta urinib ko'ring.");
+    } finally {
+        clearTimeout(timer);
+    }
+    if (res.status === 401) {
+        // initData 24 soatdan keyin eskiradi — Mini App uzoq ochiq qolganda ham shu holat
+        showUnauthorizedState(
+            "Sessiya muddati tugagan yoki ilova Telegram tashqarisida ochilgan. Xavfsizlik uchun ilovani qayta oching.",
+            { title: 'Sessiya tugadi' },
+        );
     } else if (res.status === 403) {
         showUnauthorizedState("Sizning Telegram akkauntingizga ushbu tizimdan foydalanish huquqi berilmagan.");
-    } else if (res.status === 502 || res.status === 503) {
-        showToast("Server yangilanmoqda. 10–20 soniyadan so'ng qayta urinib ko'ring.", 'error');
     }
     return res;
+}
+
+// JSON bo'lmagan javob (masalan, proxy'ning HTML xato sahifasi) ham xavfsiz o'qiladi
+async function readJson(res) {
+    try {
+        return await res.json();
+    } catch (e) {
+        return null;
+    }
+}
+
+// apiFetch + JSON + xatolarni yagona ko'rinishga keltirish
+async function apiJson(url, options = {}) {
+    const res = await apiFetch(url, options);
+    const data = await readJson(res);
+    if (!res.ok || (data && data.error)) {
+        const handled = res.status === 401 || res.status === 403;
+        const message = (data && typeof data.error === 'string' && data.error) || statusErrorMessage(res.status);
+        throw new ApiError(message, res.status, { handled });
+    }
+    if (data === null) throw new ApiError("Serverdan noto'g'ri javob keldi. Qayta urinib ko'ring.", res.status);
+    return data;
+}
+
+function notifyError(err) {
+    if (err && err.handled) return;
+    hapticError();
+    showToast(err instanceof ApiError ? err.message : "Kutilmagan xatolik yuz berdi. Qayta urinib ko'ring.", 'error');
 }
 
 // ==========================================
 // API REQUESTS
 // ==========================================
 
+function formatCount(n) {
+    return `${(Number(n) || 0).toLocaleString('ru-RU')} ta`;
+}
+
 async function fetchStats() {
+    const totalEl = document.getElementById('stat-total-debt');
     try {
-        const res = await apiFetch('/api/stats');
-        if (res.status === 401 || res.status === 403) return;
-        if (!res.ok) return;
-        const data = await res.json();
-        const totalEl = document.getElementById('stat-total-debt');
+        const data = await apiJson('/api/stats');
         totalEl.classList.remove('is-loading');
         totalEl.innerHTML = formatMoneyLinesHTML(data.total_debt);
-        document.getElementById('stat-debtors-count').textContent = `${data.debtors_count} ta`;
-        document.getElementById('stat-clients-count').textContent = `${data.clients_count} ta`;
+        document.getElementById('stat-debtors-count').textContent = formatCount(data.debtors_count);
+        document.getElementById('stat-clients-count').textContent = formatCount(data.clients_count);
+        return true;
     } catch (err) {
         console.error('Error fetching stats:', err);
+        // Skeleton cheksiz "yuklanmoqda" bo'lib qolmasin
+        if (totalEl && totalEl.classList.contains('is-loading')) {
+            totalEl.classList.remove('is-loading');
+            totalEl.textContent = '—';
+        }
+        return false;
     }
 }
 
@@ -323,34 +410,31 @@ const LIST_LIMIT = 1000;
 async function fetchSummaries() {
     const container = document.getElementById('clients-list');
     try {
-        const res = await apiFetch(`/api/summaries?limit=${LIST_LIMIT}`);
-        if (res.status === 401 || res.status === 403) {
-            showUnauthorizedState();
-            return;
-        }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        state.summaries = await res.json();
+        state.summaries = await apiJson(`/api/summaries?limit=${LIST_LIMIT}`);
         state.summariesLoaded = true;
         updateFilterCounts();
         renderClientsList();
         populatePaymentClients();
+        return true;
     } catch (err) {
         console.error('Error fetching summaries:', err);
+        if (err.handled) return false;
         // Avval yuklangan ro'yxat bo'lsa, uni saqlab qolamiz — faqat xabar beramiz
         if (state.summariesLoaded) {
-            showToast("Ro'yxatni yangilab bo'lmadi. Internet aloqasini tekshiring.", 'error');
-            return;
+            showToast(err.message, 'error');
+            return false;
         }
         if (container) {
             container.removeAttribute('aria-busy');
             container.innerHTML = stateBlockHTML({
                 iconName: 'alert-triangle',
-                title: "Ma'lumotlarni yuklab bo'lmadi",
-                desc: "Internet aloqasini tekshiring va qayta urinib ko'ring.",
+                title: "Mijozlar ro'yxatini yuklab bo'lmadi",
+                desc: err.message,
                 action: { id: 'retry-summaries', label: 'Qayta urinish' },
                 isError: true,
             });
         }
+        return false;
     }
 }
 
@@ -369,13 +453,7 @@ function updateFilterCounts() {
 
 async function fetchClientReport(clientId) {
     try {
-        const res = await apiFetch(`/api/clients/${clientId}/report`);
-        if (res.status === 401 || res.status === 403) {
-            showToast('Ma\'lumotlarni ko\'rish uchun Telegram ichida oching');
-            return null;
-        }
-        if (!res.ok) throw new Error('Hisobot topilmadi');
-        return await res.json();
+        return await apiJson(`/api/clients/${clientId}/report`);
     } catch (err) {
         console.error('Error fetching client report:', err);
         return null;
@@ -389,6 +467,29 @@ async function fetchClientReport(clientId) {
 const BATCH_SIZE = 30;
 let listObserver = null;
 
+// O'zbekcha apostrof variantlari (o' o‘ oʻ o`) va ortiqcha bo'shliqlar bir xil ko'rinishga keltiriladi
+function normalizeText(str) {
+    return String(str || '')
+        .toLowerCase()
+        .replace(/[‘’ʻʼ`´]/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function digitsOnly(str) {
+    return String(str || '').replace(/\D/g, '');
+}
+
+function matchesClientQuery(item, query) {
+    const q = normalizeText(query);
+    if (!q) return true;
+    if (normalizeText(item.full_name).includes(q)) return true;
+    const qDigits = digitsOnly(query);
+    // "90 123 45" yoki "+998 90..." ko'rinishidagi qidiruv ham telefonga mos keladi
+    if (qDigits.length >= 3 && digitsOnly(item.phone).includes(qDigits)) return true;
+    return normalizeText(item.phone).includes(q);
+}
+
 function getProcessedList() {
     let list = [...state.summaries];
 
@@ -399,13 +500,9 @@ function getProcessedList() {
         list = list.filter(item => !item.has_debt);
     }
 
-    // 2. Search Query
+    // 2. Search Query (apostrof variantlari va telefon formatiga sezgir emas)
     if (state.searchQuery.trim()) {
-        const q = state.searchQuery.toLowerCase().trim();
-        list = list.filter(item =>
-            (item.full_name && item.full_name.toLowerCase().includes(q)) ||
-            (item.phone && item.phone.toLowerCase().includes(q))
-        );
+        list = list.filter(item => matchesClientQuery(item, state.searchQuery));
     }
 
     // 3. Sorting
@@ -444,17 +541,17 @@ function getProcessedList() {
 
 function renderClientCardHTML(item) {
     const phoneHtml = item.phone
-        ? `<span class="row-meta-item">${icon('phone')}${escapeHtml(item.phone)}</span>`
+        ? `<span class="row-meta-item">${icon('phone')}<span class="truncate">${escapeHtml(item.phone)}</span></span>`
         : '<span class="row-meta-item">Telefon kiritilmagan</span>';
     const dateHtml = item.latest_debt_date
-        ? `<span class="row-meta-item">${icon('calendar')}${escapeHtml(item.latest_debt_date)}</span>`
+        ? `<span class="row-meta-item">${icon('calendar')}<span class="truncate">${escapeHtml(item.latest_debt_date)}</span></span>`
         : '';
     const amountHtml = item.has_debt
         ? `<div class="row-amount client-debt-amount is-debt">${formatMoneyLinesHTML(item.remaining)}</div>`
         : '';
     const badgeHtml = item.has_debt
         ? '<span class="badge badge-danger">Qarzdor</span>'
-        : '<span class="badge badge-success">Yopilgan</span>';
+        : '<span class="badge badge-success">Qarzsiz</span>';
     const ariaLabel = `${item.full_name}. ${item.has_debt ? `Qarzi: ${formatMoneyMap(item.remaining)}` : 'Qarzi yo\'q'}. Hisobotni ochish`;
     return `
         <div class="list-row client-item-card" data-client-id="${item.id}" role="button" tabindex="0" aria-label="${escapeHtml(ariaLabel)}">
@@ -507,7 +604,7 @@ function renderClientsList() {
         } else {
             container.innerHTML = stateBlockHTML({
                 iconName: 'inbox',
-                title: state.filter === 'debtors' ? "Qarzdor mijozlar yo'q" : "Qarzi yopilgan mijozlar yo'q",
+                title: state.filter === 'debtors' ? "Qarzdor mijozlar yo'q" : "Qarzsiz mijozlar yo'q",
                 desc: state.filter === 'debtors' ? "Barcha mijozlarning qarzi yopilgan." : '',
             });
         }
@@ -563,10 +660,25 @@ function startAddDebtForClient(person) {
     hapticImpact();
     switchTab('tab-create');
 
+    // Sana har doim bugunga tenglanadi — keyingi qarz to'g'ri sanada yoziladi
+    const dateInput = document.getElementById('create-date');
+    if (dateInput) dateInput.value = getTodayFormatted();
+
+    selectExistingClient(person);
+
+    // Avto-foküs yo'q — aks holda klaviatura darrov ochilib,
+    // pastki navigatsiya bar tepaga ko'tarilib qoladi
+}
+
+// Yaratish formasida mavjud mijozni tanlaydi: qarz shu mijozga yoziladi (dublikat yaratilmaydi)
+function selectExistingClient(person) {
     const nameInput = document.getElementById('create-client-name');
     const phoneInput = document.getElementById('create-client-phone');
-    if (nameInput && person.full_name) nameInput.value = person.full_name;
-    if (phoneInput && person.phone) phoneInput.value = person.phone;
+    if (nameInput) nameInput.value = person.full_name || '';
+    // Telefon server uchun asosiy identifikator — telefonsiz mijozda maydon bo'sh qoladi
+    if (phoneInput) phoneInput.value = person.phone || '';
+    closeClientSuggestions();
+    updateDuplicateHint();
 
     const banner = document.getElementById('create-client-banner');
     if (banner) {
@@ -578,15 +690,173 @@ function startAddDebtForClient(person) {
         clearFormErrors(document.getElementById('create-debt-form'));
     }
 
-    // Sana har doim bugunga tenglanadi — keyingi qarz to'g'ri sanada yoziladi
-    const dateInput = document.getElementById('create-date');
-    if (dateInput) dateInput.value = getTodayFormatted();
-
     // Mijozning eski qarzlarini ko'rsatamiz
     loadExistingDebts(person.id);
+}
 
-    // Avto-foküs yo'q — aks holda klaviatura darrov ochilib,
-    // pastki navigatsiya bar tepaga ko'tarilib qoladi
+// ==========================================
+// COMPONENT: MIJOZ TAKLIFLARI (combobox) — dublikat mijozlarning oldini oladi
+// ==========================================
+
+const suggestState = { items: [], activeIndex: -1 };
+
+function findClientMatches(query, limit = 5) {
+    const q = normalizeText(query);
+    if (q.length < 2) return [];
+    const scored = [];
+    for (const item of state.summaries) {
+        const name = normalizeText(item.full_name);
+        let score = -1;
+        if (name === q) score = 0;
+        else if (name.startsWith(q)) score = 1;
+        else if (name.split(' ').some(part => part.startsWith(q))) score = 2;
+        else if (name.includes(q)) score = 3;
+        if (score >= 0) scored.push({ item, score });
+    }
+    scored.sort((a, b) => a.score - b.score || (a.item.full_name || '').localeCompare(b.item.full_name || '', 'uz'));
+    return scored.slice(0, limit).map(x => x.item);
+}
+
+function findExactClient(name) {
+    const q = normalizeText(name);
+    if (!q) return null;
+    return state.summaries.find(item => normalizeText(item.full_name) === q) || null;
+}
+
+function renderClientSuggestions() {
+    const input = document.getElementById('create-client-name');
+    const listEl = document.getElementById('client-suggestions');
+    if (!input || !listEl) return;
+    const matches = findClientMatches(input.value);
+    suggestState.items = matches;
+    suggestState.activeIndex = -1;
+    if (matches.length === 0) {
+        closeClientSuggestions();
+        return;
+    }
+    listEl.innerHTML = `
+        <div class="dropdown-header">Mavjud mijozlar — tanlasangiz qarz shu mijozga yoziladi</div>
+        ${matches.map((m, i) => `
+            <div class="dropdown-option" role="option" id="client-suggestion-${i}" data-index="${i}" aria-selected="false">
+                <div class="avatar avatar-sm ${m.has_debt ? '' : 'is-muted'}" aria-hidden="true">${escapeHtml(getInitials(m.full_name))}</div>
+                <div class="dropdown-option-texts">
+                    <span class="dropdown-option-title">${escapeHtml(m.full_name)}</span>
+                    <span class="dropdown-option-meta">${escapeHtml(m.phone || 'Telefon kiritilmagan')}</span>
+                </div>
+                ${m.has_debt
+                    ? `<span class="dropdown-option-amount text-danger">${escapeHtml(formatMoneyMap(m.remaining))}</span>`
+                    : '<span class="badge badge-success">Qarzsiz</span>'}
+            </div>
+        `).join('')}
+    `;
+    listEl.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+    input.removeAttribute('aria-activedescendant');
+}
+
+function closeClientSuggestions() {
+    const input = document.getElementById('create-client-name');
+    const listEl = document.getElementById('client-suggestions');
+    if (listEl) {
+        listEl.hidden = true;
+        listEl.innerHTML = '';
+    }
+    suggestState.items = [];
+    suggestState.activeIndex = -1;
+    input?.setAttribute('aria-expanded', 'false');
+    input?.removeAttribute('aria-activedescendant');
+}
+
+function setActiveSuggestion(index) {
+    const input = document.getElementById('create-client-name');
+    const options = document.querySelectorAll('#client-suggestions .dropdown-option');
+    if (!options.length) return;
+    suggestState.activeIndex = (index + options.length) % options.length;
+    options.forEach((opt, i) => {
+        const active = i === suggestState.activeIndex;
+        opt.setAttribute('aria-selected', String(active));
+        opt.classList.toggle('is-active', active);
+        if (active) opt.scrollIntoView({ block: 'nearest' });
+    });
+    input?.setAttribute('aria-activedescendant', `client-suggestion-${suggestState.activeIndex}`);
+}
+
+// Ro'yxatdan tanlanmagan, lekin aynan shu ismli mijoz mavjud bo'lsa — ogohlantiramiz
+function updateDuplicateHint() {
+    const input = document.getElementById('create-client-name');
+    const phoneInput = document.getElementById('create-client-phone');
+    const hint = document.getElementById('client-duplicate-hint');
+    if (!input || !hint) return;
+    const form = document.getElementById('create-debt-form');
+    const existing = form?.classList.contains('has-selected-client') ? null : findExactClient(input.value);
+    const phoneMatches = existing && existing.phone && digitsOnly(phoneInput?.value) === digitsOnly(existing.phone);
+    if (!existing || phoneMatches) {
+        hint.hidden = true;
+        hint.innerHTML = '';
+        return;
+    }
+    hint.hidden = false;
+    hint.innerHTML = `
+        ${icon('info')}
+        <span>«${escapeHtml(existing.full_name)}» ismli mijoz allaqachon mavjud. Qarzni unga yozish uchun tanlang, aks holda yangi mijoz yaratiladi.</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-use-existing-client" data-client-id="${existing.id}">Tanlash</button>
+    `;
+}
+
+function setupClientSuggestions() {
+    const input = document.getElementById('create-client-name');
+    const phoneInput = document.getElementById('create-client-phone');
+    const listEl = document.getElementById('client-suggestions');
+    if (!input || !listEl) return;
+
+    input.addEventListener('input', () => {
+        renderClientSuggestions();
+        updateDuplicateHint();
+    });
+    input.addEventListener('focus', () => {
+        if (input.value.trim().length >= 2) renderClientSuggestions();
+    });
+    // Tanlash uchun bosilgan option'ga fokus ketishidan oldin blur ro'yxatni yopmasligi uchun kechiktiramiz
+    input.addEventListener('blur', () => setTimeout(closeClientSuggestions, 150));
+    input.addEventListener('keydown', (e) => {
+        if (listEl.hidden) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActiveSuggestion(suggestState.activeIndex + 1);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActiveSuggestion(suggestState.activeIndex - 1);
+        } else if (e.key === 'Enter' && suggestState.activeIndex >= 0) {
+            e.preventDefault();
+            selectExistingClient(suggestState.items[suggestState.activeIndex]);
+            hapticImpact();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            closeClientSuggestions();
+        }
+    });
+    // mousedown/touch — input blur'idan oldin ishlaydi
+    listEl.addEventListener('mousedown', (e) => e.preventDefault());
+    listEl.addEventListener('click', (e) => {
+        const opt = e.target.closest('.dropdown-option');
+        if (!opt) return;
+        const item = suggestState.items[Number(opt.getAttribute('data-index'))];
+        if (item) {
+            selectExistingClient(item);
+            hapticImpact();
+        }
+    });
+
+    phoneInput?.addEventListener('input', updateDuplicateHint);
+    document.getElementById('client-duplicate-hint')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('#btn-use-existing-client');
+        if (!btn) return;
+        const item = state.summaries.find(s => String(s.id) === btn.getAttribute('data-client-id'));
+        if (item) {
+            selectExistingClient(item);
+            hapticImpact();
+        }
+    });
 }
 
 // Mijozning joriy (yopilmagan) qarzlarini yuklab banner ostida ko'rsatadi
@@ -639,6 +909,7 @@ function clearCreateClientBanner() {
     const phoneInput = document.getElementById('create-client-phone');
     if (nameInput) nameInput.value = '';
     if (phoneInput) phoneInput.value = '';
+    updateDuplicateHint();
 }
 
 function escapeHtml(str) {
@@ -1231,7 +1502,7 @@ function setupCreateForm() {
                     given_currency: givenCurrency,
                 };
 
-                const res = await apiFetch('/api/debts', {
+                const json = await apiJson('/api/debts', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1239,11 +1510,6 @@ function setupCreateForm() {
                     },
                     body: JSON.stringify(payload),
                 });
-
-                const json = await res.json();
-                if (!res.ok || json.error) {
-                    throw new Error(json.error || 'Qarzni saqlashda xatolik');
-                }
 
                 hapticSuccess();
                 const remainingText = json.remaining_by_currency ? formatMoneyMap(json.remaining_by_currency) : '';
@@ -1282,13 +1548,10 @@ function setupCreateForm() {
 
                 updateCreateCalculation();
 
-                // Refresh data and switch to tab 1
-                await fetchStats();
-                await fetchSummaries();
+                // Jadvalga qaytamiz — switchTab ma'lumotlarni o'zi yangilaydi
                 switchTab('tab-table');
             } catch (err) {
-                hapticError();
-                showToast(err.message, 'error');
+                notifyError(err);
             } finally {
                 setButtonLoading(submitBtn, false);
             }
@@ -1300,23 +1563,38 @@ function setupCreateForm() {
 // TAB 3: PAYMENT FORM
 // ==========================================
 
+// Qarzdorlar ko'p bo'lsa, ro'yxat ustida filtr maydoni ko'rsatiladi
+const PAY_SEARCH_THRESHOLD = 8;
+
 function populatePaymentClients() {
     const select = document.getElementById('pay-client-select');
     if (!select) return;
 
     const previous = select.value;
     const debtors = state.summaries.filter(s => s.has_debt);
-    select.innerHTML = `<option value="">${debtors.length ? 'Mijozni tanlang' : "Qarzdor mijozlar yo'q"}</option>` +
-        debtors.map(d => `
+    const query = document.getElementById('pay-client-search')?.value || '';
+    const searchWrap = document.getElementById('pay-client-search-wrap');
+    if (searchWrap) searchWrap.hidden = debtors.length < PAY_SEARCH_THRESHOLD;
+
+    // Tanlangan mijoz filtrga mos kelmasa ham ro'yxatda qoladi — tanlov yo'qolmaydi
+    const visible = debtors.filter(d => matchesClientQuery(d, query) || String(d.id) === previous);
+    let placeholder = 'Mijozni tanlang';
+    if (debtors.length === 0) placeholder = "Qarzdor mijozlar yo'q";
+    else if (query.trim()) placeholder = visible.length ? `${visible.length} ta mos mijoz — tanlang` : 'Mos mijoz topilmadi';
+
+    select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` +
+        visible.map(d => `
             <option value="${d.id}" data-name="${escapeHtml(d.full_name)}" data-phone="${escapeHtml(d.phone)}"
                     data-remaining-uzs="${(d.remaining && d.remaining.UZS) || 0}"
                     data-remaining-usd="${(d.remaining && d.remaining.USD) || 0}">
                 ${escapeHtml(d.full_name)} — ${formatMoneyMap(d.remaining)}
             </option>
         `).join('');
-    // Ro'yxat yangilanganda tanlangan mijoz saqlanib qoladi
-    if (previous && debtors.some(d => String(d.id) === previous)) {
+    if (previous && visible.some(d => String(d.id) === previous)) {
         select.value = previous;
+    } else if (previous) {
+        // Mijoz qarzi yopilgan (ro'yxatdan chiqqan) — to'lov kartasi ham yashiriladi
+        select.dispatchEvent(new Event('change'));
     }
 }
 
@@ -1345,6 +1623,9 @@ function setupPaymentForm() {
     const submitBtn = document.getElementById('btn-submit-payment');
 
     form?.addEventListener('submit', (e) => e.preventDefault());
+
+    const searchInput = document.getElementById('pay-client-search');
+    searchInput?.addEventListener('input', debounce(() => populatePaymentClients(), 120));
 
     // Default Payment Date to Today
     if (payDateInput) payDateInput.value = getTodayFormatted();
@@ -1534,7 +1815,7 @@ function setupPaymentForm() {
             setButtonLoading(submitBtn, true, 'Qabul qilinmoqda…');
 
             try {
-                const res = await apiFetch('/api/payments', {
+                const json = await apiJson('/api/payments', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1549,11 +1830,6 @@ function setupPaymentForm() {
                     })
                 });
 
-                const json = await res.json();
-                if (!res.ok || json.error) {
-                    throw new Error(json.error || "To'lovni qabul qilishda xatolik");
-                }
-
                 hapticSuccess();
                 showToast(json.is_closed ? "To'lov qabul qilindi — qarz to'liq yopildi" : "To'lov muvaffaqiyatli qabul qilindi", 'success');
 
@@ -1565,13 +1841,10 @@ function setupPaymentForm() {
                 if (optionsWrapper) optionsWrapper.style.display = 'none';
                 if (partialGroup) partialGroup.style.display = 'none';
 
-                // Refresh data and switch to tab 1
-                await fetchStats();
-                await fetchSummaries();
+                // Jadvalga qaytamiz — switchTab ma'lumotlarni o'zi yangilaydi
                 switchTab('tab-table');
             } catch (err) {
-                hapticError();
-                showToast(err.message, 'error');
+                notifyError(err);
             } finally {
                 setButtonLoading(submitBtn, false);
             }
@@ -1594,8 +1867,8 @@ function switchTab(tabId) {
         else btn.removeAttribute('aria-current');
     });
     // Boshqa tabga o'tilganda tanlash rejimi yopiladi — amal paneli boshqa sahifada qolib ketmasin
-    if (tabId !== 'tab-paid' && paidState.isSelecting) exitPaidSelection();
-    if (tabId !== 'tab-trash' && trashState.isSelecting) exitTrashSelection();
+    if (tabId !== 'tab-paid' && paidList.isSelecting) paidList.exit();
+    if (tabId !== 'tab-trash' && trashList.isSelecting) trashList.exit();
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     if (tabId === 'tab-paid') fetchAndRenderPaidDebts();
@@ -1624,19 +1897,32 @@ document.addEventListener('DOMContentLoaded', () => {
             refreshBtn.classList.add('rotating');
             hapticImpact();
             refreshBtn.disabled = true;
-            await Promise.all([
-                fetchStats(),
-                fetchSummaries(),
-                fetchAndRenderPaidDebts(),
-                fetchAndRenderTrash(),
-            ]);
+            const results = await refreshAllData();
             setTimeout(() => {
                 refreshBtn.classList.remove('rotating');
                 refreshBtn.disabled = false;
             }, 400);
-            showToast("Ma'lumotlar yangilandi", 'success');
+            if (state.gateShown) return;
+            if (results.every(Boolean)) {
+                showToast("Ma'lumotlar yangilandi", 'success');
+            } else {
+                hapticError();
+                showToast("Ba'zi ma'lumotlarni yangilab bo'lmadi. Internet aloqasini tekshiring.", 'error');
+            }
         });
     }
+
+    // Tarmoq holati: aloqa uzilsa ogohlantiramiz, tiklansa ma'lumotlar jimgina yangilanadi
+    const networkBanner = document.getElementById('network-banner');
+    const setOffline = (offline) => {
+        if (networkBanner) networkBanner.hidden = !offline;
+    };
+    window.addEventListener('offline', () => setOffline(true));
+    window.addEventListener('online', () => {
+        setOffline(false);
+        refreshAllData();
+    });
+    setOffline(navigator.onLine === false);
 
     // Bo'sh / xato holatlaridagi tugmalar (delegation — kontent dinamik)
     document.addEventListener('click', (e) => {
@@ -1756,6 +2042,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Select this client in dropdown
             const select = document.getElementById('pay-client-select');
+            const paySearch = document.getElementById('pay-client-search');
+            if (paySearch && paySearch.value) {
+                paySearch.value = '';
+                populatePaymentClients();
+            }
             if (select) {
                 select.value = String(clientId);
                 select.dispatchEvent(new Event('change'));
@@ -1786,6 +2077,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Setup forms
     setupCreateForm();
+    setupClientSuggestions();
     setupPaymentForm();
     setupPaidTab();
     setupTrashTab();
@@ -1830,93 +2122,98 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ==========================================
-// UTILITY: LONG-PRESS & TAP GESTURE HANDLER
+// UTILITY: TAP / LONG-PRESS (event delegation — ro'yxatga bitta listener)
 // ==========================================
 
-// ==========================================
-// UTILITY: LONG-PRESS & TAP GESTURE HANDLER
-// ==========================================
-
-function attachCardGesture(card, onLongPress, onClick) {
+function attachListGestures(container, rowSelector, { onTap, onLongPress }) {
     let timer = null;
     let isLong = false;
+    let moved = false;
     let startX = 0;
     let startY = 0;
-    let touchMoved = false;
+    let activeRow = null;
 
-    card.addEventListener('touchstart', (e) => {
-        if (e.target.closest('input[type="checkbox"], button, a')) return;
-        isLong = false;
-        touchMoved = false;
-        if (e.touches && e.touches.length > 0) {
-            startX = e.touches[0].clientX;
-            startY = e.touches[0].clientY;
+    const clear = () => {
+        if (timer) {
+            clearTimeout(timer);
+            timer = null;
         }
+    };
+
+    container.addEventListener('touchstart', (e) => {
+        const row = e.target.closest(rowSelector);
+        if (!row || e.target.closest('button, a')) return;
+        activeRow = row;
+        isLong = false;
+        moved = false;
+        startX = e.touches[0]?.clientX || 0;
+        startY = e.touches[0]?.clientY || 0;
+        clear();
         timer = setTimeout(() => {
-            if (!touchMoved) {
+            if (!moved && activeRow) {
                 isLong = true;
                 hapticImpact();
-                onLongPress();
+                onLongPress(activeRow);
             }
         }, 380);
     }, { passive: true });
 
-    card.addEventListener('touchmove', (e) => {
-        if (e.touches && e.touches.length > 0) {
-            const dx = Math.abs(e.touches[0].clientX - startX);
-            const dy = Math.abs(e.touches[0].clientY - startY);
-            if (dx > 8 || dy > 8) {
-                touchMoved = true;
-                if (timer) {
-                    clearTimeout(timer);
-                    timer = null;
-                }
-            }
+    container.addEventListener('touchmove', (e) => {
+        if (!activeRow || !e.touches[0]) return;
+        if (Math.abs(e.touches[0].clientX - startX) > 8 || Math.abs(e.touches[0].clientY - startY) > 8) {
+            moved = true;
+            clear();
         }
     }, { passive: true });
 
-    card.addEventListener('touchend', () => {
-        if (timer) {
-            clearTimeout(timer);
-            timer = null;
+    container.addEventListener('touchend', (e) => {
+        clear();
+        if (activeRow && !moved) {
+            // Sintetik "click" (tap va long-press'dan keyin ham) ikkinchi marta ishlamasligi uchun
+            if (e.cancelable) e.preventDefault();
+            if (!isLong) onTap(activeRow);
         }
-        if (!touchMoved && !isLong && onClick) {
-            onClick();
-        }
+        activeRow = null;
     });
 
-    card.addEventListener('touchcancel', () => {
-        if (timer) {
-            clearTimeout(timer);
-            timer = null;
-        }
+    container.addEventListener('touchcancel', () => {
+        clear();
+        activeRow = null;
     });
 
-    // Desktop mouse click
-    card.addEventListener('click', (e) => {
-        if (e.target.closest('input[type="checkbox"], button, a')) return;
-        if (!window.matchMedia('(pointer: coarse)').matches && onClick) {
-            onClick();
-        }
+    // Sichqoncha (desktop)
+    container.addEventListener('click', (e) => {
+        const row = e.target.closest(rowSelector);
+        if (!row || e.target.closest('button, a')) return;
+        onTap(row);
+    });
+
+    // Klaviatura: Enter / Space
+    container.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const row = e.target.closest(rowSelector);
+        if (!row) return;
+        e.preventDefault();
+        onTap(row);
     });
 }
 
 // ==========================================
-// TAB: YOPILGANLAR (CLOSED DEBTS)
+// COMPONENT: TANLANADIGAN RO'YXAT (Yopilgan / Korzina)
+// Ikkala tab bir xil xulq-atvorga ega — yagona komponent, faqat konfiguratsiya farq qiladi.
 // ==========================================
 
-// Yopilgan / Korzina qatorlari uchun yagona shablon
-function renderDebtRowHTML(item, { isSelected, cbClass, statusHtml }) {
+function renderDebtRowHTML(item, { isSelected, isSelecting, statusHtml }) {
     const qty = item.product_quantity > 1 ? ` × ${item.product_quantity}` : '';
     return `
-        <div class="list-row trash-item ${isSelected ? 'selected' : ''}" data-id="${item.id}">
-            <input type="checkbox" class="trash-item-checkbox ${cbClass}" data-id="${item.id}" ${isSelected ? 'checked' : ''}
-                   aria-label="${escapeHtml(item.product_name)} — ${escapeHtml(item.client_name)}ni tanlash">
+        <div class="list-row trash-item ${isSelected ? 'selected' : ''}" data-id="${item.id}"
+             role="option" tabindex="0" aria-selected="${isSelecting ? String(isSelected) : 'false'}">
+            <input type="checkbox" class="trash-item-checkbox" tabindex="-1" aria-hidden="true" ${isSelected ? 'checked' : ''}>
             <div class="row-main">
                 <div class="row-title">${escapeHtml(item.product_name)}${qty}</div>
                 <div class="row-meta">
-                    <span class="row-meta-item">${icon('user')}${escapeHtml(item.client_name)}</span>
-                    <span class="row-meta-item">${icon('calendar')}${escapeHtml(item.debt_date)}</span>
+                    <span class="row-meta-item">${icon('user')}<span class="truncate">${escapeHtml(item.client_name)}</span></span>
+                    <span class="row-meta-item">${icon('calendar')}<span class="truncate">${escapeHtml(item.debt_date)}</span></span>
                 </div>
             </div>
             <div class="row-side">
@@ -1927,414 +2224,320 @@ function renderDebtRowHTML(item, { isSelected, cbClass, statusHtml }) {
     `;
 }
 
-const paidState = {
-    items: [],
-    selected: new Set(),
-    isSelecting: false,
-};
+const SELECTABLE_BATCH = 40;
 
-function enterPaidSelection(initialId = null) {
-    paidState.isSelecting = true;
-    const listEl = document.getElementById('paid-debts-list');
-    if (listEl) listEl.classList.add('selection-active');
+function createSelectableList(cfg) {
+    const st = { items: [], selected: new Set(), isSelecting: false, rendered: 0 };
+    const $ = (id) => document.getElementById(id);
+    let observer = null;
 
-    const normalBar = document.getElementById('paid-normal-bar');
-    const selectBar = document.getElementById('paid-select-bar');
-    const floatingBar = document.getElementById('paid-floating-action-bar');
-    if (normalBar) normalBar.style.display = 'none';
-    if (selectBar) selectBar.style.display = 'flex';
-    if (floatingBar) floatingBar.style.display = 'block';
-
-    if (initialId !== null && initialId !== undefined) {
-        paidState.selected.add(initialId);
-        const card = document.querySelector(`#paid-debts-list .trash-item[data-id="${initialId}"]`);
-        const cb = document.querySelector(`.paid-cb[data-id="${initialId}"]`);
-        if (card) card.classList.add('selected');
-        if (cb) cb.checked = true;
-    }
-    updatePaidToolbar();
-}
-
-function exitPaidSelection() {
-    paidState.isSelecting = false;
-    paidState.selected.clear();
-
-    const listEl = document.getElementById('paid-debts-list');
-    if (listEl) {
-        listEl.classList.remove('selection-active');
-        listEl.querySelectorAll('.trash-item').forEach(c => c.classList.remove('selected'));
-        listEl.querySelectorAll('.paid-cb').forEach(cb => { cb.checked = false; });
-    }
-
-    const normalBar = document.getElementById('paid-normal-bar');
-    const selectBar = document.getElementById('paid-select-bar');
-    const floatingBar = document.getElementById('paid-floating-action-bar');
-    if (normalBar) normalBar.style.display = 'flex';
-    if (selectBar) selectBar.style.display = 'none';
-    if (floatingBar) floatingBar.style.display = 'none';
-
-    updatePaidToolbar();
-}
-
-function togglePaidItem(id) {
-    if (paidState.selected.has(id)) {
-        paidState.selected.delete(id);
-    } else {
-        paidState.selected.add(id);
-    }
-    const card = document.querySelector(`#paid-debts-list .trash-item[data-id="${id}"]`);
-    const cb = document.querySelector(`.paid-cb[data-id="${id}"]`);
-    const isSelected = paidState.selected.has(id);
-    if (card) card.classList.toggle('selected', isSelected);
-    if (cb) cb.checked = isSelected;
-    updatePaidToolbar();
-    hapticImpact();
-}
-
-function renderPaidDebts() {
-    const container = document.getElementById('paid-debts-list');
-    const badge = document.getElementById('paid-total-badge');
-    if (!container) return;
-
-    if (badge) badge.textContent = `${paidState.items.length} ta`;
-
-    document.getElementById('btn-paid-enter-select')?.toggleAttribute('disabled', paidState.items.length === 0);
-
-    if (paidState.items.length === 0) {
-        container.innerHTML = stateBlockHTML({
-            iconName: 'check-circle',
-            title: "Yopilgan qarzlar yo'q",
-            desc: "To'liq to'langan qarzlar shu yerda ko'rinadi.",
+    function rowHTML(item) {
+        return renderDebtRowHTML(item, {
+            isSelected: st.selected.has(item.id),
+            isSelecting: st.isSelecting,
+            statusHtml: cfg.statusHtml,
         });
-        exitPaidSelection();
-        return;
     }
 
-    container.innerHTML = paidState.items.map(item => renderDebtRowHTML(item, {
-        isSelected: paidState.selected.has(item.id),
-        cbClass: 'paid-cb',
-        statusHtml: '<span class="badge badge-success">Yopilgan</span>',
-    })).join('');
-
-    if (paidState.isSelecting) {
-        container.classList.add('selection-active');
-    } else {
-        container.classList.remove('selection-active');
-    }
-
-    // Har bir kartochkaga gesture ulaymiz
-    container.querySelectorAll('.trash-item').forEach(card => {
-        const id = Number(card.getAttribute('data-id'));
-
-        attachCardGesture(
-            card,
-            () => {
-                if (!paidState.isSelecting) {
-                    enterPaidSelection(id);
-                } else {
-                    togglePaidItem(id);
-                }
-            },
-            () => {
-                if (paidState.isSelecting) {
-                    togglePaidItem(id);
-                } else {
-                    enterPaidSelection(id);
-                }
+    // Katta ro'yxatlar bo'laklab chiziladi — DOM kichik, "Barchasini tanlash" tez
+    function appendBatch() {
+        const container = $(cfg.listId);
+        if (!container) return;
+        container.querySelector('.list-sentinel')?.remove();
+        const next = st.items.slice(st.rendered, st.rendered + SELECTABLE_BATCH);
+        if (next.length === 0) return;
+        container.insertAdjacentHTML('beforeend', next.map(rowHTML).join(''));
+        st.rendered += next.length;
+        if (st.rendered < st.items.length) {
+            const sentinel = document.createElement('div');
+            sentinel.className = 'list-sentinel';
+            sentinel.setAttribute('role', 'presentation');
+            sentinel.textContent = 'Yuklanmoqda…';
+            container.appendChild(sentinel);
+            if (!observer) {
+                observer = new IntersectionObserver((entries) => {
+                    if (entries.some(e => e.isIntersecting)) appendBatch();
+                }, { rootMargin: '300px' });
             }
-        );
-    });
-
-    // Checkbox bosilganda
-    container.querySelectorAll('.paid-cb').forEach(cb => {
-        cb.addEventListener('change', () => {
-            const id = Number(cb.getAttribute('data-id'));
-            togglePaidItem(id);
-        });
-    });
-}
-
-function updatePaidToolbar() {
-    const countLabel = document.getElementById('paid-selected-count-label');
-    const moveBtn = document.getElementById('btn-move-to-trash');
-    const allBtn = document.getElementById('btn-paid-select-all-toggle');
-    const cnt = paidState.selected.size;
-
-    if (countLabel) {
-        countLabel.textContent = cnt > 0 ? `${cnt} ta tanlandi` : 'Yozuvlarni tanlang';
+            observer.observe(sentinel);
+        }
     }
-    if (moveBtn && !moveBtn.dataset.originalHtml) {
-        moveBtn.disabled = cnt === 0;
-        moveBtn.innerHTML = `${icon('trash')}${cnt > 0 ? `Korzinaga yuborish (${cnt})` : 'Korzinaga yuborish'}`;
-    }
-    if (allBtn) {
-        const allSelected = paidState.items.length > 0 && cnt === paidState.items.length;
-        allBtn.textContent = allSelected ? 'Hech biri' : 'Barchasi';
-    }
-}
 
-async function fetchAndRenderPaidDebts() {
-    const container = document.getElementById('paid-debts-list');
-    if (!container) return;
-    try {
-        const res = await apiFetch(`/api/paid-debts?limit=${LIST_LIMIT}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        paidState.items = await res.json();
-        paidState.selected.clear();
-        renderPaidDebts();
-    } catch (err) {
-        console.error('Error fetching paid debts:', err);
-        container.innerHTML = stateBlockHTML({
-            iconName: 'alert-triangle',
-            title: "Yopilgan qarzlarni yuklab bo'lmadi",
-            desc: "Internet aloqasini tekshiring va qayta urinib ko'ring.",
-            action: { id: 'retry-paid', label: 'Qayta urinish' },
-            isError: true,
+    function syncRows() {
+        const listEl = $(cfg.listId);
+        if (!listEl) return;
+        listEl.classList.toggle('selection-active', st.isSelecting);
+        listEl.setAttribute('aria-multiselectable', 'true');
+        listEl.querySelectorAll('.list-row[data-id]').forEach(row => {
+            const isSelected = st.selected.has(Number(row.getAttribute('data-id')));
+            row.classList.toggle('selected', isSelected);
+            row.setAttribute('aria-selected', st.isSelecting ? String(isSelected) : 'false');
+            const cb = row.querySelector('.trash-item-checkbox');
+            if (cb) cb.checked = isSelected;
         });
     }
+
+    function updateToolbar() {
+        const cnt = st.selected.size;
+        const countLabel = $(cfg.countLabelId);
+        if (countLabel) countLabel.textContent = cnt > 0 ? `${cnt} ta tanlandi` : 'Yozuvlarni tanlang';
+        const actionBtn = $(cfg.actionBtnId);
+        if (actionBtn && !actionBtn.dataset.originalHtml) {
+            actionBtn.disabled = cnt === 0;
+            actionBtn.innerHTML = `${icon(cfg.actionIcon)}${cfg.actionLabel}${cnt > 0 ? ` (${cnt})` : ''}`;
+        }
+        const allBtn = $(cfg.selectAllBtnId);
+        if (allBtn) {
+            const allSelected = st.items.length > 0 && cnt === st.items.length;
+            allBtn.textContent = allSelected ? 'Hech biri' : 'Barchasi';
+        }
+    }
+
+    function setBarsVisible(selecting) {
+        const normalBar = $(cfg.normalBarId);
+        const selectBar = $(cfg.selectBarId);
+        const floatingBar = $(cfg.floatingBarId);
+        if (normalBar) normalBar.style.display = selecting ? 'none' : 'flex';
+        if (selectBar) selectBar.style.display = selecting ? 'flex' : 'none';
+        if (floatingBar) floatingBar.style.display = selecting ? 'block' : 'none';
+    }
+
+    function enter(initialId = null) {
+        st.isSelecting = true;
+        if (initialId !== null && initialId !== undefined) st.selected.add(initialId);
+        setBarsVisible(true);
+        syncRows();
+        updateToolbar();
+    }
+
+    function exit() {
+        st.isSelecting = false;
+        st.selected.clear();
+        setBarsVisible(false);
+        syncRows();
+        updateToolbar();
+    }
+
+    function toggle(id) {
+        if (st.selected.has(id)) st.selected.delete(id);
+        else st.selected.add(id);
+        syncRows();
+        updateToolbar();
+        hapticImpact();
+    }
+
+    function toggleAll() {
+        if (st.items.length > 0 && st.selected.size === st.items.length) {
+            st.selected.clear();
+        } else {
+            st.items.forEach(i => st.selected.add(i.id));
+        }
+        syncRows();
+        updateToolbar();
+        hapticImpact();
+    }
+
+    function render() {
+        const container = $(cfg.listId);
+        if (!container) return;
+        const badge = $(cfg.badgeId);
+        if (badge) badge.textContent = formatCount(st.items.length);
+        $(cfg.enterBtnId)?.toggleAttribute('disabled', st.items.length === 0);
+
+        if (st.items.length === 0) {
+            container.removeAttribute('role');
+            container.innerHTML = stateBlockHTML(cfg.emptyState);
+            cfg.onRender?.(st.items);
+            exit();
+            return;
+        }
+
+        container.setAttribute('role', 'listbox');
+        container.setAttribute('aria-label', cfg.listLabel);
+        container.innerHTML = '';
+        st.rendered = 0;
+        appendBatch();
+        syncRows();
+        cfg.onRender?.(st.items);
+    }
+
+    async function load() {
+        const container = $(cfg.listId);
+        if (!container) return false;
+        if (!st.items.length) container.innerHTML = skeletonRowsHTML(2);
+        try {
+            st.items = await apiJson(`${cfg.endpoint}?limit=${LIST_LIMIT}`);
+            // Yangilangan ro'yxatda mavjud bo'lmagan tanlovlar tashlanadi
+            const ids = new Set(st.items.map(i => i.id));
+            [...st.selected].forEach(id => { if (!ids.has(id)) st.selected.delete(id); });
+            render();
+            updateToolbar();
+            return true;
+        } catch (err) {
+            console.error(`Error fetching ${cfg.endpoint}:`, err);
+            if (err.handled) return false;
+            container.removeAttribute('role');
+            container.innerHTML = stateBlockHTML({
+                iconName: 'alert-triangle',
+                title: cfg.errorTitle,
+                desc: err.message,
+                action: { id: `retry-${cfg.key}`, label: 'Qayta urinish' },
+                isError: true,
+            });
+            cfg.onError?.();
+            return false;
+        }
+    }
+
+    async function runAction() {
+        const actionBtn = $(cfg.actionBtnId);
+        const ids = [...st.selected];
+        if (ids.length === 0 || !actionBtn) return;
+        setButtonLoading(actionBtn, true, cfg.actionLoadingLabel);
+        try {
+            const json = await apiJson(cfg.actionEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ debt_ids: ids }),
+            });
+            hapticSuccess();
+            showToast(cfg.successMessage(json, ids.length), 'success');
+            setButtonLoading(actionBtn, false);
+            exit();
+            await refreshAllData();
+        } catch (err) {
+            notifyError(err);
+            setButtonLoading(actionBtn, false);
+            updateToolbar();
+        }
+    }
+
+    function setup() {
+        $(cfg.enterBtnId)?.addEventListener('click', () => {
+            enter();
+            hapticImpact();
+            $(cfg.listId)?.querySelector('.list-row')?.focus({ preventScroll: true });
+        });
+        $(cfg.cancelBtnId)?.addEventListener('click', () => {
+            exit();
+            hapticImpact();
+        });
+        $(cfg.selectAllBtnId)?.addEventListener('click', toggleAll);
+        $(cfg.actionBtnId)?.addEventListener('click', runAction);
+
+        const listEl = $(cfg.listId);
+        if (listEl) {
+            // Qator bosilganda: tanlash rejimida — belgilash, aks holda — shu qator bilan tanlashni boshlash
+            const handle = (row) => {
+                const id = Number(row.getAttribute('data-id'));
+                if (st.isSelecting) toggle(id);
+                else {
+                    enter(id);
+                    hapticImpact();
+                }
+            };
+            attachListGestures(listEl, '.list-row[data-id]', { onTap: handle, onLongPress: handle });
+        }
+    }
+
+    return {
+        state: st,
+        enter,
+        exit,
+        load,
+        setup,
+        get isSelecting() { return st.isSelecting; },
+    };
+}
+
+const paidList = createSelectableList({
+    key: 'paid',
+    listId: 'paid-debts-list',
+    listLabel: 'Yopilgan qarzlar',
+    endpoint: '/api/paid-debts',
+    actionEndpoint: '/api/trash/move',
+    normalBarId: 'paid-normal-bar',
+    selectBarId: 'paid-select-bar',
+    floatingBarId: 'paid-floating-action-bar',
+    badgeId: 'paid-total-badge',
+    countLabelId: 'paid-selected-count-label',
+    selectAllBtnId: 'btn-paid-select-all-toggle',
+    enterBtnId: 'btn-paid-enter-select',
+    cancelBtnId: 'btn-paid-cancel-select',
+    actionBtnId: 'btn-move-to-trash',
+    actionIcon: 'trash',
+    actionLabel: 'Korzinaga yuborish',
+    actionLoadingLabel: 'Yuborilmoqda…',
+    statusHtml: '<span class="badge badge-success">Yopilgan</span>',
+    errorTitle: "Yopilgan qarzlarni yuklab bo'lmadi",
+    emptyState: {
+        iconName: 'check-circle',
+        title: "Yopilgan qarzlar yo'q",
+        desc: "To'liq to'langan qarzlar shu yerda ko'rinadi.",
+    },
+    successMessage: (json, n) => `${json.moved ?? n} ta yozuv korzinaga yuborildi`,
+});
+
+const trashList = createSelectableList({
+    key: 'trash',
+    listId: 'trash-list',
+    listLabel: 'Korzinadagi yozuvlar',
+    endpoint: '/api/trash',
+    actionEndpoint: '/api/trash/restore',
+    normalBarId: 'trash-normal-bar',
+    selectBarId: 'trash-select-bar',
+    floatingBarId: 'trash-floating-action-bar',
+    badgeId: 'trash-total-badge',
+    countLabelId: 'trash-selected-count-label',
+    selectAllBtnId: 'btn-trash-select-all-toggle',
+    enterBtnId: 'btn-trash-enter-select',
+    cancelBtnId: 'btn-trash-cancel-select',
+    actionBtnId: 'btn-restore-from-trash',
+    actionIcon: 'restore',
+    actionLabel: 'Yopilganlarga qaytarish',
+    actionLoadingLabel: 'Qaytarilmoqda…',
+    statusHtml: '<span class="badge badge-neutral">Korzinada</span>',
+    errorTitle: "Korzinani yuklab bo'lmadi",
+    emptyState: {
+        iconName: 'trash',
+        title: "Korzina bo'sh",
+        desc: "Yopilgan bo'limidan yuborilgan yozuvlar shu yerda saqlanadi.",
+    },
+    successMessage: (json, n) => `${json.restored ?? n} ta yozuv yopilganlarga qaytarildi`,
+    // Korzina bo'sh yoki yuklanmagan bo'lsa, tozalash paneli ko'rinmaydi
+    onRender: (items) => {
+        const bar = document.getElementById('trash-purge-bar');
+        if (!bar) return;
+        bar.style.display = items.length ? 'flex' : 'none';
+        if (items.length) hidePurgeConfirm();
+    },
+    onError: () => {
+        const bar = document.getElementById('trash-purge-bar');
+        if (bar) bar.style.display = 'none';
+    },
+});
+
+// Mavjud nomlar saqlanadi — boshqa joylardan chaqiriladi
+function fetchAndRenderPaidDebts() {
+    return paidList.load();
+}
+
+function fetchAndRenderTrash() {
+    return trashList.load();
 }
 
 function setupPaidTab() {
-    // "Tanlash" tugmasi
-    document.getElementById('btn-paid-enter-select')?.addEventListener('click', () => {
-        enterPaidSelection();
-        hapticImpact();
-    });
-
-    // "Bekor qilish" tugmasi
-    document.getElementById('btn-paid-cancel-select')?.addEventListener('click', () => {
-        exitPaidSelection();
-        hapticImpact();
-    });
-
-    // "Barchasi / Hech biri" tugmasi
-    document.getElementById('btn-paid-select-all-toggle')?.addEventListener('click', () => {
-        const listEl = document.getElementById('paid-debts-list');
-        if (paidState.selected.size === paidState.items.length) {
-            paidState.selected.clear();
-            listEl?.querySelectorAll('.trash-item').forEach(c => c.classList.remove('selected'));
-            listEl?.querySelectorAll('.paid-cb').forEach(cb => { cb.checked = false; });
-        } else {
-            paidState.items.forEach(i => paidState.selected.add(i.id));
-            listEl?.querySelectorAll('.trash-item').forEach(c => c.classList.add('selected'));
-            listEl?.querySelectorAll('.paid-cb').forEach(cb => { cb.checked = true; });
-        }
-        updatePaidToolbar();
-        hapticImpact();
-    });
-
-    // "Korzinaga yuborish" tugmasi
-    const moveBtn = document.getElementById('btn-move-to-trash');
-    if (moveBtn) {
-        moveBtn.addEventListener('click', async () => {
-            const ids = [...paidState.selected];
-            if (ids.length === 0) return;
-
-            setButtonLoading(moveBtn, true, 'Yuborilmoqda…');
-
-            try {
-                const res = await apiFetch('/api/trash/move', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ debt_ids: ids }),
-                });
-                const json = await res.json();
-                if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
-                hapticSuccess();
-                showToast(`${json.moved} ta yozuv korzinaga yuborildi`, 'success');
-                setButtonLoading(moveBtn, false);
-                exitPaidSelection();
-                await Promise.all([
-                    fetchStats(),
-                    fetchSummaries(),
-                    fetchAndRenderPaidDebts(),
-                    fetchAndRenderTrash(),
-                ]);
-            } catch (err) {
-                hapticError();
-                showToast(err.message, 'error');
-                setButtonLoading(moveBtn, false);
-                updatePaidToolbar();
-            }
-        });
-    }
+    paidList.setup();
 }
 
-// ==========================================
-// TAB: KORZINA (TRASH)
-// ==========================================
-
-const trashState = {
-    items: [],
-    selected: new Set(),
-    isSelecting: false,
-};
-
-function enterTrashSelection(initialId = null) {
-    trashState.isSelecting = true;
-    const listEl = document.getElementById('trash-list');
-    if (listEl) listEl.classList.add('selection-active');
-
-    const normalBar = document.getElementById('trash-normal-bar');
-    const selectBar = document.getElementById('trash-select-bar');
-    const floatingBar = document.getElementById('trash-floating-action-bar');
-    if (normalBar) normalBar.style.display = 'none';
-    if (selectBar) selectBar.style.display = 'flex';
-    if (floatingBar) floatingBar.style.display = 'block';
-
-    if (initialId !== null && initialId !== undefined) {
-        trashState.selected.add(initialId);
-        const card = document.querySelector(`#trash-list .trash-item[data-id="${initialId}"]`);
-        const cb = document.querySelector(`.trash-cb[data-id="${initialId}"]`);
-        if (card) card.classList.add('selected');
-        if (cb) cb.checked = true;
-    }
-    updateTrashToolbar();
-}
-
-function exitTrashSelection() {
-    trashState.isSelecting = false;
-    trashState.selected.clear();
-
-    const listEl = document.getElementById('trash-list');
-    if (listEl) {
-        listEl.classList.remove('selection-active');
-        listEl.querySelectorAll('.trash-item').forEach(c => c.classList.remove('selected'));
-        listEl.querySelectorAll('.trash-cb').forEach(cb => { cb.checked = false; });
-    }
-
-    const normalBar = document.getElementById('trash-normal-bar');
-    const selectBar = document.getElementById('trash-select-bar');
-    const floatingBar = document.getElementById('trash-floating-action-bar');
-    if (normalBar) normalBar.style.display = 'flex';
-    if (selectBar) selectBar.style.display = 'none';
-    if (floatingBar) floatingBar.style.display = 'none';
-
-    updateTrashToolbar();
-}
-
-function toggleTrashItem(id) {
-    if (trashState.selected.has(id)) {
-        trashState.selected.delete(id);
-    } else {
-        trashState.selected.add(id);
-    }
-    const card = document.querySelector(`#trash-list .trash-item[data-id="${id}"]`);
-    const cb = document.querySelector(`.trash-cb[data-id="${id}"]`);
-    const isSelected = trashState.selected.has(id);
-    if (card) card.classList.toggle('selected', isSelected);
-    if (cb) cb.checked = isSelected;
-    updateTrashToolbar();
-    hapticImpact();
-}
-
-function renderTrash() {
-    const container = document.getElementById('trash-list');
-    const badge = document.getElementById('trash-total-badge');
-    const purgeBar = document.getElementById('trash-purge-bar');
-    if (!container) return;
-
-    if (badge) badge.textContent = `${trashState.items.length} ta`;
-
-    document.getElementById('btn-trash-enter-select')?.toggleAttribute('disabled', trashState.items.length === 0);
-
-    if (trashState.items.length === 0) {
-        container.innerHTML = stateBlockHTML({
-            iconName: 'trash',
-            title: "Korzina bo'sh",
-            desc: "Yopilgan bo'limidan yuborilgan yozuvlar shu yerda saqlanadi.",
-        });
-        if (purgeBar) purgeBar.style.display = 'none';
-        exitTrashSelection();
-        return;
-    }
-
-    if (purgeBar) purgeBar.style.display = 'flex';
-
-    container.innerHTML = trashState.items.map(item => renderDebtRowHTML(item, {
-        isSelected: trashState.selected.has(item.id),
-        cbClass: 'trash-cb',
-        statusHtml: '<span class="badge badge-neutral">Korzinada</span>',
-    })).join('');
-
-    if (trashState.isSelecting) {
-        container.classList.add('selection-active');
-    } else {
-        container.classList.remove('selection-active');
-    }
-
-    // Har bir kartochkaga gesture
-    container.querySelectorAll('.trash-item').forEach(card => {
-        const id = Number(card.getAttribute('data-id'));
-        attachCardGesture(
-            card,
-            () => {
-                if (!trashState.isSelecting) {
-                    enterTrashSelection(id);
-                } else {
-                    toggleTrashItem(id);
-                }
-            },
-            () => {
-                if (trashState.isSelecting) {
-                    toggleTrashItem(id);
-                } else {
-                    enterTrashSelection(id);
-                }
-            }
-        );
-    });
-
-    container.querySelectorAll('.trash-cb').forEach(cb => {
-        cb.addEventListener('change', () => {
-            const id = Number(cb.getAttribute('data-id'));
-            toggleTrashItem(id);
-        });
-    });
-}
-
-function updateTrashToolbar() {
-    const countLabel = document.getElementById('trash-selected-count-label');
-    const restoreBtn = document.getElementById('btn-restore-from-trash');
-    const allBtn = document.getElementById('btn-trash-select-all-toggle');
-    const cnt = trashState.selected.size;
-
-    if (countLabel) {
-        countLabel.textContent = cnt > 0 ? `${cnt} ta tanlandi` : 'Yozuvlarni tanlang';
-    }
-    if (restoreBtn && !restoreBtn.dataset.originalHtml) {
-        restoreBtn.disabled = cnt === 0;
-        restoreBtn.innerHTML = `${icon('restore')}${cnt > 0 ? `Yopilganlarga qaytarish (${cnt})` : 'Yopilganlarga qaytarish'}`;
-    }
-    if (allBtn) {
-        const allSelected = trashState.items.length > 0 && cnt === trashState.items.length;
-        allBtn.textContent = allSelected ? 'Hech biri' : 'Barchasi';
-    }
-}
-
-
-async function fetchAndRenderTrash() {
-    const container = document.getElementById('trash-list');
-    if (!container) return;
-    if (!trashState.items.length) container.innerHTML = skeletonRowsHTML(2);
-    try {
-        const res = await apiFetch(`/api/trash?limit=${LIST_LIMIT}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        trashState.items = await res.json();
-        trashState.selected.clear();
-        trashState.isSelecting = false;
-        renderTrash();
-    } catch (err) {
-        console.error('Error fetching trash:', err);
-        container.innerHTML = stateBlockHTML({
-            iconName: 'alert-triangle',
-            title: "Korzinani yuklab bo'lmadi",
-            desc: "Internet aloqasini tekshiring va qayta urinib ko'ring.",
-            action: { id: 'retry-trash', label: 'Qayta urinish' },
-            isError: true,
-        });
-        document.getElementById('trash-purge-bar')?.style.setProperty('display', 'none');
-    }
+// Yozuv amallaridan keyin barcha ko'rinishlar bir vaqtda yangilanadi
+function refreshAllData() {
+    return Promise.all([
+        fetchStats(),
+        fetchSummaries(),
+        fetchAndRenderPaidDebts(),
+        fetchAndRenderTrash(),
+    ]);
 }
 
 // Korzinani tozalash uchun inline confirm paneli
@@ -2344,7 +2547,7 @@ function showPurgeConfirm() {
     hapticImpact();
     bar.innerHTML = `
         <div class="danger-zone-texts" role="alert">
-            <span class="danger-zone-title">${trashState.items.length} ta yozuv butunlay o'chirilsinmi?</span>
+            <span class="danger-zone-title">${trashList.state.items.length} ta yozuv butunlay o'chirilsinmi?</span>
             <span class="purge-bar-text">Bu amalni ortga qaytarib bo'lmaydi.</span>
         </div>
         <div class="danger-zone-actions">
@@ -2371,99 +2574,28 @@ function hidePurgeConfirm() {
 }
 
 async function executePurge() {
-    const bar = document.getElementById('trash-purge-bar');
     const confirmBtn = document.getElementById('btn-purge-confirm');
-    setButtonLoading(confirmBtn, true, 'O\'chirilmoqda…');
     const cancelBtn = document.getElementById('btn-purge-cancel');
+    setButtonLoading(confirmBtn, true, "O'chirilmoqda…");
     if (cancelBtn) cancelBtn.disabled = true;
     try {
-        const res = await apiFetch('/api/trash/purge', {
+        const json = await apiJson('/api/trash/purge', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
         });
-        const json = await res.json();
-        if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
         hapticSuccess();
         showToast(`${json.deleted} ta yozuv butunlay o'chirildi`, 'success');
         hidePurgeConfirm();
-        exitTrashSelection();
-        await Promise.all([
-            fetchStats(),
-            fetchSummaries(),
-            fetchAndRenderTrash(),
-            fetchAndRenderPaidDebts(),
-        ]);
+        trashList.exit();
+        await refreshAllData();
     } catch (err) {
-        hapticError();
-        showToast(err.message, 'error');
+        notifyError(err);
         hidePurgeConfirm();
     }
 }
 
 function setupTrashTab() {
-    // "Tanlash" tugmasi
-    document.getElementById('btn-trash-enter-select')?.addEventListener('click', () => {
-        enterTrashSelection();
-        hapticImpact();
-    });
-
-    // "Bekor qilish" tugmasi
-    document.getElementById('btn-trash-cancel-select')?.addEventListener('click', () => {
-        exitTrashSelection();
-        hapticImpact();
-    });
-
-    // "Barchasi / Hech biri" tugmasi
-    document.getElementById('btn-trash-select-all-toggle')?.addEventListener('click', () => {
-        if (trashState.selected.size === trashState.items.length) {
-            trashState.selected.clear();
-        } else {
-            trashState.items.forEach(i => trashState.selected.add(i.id));
-        }
-        renderTrash();
-        updateTrashToolbar();
-        hapticImpact();
-    });
-
-    // "↩️ Qaytarish" tugmasi
-    const restoreBtn = document.getElementById('btn-restore-from-trash');
-    if (restoreBtn) {
-        restoreBtn.addEventListener('click', async () => {
-            const ids = [...trashState.selected];
-            if (ids.length === 0) return;
-
-            setButtonLoading(restoreBtn, true, 'Qaytarilmoqda…');
-            try {
-                const res = await apiFetch('/api/trash/restore', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ debt_ids: ids }),
-                });
-                const json = await res.json();
-                if (!res.ok || json.error) throw new Error(json.error || 'Xatolik');
-                hapticSuccess();
-                showToast(`${json.restored} ta yozuv yopilganlarga qaytarildi`, 'success');
-                setButtonLoading(restoreBtn, false);
-                exitTrashSelection();
-                await Promise.all([
-                    fetchStats(),
-                    fetchSummaries(),
-                    fetchAndRenderTrash(),
-                    fetchAndRenderPaidDebts(),
-                ]);
-            } catch (err) {
-                hapticError();
-                showToast(err.message, 'error');
-                setButtonLoading(restoreBtn, false);
-                updateTrashToolbar();
-            }
-        });
-    }
-
+    trashList.setup();
     // Purge tugmasi — inline confirm orqali
     document.getElementById('btn-purge-trash')?.addEventListener('click', showPurgeConfirm);
 }
-
-
-
-

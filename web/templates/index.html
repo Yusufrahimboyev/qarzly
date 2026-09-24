@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>Qarz Daftar</title>
     <!-- Telegram WebApp Script -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -42,6 +42,8 @@
         <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
         <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
         <symbol id="i-select" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></symbol>
+        <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M2 2l20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 12.86a10 10 0 0 1 5.17-2.7M19 12.86a10 10 0 0 0-2.07-1.5"/><path d="M2 8.82a15 15 0 0 1 4.18-2.64M22 8.82a15 15 0 0 0-11.29-3.76"/><path d="M12 20h.01"/></symbol>
+        <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
         <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></symbol>
     </svg>
 
@@ -60,9 +62,16 @@
             </button>
         </header>
 
+        <!-- Tarmoq holati (offline) -->
+        <div id="network-banner" class="alert alert-warning network-banner" role="status" hidden>
+            <svg class="icon" aria-hidden="true"><use href="#i-wifi-off"/></svg>
+            <span>Internet aloqasi yo'q. Ko'rsatilgan ma'lumotlar eskirgan bo'lishi mumkin.</span>
+        </div>
+
         <main class="app-main">
             <!-- TAB: MIJOZLAR (JADVAL) -->
-            <section id="tab-table" class="tab-pane active" aria-labelledby="nav-tab-table">
+            <section id="tab-table" class="tab-pane active" aria-labelledby="clients-heading">
+                <h2 id="clients-heading" class="visually-hidden">Mijozlar</h2>
                 <!-- Umumiy ko'rsatkichlar -->
                 <div class="kpi-card" aria-live="polite">
                     <div class="kpi-main">
@@ -90,7 +99,7 @@
                 <!-- Qidiruv -->
                 <div class="search-field">
                     <svg class="icon search-icon" aria-hidden="true"><use href="#i-search"/></svg>
-                    <input type="search" id="table-search-input" placeholder="Ism yoki telefon bo'yicha qidirish" autocomplete="off" aria-label="Mijozlarni qidirish" enterkeyhint="search">
+                    <input type="search" id="table-search-input" placeholder="Ism yoki telefon raqami" autocomplete="off" aria-label="Mijozlarni qidirish" enterkeyhint="search">
                     <button id="clear-search-btn" class="clear-btn" type="button" aria-label="Qidiruvni tozalash" style="display: none;">
                         <svg class="icon"><use href="#i-x"/></svg>
                     </button>
@@ -100,7 +109,7 @@
                 <div class="segmented" role="group" aria-label="Holat bo'yicha filtr">
                     <button type="button" class="chip active" data-filter="all" aria-pressed="true">Barchasi <span class="chip-count" data-count="all"></span></button>
                     <button type="button" class="chip" data-filter="debtors" aria-pressed="false">Qarzdorlar <span class="chip-count" data-count="debtors"></span></button>
-                    <button type="button" class="chip" data-filter="paid" aria-pressed="false">Yopilgan <span class="chip-count" data-count="paid"></span></button>
+                    <button type="button" class="chip" data-filter="paid" aria-pressed="false">Qarzsiz <span class="chip-count" data-count="paid"></span></button>
                 </div>
 
                 <div class="list-toolbar">
@@ -163,7 +172,12 @@
                         <div class="client-fields">
                             <div class="form-group">
                                 <label for="create-client-name">Ism-familiya <span class="req" aria-hidden="true">*</span></label>
-                                <input type="text" id="create-client-name" placeholder="Masalan: Aliyev Anvar" autocomplete="off" autocapitalize="words" required>
+                                <div class="combobox">
+                                    <input type="text" id="create-client-name" placeholder="Yangi yoki mavjud mijoz ismi" autocomplete="off" autocapitalize="words" required
+                                           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="client-suggestions">
+                                    <div id="client-suggestions" class="dropdown" role="listbox" aria-label="Mavjud mijozlar" hidden></div>
+                                </div>
+                                <div id="client-duplicate-hint" class="alert alert-info field-alert" role="status" hidden></div>
                             </div>
                             <div class="form-group">
                                 <label for="create-client-phone">Telefon raqami <span class="optional">ixtiyoriy</span></label>
@@ -314,6 +328,10 @@
                     <div class="card form-section">
                         <div class="form-group">
                             <label for="pay-client-select">Qarzdor mijoz <span class="req" aria-hidden="true">*</span></label>
+                            <div class="search-field search-field-sm" id="pay-client-search-wrap" hidden>
+                                <svg class="icon search-icon" aria-hidden="true"><use href="#i-search"/></svg>
+                                <input type="search" id="pay-client-search" placeholder="Ro'yxatni ism yoki telefon bo'yicha filtrlash" autocomplete="off" aria-label="Qarzdorlarni filtrlash" aria-controls="pay-client-select" enterkeyhint="search">
+                            </div>
                             <div class="select-field">
                                 <select id="pay-client-select" required>
                                     <option value="">Mijozni tanlang</option>
@@ -565,6 +583,6 @@
     <!-- TOAST -->
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js" defer></script>
 </body>
 </html>
