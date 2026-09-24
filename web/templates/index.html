@@ -51,20 +51,20 @@
         <!-- Top App Bar -->
         <header class="app-header">
             <div class="brand">
-                <div class="brand-icon" aria-hidden="true"><svg class="icon"><use href="#i-logo"/></svg></div>
+                <div class="brand-icon" aria-hidden="true"><svg width="20" height="20" class="icon"><use href="#i-logo"/></svg></div>
                 <div class="brand-texts">
                     <h1 class="brand-title">Qarz Daftar</h1>
                     <p class="brand-subtitle">Mijozlar qarzi hisobi</p>
                 </div>
             </div>
             <button id="btn-refresh" class="icon-btn" type="button" title="Ma'lumotlarni yangilash" aria-label="Ma'lumotlarni yangilash">
-                <svg class="icon"><use href="#i-refresh"/></svg>
+                <svg width="20" height="20" class="icon"><use href="#i-refresh"/></svg>
             </button>
         </header>
 
         <!-- Tarmoq holati (offline) -->
         <div id="network-banner" class="alert alert-warning network-banner" role="status" hidden>
-            <svg class="icon" aria-hidden="true"><use href="#i-wifi-off"/></svg>
+            <svg width="20" height="20" class="icon" aria-hidden="true"><use href="#i-wifi-off"/></svg>
             <span>Internet aloqasi yo'q. Ko'rsatilgan ma'lumotlar eskirgan bo'lishi mumkin.</span>
         </div>
 
@@ -80,14 +80,14 @@
                     </div>
                     <div class="kpi-metrics">
                         <div class="kpi-metric">
-                            <span class="kpi-metric-icon tone-danger" aria-hidden="true"><svg class="icon"><use href="#i-alert-circle"/></svg></span>
+                            <span class="kpi-metric-icon tone-danger" aria-hidden="true"><svg width="20" height="20" class="icon"><use href="#i-alert-circle"/></svg></span>
                             <div class="kpi-metric-texts">
                                 <span class="kpi-metric-label">Qarzdorlar</span>
                                 <span id="stat-debtors-count" class="kpi-metric-value">—</span>
                             </div>
                         </div>
                         <div class="kpi-metric">
-                            <span class="kpi-metric-icon tone-neutral" aria-hidden="true"><svg class="icon"><use href="#i-users"/></svg></span>
+                            <span class="kpi-metric-icon tone-neutral" aria-hidden="true"><svg width="20" height="20" class="icon"><use href="#i-users"/></svg></span>
                             <div class="kpi-metric-texts">
                                 <span class="kpi-metric-label">Mijozlar</span>
                                 <span id="stat-clients-count" class="kpi-metric-value">—</span>
@@ -98,10 +98,10 @@
 
                 <!-- Qidiruv -->
                 <div class="search-field">
-                    <svg class="icon search-icon" aria-hidden="true"><use href="#i-search"/></svg>
+                    <svg width="20" height="20" class="icon search-icon" aria-hidden="true"><use href="#i-search"/></svg>
                     <input type="search" id="table-search-input" placeholder="Ism yoki telefon raqami" autocomplete="off" aria-label="Mijozlarni qidirish" enterkeyhint="search">
                     <button id="clear-search-btn" class="clear-btn" type="button" aria-label="Qidiruvni tozalash" style="display: none;">
-                        <svg class="icon"><use href="#i-x"/></svg>
+                        <svg width="20" height="20" class="icon"><use href="#i-x"/></svg>
                     </button>
                 </div>
 
@@ -124,7 +124,7 @@
                             <option value="debt_desc">Qarz: kattasidan</option>
                             <option value="debt_asc">Qarz: kichigidan</option>
                         </select>
-                        <svg class="icon sort-chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+                        <svg width="20" height="20" class="icon sort-chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>
                     </label>
                 </div>
 
@@ -151,7 +151,7 @@
 
                         <!-- Tanlangan mavjud mijoz banneri (jadval yoki hisobotdan) -->
                         <div id="create-client-banner" class="selected-client" style="display: none;">
-                            <div class="avatar" aria-hidden="true"><svg class="icon"><use href="#i-user"/></svg></div>
+                            <div class="avatar" aria-hidden="true"><svg width="20" height="20" class="icon"><use href="#i-user"/></svg></div>
                             <div class="selected-client-texts">
                                 <span class="selected-client-name" id="banner-client-name">-</span>
                                 <span class="selected-client-phone" id="banner-client-phone">-</span>
@@ -230,7 +230,7 @@
                         </div>
 
                         <button type="button" id="btn-add-product" class="btn btn-dashed btn-block">
-                            <svg class="icon"><use href="#i-plus"/></svg> Yana tovar qo'shish
+                            <svg width="20" height="20" class="icon"><use href="#i-plus"/></svg> Yana tovar qo'shish
                         </button>
                     </div>
 
@@ -240,7 +240,7 @@
 
                         <div class="toggle-row">
                             <div class="toggle-header">
-                                <span class="toggle-icon" aria-hidden="true"><svg class="icon"><use href="#i-repeat"/></svg></span>
+                                <span class="toggle-icon" aria-hidden="true"><svg width="20" height="20" class="icon"><use href="#i-repeat"/></svg></span>
                                 <label class="toggle-info" for="create-exchange-toggle">
                                     <span class="toggle-title">Ayirboshlash (exchange)</span>
                                     <span class="toggle-desc">Mijoz evaziga boshqa tovar berdimi?</span>
@@ -268,7 +268,7 @@
 
                         <div class="toggle-row">
                             <div class="toggle-header">
-                                <span class="toggle-icon" aria-hidden="true"><svg class="icon"><use href="#i-banknote"/></svg></span>
+                                <span class="toggle-icon" aria-hidden="true"><svg width="20" height="20" class="icon"><use href="#i-banknote"/></svg></span>
                                 <label class="toggle-info" for="create-given-toggle">
                                     <span class="toggle-title">Boshlang'ich to'lov</span>
                                     <span class="toggle-desc">Mijoz hozir qisman pul berdimi?</span>
@@ -329,19 +329,19 @@
                         <div class="form-group">
                             <label for="pay-client-select">Qarzdor mijoz <span class="req" aria-hidden="true">*</span></label>
                             <div class="search-field search-field-sm" id="pay-client-search-wrap" hidden>
-                                <svg class="icon search-icon" aria-hidden="true"><use href="#i-search"/></svg>
+                                <svg width="20" height="20" class="icon search-icon" aria-hidden="true"><use href="#i-search"/></svg>
                                 <input type="search" id="pay-client-search" placeholder="Ro'yxatni ism yoki telefon bo'yicha filtrlash" autocomplete="off" aria-label="Qarzdorlarni filtrlash" aria-controls="pay-client-select" enterkeyhint="search">
                             </div>
                             <div class="select-field">
                                 <select id="pay-client-select" required>
                                     <option value="">Mijozni tanlang</option>
                                 </select>
-                                <svg class="icon select-chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+                                <svg width="20" height="20" class="icon select-chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>
                             </div>
                         </div>
 
                         <div id="pay-client-info-card" class="selected-client selected-client-debt" style="display: none;">
-                            <div class="avatar" aria-hidden="true"><svg class="icon"><use href="#i-user"/></svg></div>
+                            <div class="avatar" aria-hidden="true"><svg width="20" height="20" class="icon"><use href="#i-user"/></svg></div>
                             <div class="selected-client-texts">
                                 <span class="selected-client-name" id="pay-selected-client-name">-</span>
                                 <span class="selected-client-phone" id="pay-selected-client-phone">-</span>
@@ -438,7 +438,7 @@
                         <p class="page-desc">Korzinaga yuborish uchun yozuvlarni tanlang.</p>
                     </div>
                     <button id="btn-paid-enter-select" class="btn btn-secondary btn-sm" type="button">
-                        <svg class="icon"><use href="#i-select"/></svg> Tanlash
+                        <svg width="20" height="20" class="icon"><use href="#i-select"/></svg> Tanlash
                     </button>
                 </div>
 
@@ -463,7 +463,7 @@
                         <p class="page-desc">Yozuvlarni qayta tiklash yoki butunlay o'chirish.</p>
                     </div>
                     <button id="btn-trash-enter-select" class="btn btn-secondary btn-sm" type="button">
-                        <svg class="icon"><use href="#i-select"/></svg> Tanlash
+                        <svg width="20" height="20" class="icon"><use href="#i-select"/></svg> Tanlash
                     </button>
                 </div>
 
@@ -485,7 +485,7 @@
                         <span class="purge-bar-text">Barcha yozuvlar butunlay o'chiriladi. Bu amalni ortga qaytarib bo'lmaydi.</span>
                     </div>
                     <button id="btn-purge-trash" class="btn btn-danger-outline btn-sm" type="button">
-                        <svg class="icon"><use href="#i-trash"/></svg> Tozalash
+                        <svg width="20" height="20" class="icon"><use href="#i-trash"/></svg> Tozalash
                     </button>
                 </div>
             </section>
@@ -507,23 +507,23 @@
         <!-- Pastki navigatsiya (foydalanish chastotasi bo'yicha tartiblangan) -->
         <nav class="bottom-nav" aria-label="Asosiy bo'limlar">
             <button class="nav-item active" id="nav-tab-table" data-tab="tab-table" type="button" aria-current="page">
-                <svg class="icon nav-icon" aria-hidden="true"><use href="#i-list"/></svg>
+                <svg width="20" height="20" class="icon nav-icon" aria-hidden="true"><use href="#i-list"/></svg>
                 <span class="nav-label">Mijozlar</span>
             </button>
             <button class="nav-item" id="nav-tab-create" data-tab="tab-create" type="button">
-                <svg class="icon nav-icon" aria-hidden="true"><use href="#i-plus-circle"/></svg>
+                <svg width="20" height="20" class="icon nav-icon" aria-hidden="true"><use href="#i-plus-circle"/></svg>
                 <span class="nav-label">Yangi qarz</span>
             </button>
             <button class="nav-item" id="nav-tab-payment" data-tab="tab-payment" type="button">
-                <svg class="icon nav-icon" aria-hidden="true"><use href="#i-card"/></svg>
+                <svg width="20" height="20" class="icon nav-icon" aria-hidden="true"><use href="#i-card"/></svg>
                 <span class="nav-label">To'lov</span>
             </button>
             <button class="nav-item" id="nav-tab-paid" data-tab="tab-paid" type="button">
-                <svg class="icon nav-icon" aria-hidden="true"><use href="#i-check-circle"/></svg>
+                <svg width="20" height="20" class="icon nav-icon" aria-hidden="true"><use href="#i-check-circle"/></svg>
                 <span class="nav-label">Yopilgan</span>
             </button>
             <button class="nav-item" id="nav-tab-trash" data-tab="tab-trash" type="button">
-                <svg class="icon nav-icon" aria-hidden="true"><use href="#i-trash"/></svg>
+                <svg width="20" height="20" class="icon nav-icon" aria-hidden="true"><use href="#i-trash"/></svg>
                 <span class="nav-label">Korzina</span>
             </button>
         </nav>
@@ -538,7 +538,7 @@
                     <p id="modal-client-phone" class="modal-subtitle">-</p>
                 </div>
                 <button id="modal-close-btn" class="icon-btn" type="button" aria-label="Yopish">
-                    <svg class="icon"><use href="#i-x"/></svg>
+                    <svg width="20" height="20" class="icon"><use href="#i-x"/></svg>
                 </button>
             </div>
 
@@ -571,10 +571,10 @@
 
             <div class="modal-footer">
                 <button id="modal-add-debt-btn" class="btn btn-secondary btn-lg" type="button">
-                    <svg class="icon"><use href="#i-plus"/></svg> Yangi qarz
+                    <svg width="20" height="20" class="icon"><use href="#i-plus"/></svg> Yangi qarz
                 </button>
                 <button id="modal-pay-now-btn" class="btn btn-primary btn-lg" type="button">
-                    <svg class="icon"><use href="#i-card"/></svg> To'lov qabul qilish
+                    <svg width="20" height="20" class="icon"><use href="#i-card"/></svg> To'lov qabul qilish
                 </button>
             </div>
         </div>

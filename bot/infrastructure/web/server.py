@@ -23,6 +23,7 @@ from bot.infrastructure.web.routes import (
     DEBT_SERVICE_KEY,
     IDEMPOTENCY_KEY,
     setup_routes,
+    static_cache_middleware,
 )
 from bot.infrastructure.web.telegram_auth import (
     create_auth_middleware,
@@ -59,6 +60,7 @@ class WebServer:
         app = web.Application(
             middlewares=[
                 security_headers_middleware,
+                static_cache_middleware,
                 create_auth_middleware(
                     self._settings.token,
                     self._settings.admin_id_list,
