@@ -83,7 +83,7 @@ def get_debt_table_keyboard(
     # sahifalash tugmalaridan keyin, alohida qatorda turadi.
     keyboard.append([
         InlineKeyboardButton(
-            text="📊 Excel hisobot",
+            text="📊 UMUMIY hisobot (Excel)",
             callback_data="export_start",
         )
     ])
@@ -130,9 +130,12 @@ def get_client_report_keyboard(client_id: int, has_debt: bool) -> InlineKeyboard
             )
         ])
 
+    # Nomi jadvaldagi "UMUMIY hisobot" dan farq qilishi shart — aks holda
+    # foydalanuvchi qaysi tugma butun do'kon, qaysi biri shu mijoz hisobotini
+    # beradi deb chalkashadi.
     buttons.append([
         InlineKeyboardButton(
-            text="📊 Excel hisobot",
+            text="📊 SHU MIJOZ hisoboti (Excel)",
             callback_data=f"client_excel:{client_id}",
         )
     ])

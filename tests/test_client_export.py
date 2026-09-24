@@ -58,7 +58,33 @@ def test_client_report_keyboard_has_excel_button():
         for row in keyboard.inline_keyboard
         for b in row
     ]
-    assert ("📊 Excel hisobot", "client_excel:7") in pairs
+    assert ("📊 SHU MIJOZ hisoboti (Excel)", "client_excel:7") in pairs
+
+
+def test_two_export_buttons_have_different_labels():
+    """Umumiy va bitta mijoz hisoboti tugmalari chalkashmasligi kerak."""
+    from bot.domain.entities.client import Client as _Client
+    from bot.domain.entities.report import ClientDebtSummary
+    from bot.presentation.keyboards.debt_table_kb import get_debt_table_keyboard
+
+    summaries = [
+        ClientDebtSummary(
+            client=_Client(id=7, full_name="Akmal", phone="+998901234567"),
+            remaining_by_currency={"UZS": 500_000},
+            active_debts_count=1,
+        )
+    ]
+    table_labels = {
+        b.text for row in get_debt_table_keyboard(summaries, page=1).inline_keyboard
+        for b in row
+    }
+    client_labels = {
+        b.text for row in get_client_report_keyboard(7, has_debt=True).inline_keyboard
+        for b in row
+    }
+    assert "📊 UMUMIY hisobot (Excel)" in table_labels
+    assert "📊 SHU MIJOZ hisoboti (Excel)" in client_labels
+    assert not (table_labels & client_labels)
 
 
 def test_excel_button_shown_even_without_debt():
