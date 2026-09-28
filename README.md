@@ -23,6 +23,11 @@ orqali veb-interfeys ham taqdim etadi.
   mijozning eski qarzlari ham ko'rinadi (dublikat mijoz yaratilmaydi).
 - **💰 Qarz to'lovi** — mijoz qarzini **to'liq** yoki **qisman** yopish
   (valyutalar bo'yicha alohida, FIFO tartibida).
+- **🎙 Ovozli xabar orqali qarz** — botga ovozli xabar yuboring
+  («Anvarga ikkita shina besh yuz ming so'mdan»): LayaKit (GigaAM ASR) uni
+  matnga o'giradi, ism/tovar/miqdor/narx/valyuta ajratiladi, Laya mavjud
+  mijozni tanlaydi va tovar qarz yaratish ustasiga qo'shiladi. Saqlash faqat
+  tasdiqlashdan keyin. `LAYAKIT_*` o'zgaruvchilari bo'sh bo'lsa o'chiq.
 - **🚀 Mini App (Web UI)** — `RENDER_EXTERNAL_URL` sozlanganida Telegram
   ichidan ochiladigan veb-ilova: jadval (qidiruv/filtr), dinamik ko'p tovarli
   yaratish formasi, to'lovlar, mijoz hisoboti modal oynasi.

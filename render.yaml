@@ -24,5 +24,9 @@ services:
           type: web
           name: qarzly
           property: host
+      - key: LAYAKIT_URL
+        sync: false
+      - key: LAYAKIT_TOKEN
+        sync: false
       - key: LOG_LEVEL
         value: INFO

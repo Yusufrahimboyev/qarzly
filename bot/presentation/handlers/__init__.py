@@ -9,6 +9,7 @@ from bot.presentation.handlers import (
     debt_table,
     report_export,
     start,
+    voice_debt,
 )
 
 
@@ -19,3 +20,4 @@ def register_handlers(dp: Dispatcher) -> None:
     dp.include_router(debt_creation.router)
     dp.include_router(debt_payment.router)
     dp.include_router(report_export.router)
+    dp.include_router(voice_debt.router)

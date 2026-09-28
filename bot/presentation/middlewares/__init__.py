@@ -6,6 +6,7 @@ from aiogram import Dispatcher
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.application.services.user_service import UserService
+from bot.application.services.voice_debt_service import VoiceDebtService
 from bot.core.config import Settings
 from bot.presentation.middlewares.admin_middleware import AdminMiddleware
 from bot.presentation.middlewares.dependency_middleware import DependencyMiddleware
@@ -18,6 +19,7 @@ def register_middlewares(
     client_service: ClientService,
     debt_service: DebtService,
     settings: Settings,
+    voice_debt_service: VoiceDebtService | None = None,
 ) -> None:
     """Barcha middleware'larni ro'yxatga oladi."""
     error_mw = ErrorMiddleware()
@@ -27,6 +29,7 @@ def register_middlewares(
         client_service=client_service,
         debt_service=debt_service,
         settings=settings,
+        voice_debt_service=voice_debt_service,
     )
 
     for observer in (dp.message, dp.callback_query):

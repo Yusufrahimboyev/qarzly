@@ -87,6 +87,17 @@ class Settings(BaseSettings):
         description="Startupda versiyalangan migratsiyalarni bajarish.",
     )
 
+    # --- LayaKit (ovozli xabar orqali qarz qo'shish) ---
+    layakit_url: str = Field(
+        default="",
+        description="LayaKit gateway manzili (HTTPS proxy/tunnel orqali), masalan https://laya.example.uz",
+    )
+    layakit_token: SecretStr = Field(
+        default=SecretStr(""),
+        description="LayaKit gateway Bearer tokeni.",
+    )
+    layakit_timeout_seconds: int = Field(default=120, ge=5, le=600)
+
     # --- Logging ---
     log_level: str = Field(default="INFO")
     log_json: bool = Field(
@@ -158,6 +169,11 @@ class Settings(BaseSettings):
     def admin_id_list(self) -> list[int]:
         """Adminlar ro'yxati (parse qilingan holatda)."""
         return self.admin_ids if isinstance(self.admin_ids, list) else []
+
+    @property
+    def voice_enabled(self) -> bool:
+        """Ovozli qarz qo'shish faqat LayaKit URL va token sozlanganda yoqiladi."""
+        return bool(self.layakit_url and self.layakit_token.get_secret_value())
 
     @property
     def web_app_url(self) -> str:

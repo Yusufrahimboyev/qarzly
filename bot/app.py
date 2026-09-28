@@ -23,6 +23,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.application.services.user_service import UserService
+from bot.application.services.voice_debt_service import VoiceDebtService
 from bot.core.config import get_settings
 from bot.core.logging import setup_logging
 from bot.infrastructure.database.connection import Database
@@ -42,6 +43,7 @@ from bot.infrastructure.database.repositories.user_repository import (
     PgUserRepository,
 )
 from bot.infrastructure.database.unit_of_work import create_unit_of_work_factory
+from bot.infrastructure.layakit.client import LayaKitClient
 from bot.infrastructure.scheduler.daily_report import send_daily_report
 from bot.infrastructure.scheduler.scheduler import create_scheduler
 from bot.infrastructure.telegram.retry_middleware import RetryAfterMiddleware
@@ -112,6 +114,16 @@ async def run() -> None:
             payments=payment_repository,
             uow_factory=uow_factory,
         )
+        voice_debt_service = None
+        if settings.voice_enabled:
+            voice_debt_service = VoiceDebtService(
+                laya=LayaKitClient(
+                    base_url=settings.layakit_url,
+                    token=settings.layakit_token.get_secret_value(),
+                    timeout_seconds=settings.layakit_timeout_seconds,
+                ),
+                client_service=client_service,
+            )
 
         # --- Aiogram: Bot va Dispatcher ---
         bot = Bot(
@@ -130,6 +142,7 @@ async def run() -> None:
             client_service=client_service,
             debt_service=debt_service,
             settings=settings,
+            voice_debt_service=voice_debt_service,
         )
         register_handlers(dp)
 
