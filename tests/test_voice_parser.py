@@ -46,6 +46,31 @@ from bot.domain.entities.currency import Currency
             "Rustamga disk $300",
             VoiceDebtDraft("Rustam", "Disk", 1, 300, Currency.USD),
         ),
+        # GigaAM ASR'ning haqiqiy chiqishlari (VPS, edge-tts ovozlari)
+        (
+            "Anvarga ikkita shina besh yuz ming so'mda.",
+            VoiceDebtDraft("Anvar", "Shina", 2, 500_000, Currency.UZS),
+        ),
+        (
+            "Anvarga ikkita shina besh yuz ming so'ma.",
+            VoiceDebtDraft("Anvar", "Shina", 2, 500_000, Currency.UZS),
+        ),
+        (
+            "Alisherga akkumulyator bir yuz yigirma dollar.",
+            VoiceDebtDraft("Alisher", "Akkumulyator", 1, 120, Currency.USD),
+        ),
+        (
+            "Qarz yozing. Alisherga akkumulyator bir yuz yigirma dollar.",
+            VoiceDebtDraft("Alisher", "Akkumulyator", 1, 120, Currency.USD),
+        ),
+        (
+            "Ekzodga uchta disk bir million besh yuz ming so'm.",
+            VoiceDebtDraft("Ekzod", "Disk", 3, 1_500_000, Currency.UZS),
+        ),
+        (
+            "Asurga moy ikki dona sakson besh ming so'm.",
+            VoiceDebtDraft("Asur", "Moy", 2, 85_000, Currency.UZS),
+        ),
     ],
 )
 def test_parses_debt_phrases(text: str, expected: VoiceDebtDraft) -> None:

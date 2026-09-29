@@ -7,7 +7,7 @@ tasdiqlagandan keyingina bazaga yoziladi.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any, Protocol
 
@@ -37,6 +37,8 @@ class VoiceDebt:
     client_name: str
     client_phone: str
     is_existing_client: bool
+    # Tanlanmagan, lekin ismi o'xshash mijozlar — admin tugma bilan almashtirishi uchun
+    similar_clients: list[Client] = field(default_factory=list)
 
 
 class VoiceDebtService:
@@ -56,21 +58,26 @@ class VoiceDebtService:
             VoiceParseError: majburiy maydonlar topilmasa.
         """
         draft = parse_voice_debt(transcript)
-        client = await self._match_client(draft.client_name, transcript)
+        candidates = _similar_clients(
+            draft.client_name, await self._clients.get_all_clients()
+        )
+        client = await self._match_client(draft.client_name, transcript, candidates)
+        similar = [c for c in candidates if c is not client]
         if client is None:
-            return VoiceDebt(draft, draft.client_name, "", is_existing_client=False)
-        return VoiceDebt(draft, client.full_name, client.phone, is_existing_client=True)
+            return VoiceDebt(draft, draft.client_name, "", False, similar)
+        return VoiceDebt(draft, client.full_name, client.phone, True, similar)
 
-    async def _match_client(self, spoken_name: str, transcript: str) -> Client | None:
+    async def _match_client(
+        self, spoken_name: str, transcript: str, candidates: list[Client]
+    ) -> Client | None:
         """Aytilgan ismga o'xshash mijozlardan Laya bittasini tanlaydi.
 
         Laya ishonchi past bo'lsa yoki xizmat ishlamasa — yangi mijoz (None).
         """
-        candidates = _similar_clients(spoken_name, await self._clients.get_all_clients())
         if not candidates:
             return None
 
-        labels = {_client_label(c): c for c in candidates}
+        labels = {client_label(c): c for c in candidates}
         try:
             choice, confidence = await self._laya.choose(
                 state={"aytilgan_ism": spoken_name, "transkript": transcript},
@@ -106,5 +113,5 @@ def _similar_clients(spoken_name: str, clients: list[Client]) -> list[Client]:
     return [c for s, c in scored if s >= _MIN_NAME_SIMILARITY][:_MAX_CANDIDATES]
 
 
-def _client_label(client: Client) -> str:
+def client_label(client: Client) -> str:
     return f"{client.full_name} ({client.phone})" if client.phone else client.full_name

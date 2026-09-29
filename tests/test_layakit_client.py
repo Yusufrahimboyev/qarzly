@@ -71,7 +71,7 @@ async def test_choose_sends_multilingual_choice_question(gateway) -> None:
     assert received["decide"]["questions"]["pick"] == {
         "type": "choice",
         "instructions": "Qaysi mijoz?",
-        "choices": ["Anvar", "Yangi mijoz"],
+        "criteria": ["Anvar", "Yangi mijoz"],
     }
 
 

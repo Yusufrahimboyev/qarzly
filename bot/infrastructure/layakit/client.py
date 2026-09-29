@@ -60,7 +60,8 @@ class LayaKitClient:
                 "pick": {
                     "type": "choice",
                     "instructions": instructions,
-                    "choices": choices,
+                    # Laya variantlarni `criteria` da kutadi (`choices` → 422)
+                    "criteria": choices,
                 }
             },
         }

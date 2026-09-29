@@ -163,6 +163,10 @@ def _split_word(word: str) -> list[_Token]:
         return [("word", "bir"), ("ta", None)]
     if word == "ta":
         return [("ta", None)]
+    # ASR qo'shimchalarni buzishi mumkin: "so'mda", "so'ma", "dollarga"
+    for stem in ("so'm", "dollar", "dollor"):
+        if word.startswith(stem):
+            return [("word", stem)]
     for suffix, marker in (("tadan", True), ("ta", True), ("dan", False), ("lik", False)):
         stem = word[: -len(suffix)]
         if word.endswith(suffix) and (

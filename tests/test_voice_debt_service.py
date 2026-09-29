@@ -49,6 +49,8 @@ async def test_laya_picks_existing_client(client_service: ClientService) -> None
 
     assert result.is_existing_client
     assert (result.client_name, result.client_phone) == ("Anvar Aliyev", "+998901234567")
+    # Ikkinchi Anvar ham bor — admin ogohlantiriladi
+    assert [c.full_name for c in result.similar_clients] == ["Anvar Karimov"]
     # Faqat o'xshash mijozlar va "Yangi mijoz" varianti yuboriladi
     assert set(laya.calls[0]) == {
         "Anvar Aliyev (+998901234567)", "Anvar Karimov", NEW_CLIENT_CHOICE,
@@ -80,4 +82,5 @@ async def test_skips_laya_when_no_similar_client(client_service: ClientService) 
 
     assert laya.calls == []
     assert result.client_name == "Zafar"
+    assert result.similar_clients == []
     assert result.draft.price_per_unit == 100

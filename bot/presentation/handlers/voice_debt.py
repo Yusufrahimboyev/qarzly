@@ -12,11 +12,17 @@ import logging
 from aiogram import Bot, F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from bot.application.common.formatters import esc_html, format_money, today_str
+from bot.application.common.formatters import (
+    clip_button_text,
+    esc_html,
+    format_money,
+    today_str,
+)
 from bot.application.common.voice_parser import VoiceParseError
-from bot.application.services.voice_debt_service import VoiceDebtService
+from bot.application.services.client_service import ClientService
+from bot.application.services.voice_debt_service import VoiceDebtService, client_label
 from bot.domain.entities.debt import DebtProduct
 from bot.presentation.keyboards.creation_kb import (
     get_more_products_keyboard,
@@ -29,6 +35,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 MAX_VOICE_SECONDS = 60
+_MAX_SWITCH_BUTTONS = 3
 
 _USAGE_HINT = (
     "<i>Masalan: «Anvarga ikkita shina besh yuz ming so'mdan» yoki "
@@ -84,6 +91,18 @@ async def process_voice_debt(
         + (" — <i>mavjud mijoz</i>" if voice_debt.is_existing_client else " — <i>yangi mijoz</i>")
         + "\n"
     )
+    similar = voice_debt.similar_clients[:_MAX_SWITCH_BUTTONS]
+    if similar:
+        client_line += "⚠️ <i>O'xshash mijozlar ham bor — to'g'risi boshqa bo'lsa, tanlang.</i>\n"
+    switch_rows = [
+        [
+            InlineKeyboardButton(
+                text=clip_button_text(f"👤 {client_label(c)}"),
+                callback_data=f"voice_client:{c.id}",
+            )
+        ]
+        for c in similar
+    ]
 
     await state.clear()
     await state.update_data(
@@ -104,7 +123,7 @@ async def process_voice_debt(
             f"📦 <b>Tovar:</b> {esc_html(draft.product_name)} — "
             f"{draft.quantity} × {price}\n\n"
             "💱 <b>Narx qaysi valyutada?</b>",
-            reply_markup=get_product_currency_keyboard(),
+            reply_markup=_with_rows(switch_rows, get_product_currency_keyboard()),
         )
         return
 
@@ -122,5 +141,50 @@ async def process_voice_debt(
         f"{format_money(product.price_per_unit, product.currency)} = "
         f"{format_money(product.total_price, product.currency)}\n\n"
         "➕ <b>Yana tovar qo'shasizmi?</b>",
-        reply_markup=get_more_products_keyboard(),
+        reply_markup=_with_rows(switch_rows, get_more_products_keyboard()),
     )
+
+
+@router.callback_query(
+    StateFilter(
+        DebtCreationStates.waiting_more_products,
+        DebtCreationStates.waiting_product_currency,
+    ),
+    F.data.startswith("voice_client:"),
+)
+async def cb_voice_switch_client(
+    callback: CallbackQuery,
+    state: FSMContext,
+    client_service: ClientService,
+) -> None:
+    """Ovozdan aniqlangan mijozni o'xshash mavjud mijozga almashtiradi."""
+    client_id_raw = (callback.data or "").split(":", 1)[1]
+    client = (
+        await client_service.get_by_id(int(client_id_raw))
+        if client_id_raw.isdigit()
+        else None
+    )
+    if client is None:
+        await callback.answer("Mijoz topilmadi.", show_alert=True)
+        return
+
+    await state.update_data(client_name=client.full_name, client_phone=client.phone)
+    if isinstance(callback.message, Message):
+        waiting_currency = (
+            await state.get_state() == DebtCreationStates.waiting_product_currency.state
+        )
+        await callback.message.edit_reply_markup(
+            reply_markup=get_product_currency_keyboard()
+            if waiting_currency
+            else get_more_products_keyboard()
+        )
+        await callback.message.answer(
+            f"👤 <b>Mijoz o'zgartirildi:</b> {esc_html(client_label(client))}"
+        )
+    await callback.answer()
+
+
+def _with_rows(
+    rows: list[list[InlineKeyboardButton]], keyboard: InlineKeyboardMarkup
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[*rows, *keyboard.inline_keyboard])

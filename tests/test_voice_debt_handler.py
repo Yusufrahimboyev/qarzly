@@ -23,10 +23,31 @@ from bot.presentation.handlers.debt_creation import (
     cb_more_products_no,
     cb_prodcur_usd,
 )
-from bot.presentation.handlers.voice_debt import MAX_VOICE_SECONDS, process_voice_debt
+from bot.presentation.handlers.voice_debt import (
+    MAX_VOICE_SECONDS,
+    cb_voice_switch_client,
+    process_voice_debt,
+)
 from bot.presentation.states.debt_creation import DebtCreationStates
 from tests.test_report_export_handler import StubCallback, StubMessage
 from tests.test_voice_debt_service import FakeLaya
+
+
+class VoiceStubMessage(StubMessage):
+    """Oxirgi yuborilgan klaviaturani ham yozib boradi."""
+
+    async def edit_text(self, text: str, reply_markup=None, **_kwargs) -> StubMessage:
+        object.__setattr__(self, "_markup", reply_markup)
+        return await super().edit_text(text)
+
+    async def edit_reply_markup(self, reply_markup=None, **_kwargs) -> StubMessage:
+        object.__setattr__(self, "_markup", reply_markup)
+        return self
+
+    @property
+    def button_data(self) -> list[str]:
+        markup = getattr(self, "_markup", None)
+        return [b.callback_data for row in markup.inline_keyboard for b in row] if markup else []
 
 
 class StubBot:
@@ -34,9 +55,9 @@ class StubBot:
         return io.BytesIO(file.file_id.encode())
 
 
-def voice_message(transcript: str, duration: int = 5) -> StubMessage:
+def voice_message(transcript: str, duration: int = 5) -> VoiceStubMessage:
     """FakeLaya audio baytlarini matn sifatida qaytaradi — file_id = transkript."""
-    return StubMessage(
+    return VoiceStubMessage(
         message_id=1,
         date=datetime.now(),
         chat=Chat(id=1, type="private"),
@@ -81,6 +102,32 @@ async def test_voice_to_saved_debt(state, services, settings, debt_repo) -> None
     [debt] = await debt_repo.get_all_by_client_id(client.id)
     assert client.full_name == "Anvar"
     assert (debt.remaining_debt, debt.currency) == (1_000_000, Currency.UZS)
+
+
+async def test_warns_about_similar_clients(state, services) -> None:
+    clients, _, _ = services
+    await clients.get_or_create("Anvar Aliyev", "+998901234567")
+    await clients.get_or_create("Anvar Karimov", "")
+    voice = VoiceDebtService(FakeLaya(("Anvar Aliyev (+998901234567)", 0.78)), clients)
+    message = voice_message("Anvarga shina 500 ming so'm")
+
+    await process_voice_debt(message, state, StubBot(), voice)
+
+    assert "Anvar Aliyev" in message.last_answer
+    assert "O'xshash mijozlar" in message.last_answer
+
+    # Admin ikkinchi Anvar tugmasini bosadi → mijoz almashadi
+    karimov = next(c for c in await clients.get_all_clients() if c.full_name == "Anvar Karimov")
+    assert message.button_data[0] == f"voice_client:{karimov.id}"
+    assert "more_products_no" in message.button_data
+    switch = StubCallback(message, data=f"voice_client:{karimov.id}")
+    await cb_voice_switch_client(switch, state, clients)
+
+    data = await state.get_data()
+    assert (data["client_name"], data["client_phone"]) == ("Anvar Karimov", "")
+    assert "Mijoz o'zgartirildi" in message.last_answer
+    assert await state.get_state() == DebtCreationStates.waiting_more_products.state
+    assert not any(d.startswith("voice_client:") for d in message.button_data)
 
 
 async def test_unknown_currency_asks_with_existing_keyboard(state, services) -> None:
