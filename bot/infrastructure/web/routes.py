@@ -37,6 +37,7 @@ from bot.domain.entities.debt import (
     MAX_QUANTITY,
     DebtProduct,
 )
+from bot.infrastructure.branches import Branch, BranchRegistry
 from bot.infrastructure.database.repositories.idempotency_repository import (
     IdempotencyStore,
 )
@@ -56,7 +57,13 @@ IDEMPOTENCY_KEY: web.AppKey[IdempotencyStore] = web.AppKey(
     "idempotency_store", IdempotencyStore
 )
 
+BRANCH_REGISTRY_KEY: web.AppKey[BranchRegistry] = web.AppKey(
+    "branch_registry", BranchRegistry
+)
+BRANCH_KEY: web.RequestKey[Branch] = web.RequestKey("branch", Branch)
+
 IDEMPOTENCY_HEADER = "Idempotency-Key"
+BRANCH_HEADER = "X-Branch"
 
 # Ro'yxat endpointlari uchun sahifa chegaralari.
 DEFAULT_PAGE_LIMIT = 200
@@ -131,6 +138,41 @@ class DebtIdsDTO(BaseModel):
 # ==========================================
 
 
+@web.middleware
+async def branch_middleware(request: web.Request, handler):
+    """`X-Branch` header'iga qarab so'rov filialini aniqlaydi.
+
+    Header bo'lmasa — asosiy filial (eski mijozlar bilan moslik). Noma'lum
+    filial kodi 400 qaytaradi: jimgina boshqa filial bazasiga yozilmasligi kerak.
+    Registry sozlanmagan bo'lsa (masalan testlarda) hech narsa qilmaydi.
+    """
+    registry = request.app.get(BRANCH_REGISTRY_KEY)
+    if registry is not None and request.path.startswith("/api/"):
+        code = request.headers.get(BRANCH_HEADER, "").strip().lower()
+        branch = registry.get(code) if code else registry.default
+        if branch is None:
+            return web.json_response({"error": "Noma'lum filial."}, status=400)
+        request[BRANCH_KEY] = branch
+    return await handler(request)
+
+
+def _client_service(request: web.Request) -> ClientService:
+    branch = request.get(BRANCH_KEY)
+    return branch.client_service if branch else request.app[CLIENT_SERVICE_KEY]
+
+
+def _debt_service(request: web.Request) -> DebtService:
+    branch = request.get(BRANCH_KEY)
+    return branch.debt_service if branch else request.app[DEBT_SERVICE_KEY]
+
+
+def _idempotency_store(request: web.Request) -> IdempotencyStore | None:
+    branch = request.get(BRANCH_KEY)
+    if branch:
+        return branch.idempotency_store
+    return request.app.get(IDEMPOTENCY_KEY)
+
+
 def _actor_id(request: web.Request) -> int | None:
     """So'rovni bajarayotgan Telegram foydalanuvchi ID si (audit uchun)."""
     user = request.get(TG_USER_KEY)
@@ -172,7 +214,7 @@ class _IdempotencyGuard:
     """
 
     def __init__(self, request: web.Request, scope: str) -> None:
-        self._store: IdempotencyStore | None = request.app.get(IDEMPOTENCY_KEY)
+        self._store: IdempotencyStore | None = _idempotency_store(request)
         self._key = request.headers.get(IDEMPOTENCY_HEADER, "").strip()
         self._scope = scope
         self._actor_id = _actor_id(request)
@@ -229,10 +271,13 @@ async def health_check(request: web.Request) -> web.Response:
 
     Agar database sozlangan bo'lsa, PostgreSQL ulanishini ham tekshiradi.
     """
-    db = request.app.get(DATABASE_KEY)
-    db_ok = True
-    if db is not None:
-        db_ok = await db.ping()
+    registry = request.app.get(BRANCH_REGISTRY_KEY)
+    if registry is not None:
+        databases = [branch.database for branch in registry if branch.database]
+    else:
+        db = request.app.get(DATABASE_KEY)
+        databases = [db] if db is not None else []
+    db_ok = all([await db.ping() for db in databases])
 
     status = "ok" if db_ok else "degraded"
     status_code = 200 if db_ok else 503
@@ -342,9 +387,24 @@ def _debt_row_to_dict(debt, client_names: dict[int, str]) -> dict:
     }
 
 
+async def api_get_branches(request: web.Request) -> web.Response:
+    """Mini App filial tanlagichi uchun filiallar ro'yxati."""
+    registry = request.app.get(BRANCH_REGISTRY_KEY)
+    if registry is None:
+        return web.json_response({"branches": [], "default": None})
+    return web.json_response(
+        {
+            "branches": [
+                {"code": branch.code, "title": branch.title} for branch in registry
+            ],
+            "default": registry.default.code,
+        }
+    )
+
+
 async def api_get_stats(request: web.Request) -> web.Response:
     """Umumiy statistikani qaytaradi (qarzlar valyutalar bo'yicha ajratilgan)."""
-    client_service = request.app[CLIENT_SERVICE_KEY]
+    client_service = _client_service(request)
     summaries = await client_service.get_all_summaries()
 
     debtors_count = sum(1 for s in summaries if s.has_debt)
@@ -359,7 +419,7 @@ async def api_get_stats(request: web.Request) -> web.Response:
 
 async def api_get_summaries(request: web.Request) -> web.Response:
     """Barcha mijozlarni alifbo tartibidagi qarz ma'lumotlari bilan qaytaradi."""
-    client_service = request.app[CLIENT_SERVICE_KEY]
+    client_service = _client_service(request)
     summaries = await client_service.get_all_summaries()
     limit, offset = _page_params(request)
     page = summaries[offset : offset + limit]
@@ -369,7 +429,7 @@ async def api_get_summaries(request: web.Request) -> web.Response:
 
 async def api_get_debtors(request: web.Request) -> web.Response:
     """Faqat faol qarzdorlarni qaytaradi."""
-    client_service = request.app[CLIENT_SERVICE_KEY]
+    client_service = _client_service(request)
     debtors = await client_service.get_debtor_summaries()
     limit, offset = _page_params(request)
     page = debtors[offset : offset + limit]
@@ -380,7 +440,7 @@ async def api_get_debtors(request: web.Request) -> web.Response:
 
 async def api_get_client_report(request: web.Request) -> web.Response:
     """Mijozning to'liq hisobotini (tarixi, exchange, to'lovlar) qaytaradi."""
-    debt_service = request.app[DEBT_SERVICE_KEY]
+    debt_service = _debt_service(request)
     client_id_str = request.match_info.get("id")
 
     if not client_id_str or not client_id_str.isdigit():
@@ -442,8 +502,8 @@ async def api_create_debt(request: web.Request) -> web.Response:
 
     Pydantic DTO orqali ma'lumotlar to'liq validatsiyadan o'tkaziladi.
     """
-    client_service = request.app[CLIENT_SERVICE_KEY]
-    debt_service = request.app[DEBT_SERVICE_KEY]
+    client_service = _client_service(request)
+    debt_service = _debt_service(request)
 
     try:
         raw_body = await request.json()
@@ -599,7 +659,7 @@ async def api_create_debt(request: web.Request) -> web.Response:
 
 async def api_make_payment(request: web.Request) -> web.Response:
     """To'lov qilish (to'liq yoki qisman) API handler'i."""
-    debt_service = request.app[DEBT_SERVICE_KEY]
+    debt_service = _debt_service(request)
 
     try:
         raw_body = await request.json()
@@ -703,8 +763,8 @@ async def api_get_paid_debts(request: web.Request) -> web.Response:
 
     Har bir yozuvda mijoz_id, mijoz_nomi, tovar_nomi, sana, valyuta mavjud.
     """
-    debt_service = request.app[DEBT_SERVICE_KEY]
-    client_service = request.app[CLIENT_SERVICE_KEY]
+    debt_service = _debt_service(request)
+    client_service = _client_service(request)
     limit, offset = _page_params(request)
 
     paid_debts = await debt_service.get_all_paid(limit=limit, offset=offset)
@@ -738,7 +798,7 @@ async def api_trash_move(request: web.Request) -> web.Response:
 
     Body: {"debt_ids": [1, 2, 3]}
     """
-    debt_service = request.app[DEBT_SERVICE_KEY]
+    debt_service = _debt_service(request)
 
     debt_ids, error = await _read_debt_ids(request)
     if error is not None:
@@ -756,8 +816,8 @@ async def api_trash_move(request: web.Request) -> web.Response:
 
 async def api_get_trash(request: web.Request) -> web.Response:
     """Korzina elementlarini qaytaradi."""
-    debt_service = request.app[DEBT_SERVICE_KEY]
-    client_service = request.app[CLIENT_SERVICE_KEY]
+    debt_service = _debt_service(request)
+    client_service = _client_service(request)
     limit, offset = _page_params(request)
 
     trashed_debts = await debt_service.get_all_trashed(limit=limit, offset=offset)
@@ -773,7 +833,7 @@ async def api_trash_restore(request: web.Request) -> web.Response:
 
     Body: {"debt_ids": [1, 2, 3]}
     """
-    debt_service = request.app[DEBT_SERVICE_KEY]
+    debt_service = _debt_service(request)
 
     debt_ids, error = await _read_debt_ids(request)
     if error is not None:
@@ -797,7 +857,7 @@ async def api_trash_purge(request: web.Request) -> web.Response:
     O'chirilgan qarzlar `trash`, to'lov tarixi esa `trash_payments`
     arxivida saqlanadi — moliyaviy audit trail yo'qolmaydi.
     """
-    debt_service = request.app[DEBT_SERVICE_KEY]
+    debt_service = _debt_service(request)
 
     try:
         deleted = await debt_service.purge_trash(actor_id=_actor_id(request))
@@ -816,6 +876,7 @@ def setup_routes(app: web.Application) -> None:
     app.router.add_get("/health", health_check)
 
     # REST APIs — asosiy
+    app.router.add_get("/api/branches", api_get_branches)
     app.router.add_get("/api/stats", api_get_stats)
     app.router.add_get("/api/summaries", api_get_summaries)
     app.router.add_get("/api/debtors", api_get_debtors)

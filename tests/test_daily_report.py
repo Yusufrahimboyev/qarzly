@@ -246,3 +246,22 @@ async def test_debts_before_start_date_land_in_opening_balance(
     assert report.opening_debt == {"UZS": 2_000_000}
     assert report.given_total == {}
     assert report.closing_debt == {"UZS": 2_000_000}
+
+
+async def test_branch_is_named_in_file_and_caption(client_repo, debt_repo, payment_repo):
+    service = await _service_with_data(client_repo, debt_repo, payment_repo)
+    bot = StubBot()
+
+    await send_daily_report(
+        bot=bot,
+        debt_service=service,
+        channel_id=-100,
+        start_date=START,
+        report_date=date(2026, 9, 1),
+        branch_code="nukus",
+        branch_title="Nukus",
+    )
+
+    (document,) = bot.sent
+    assert document.filename == "nukus_qarz-hisobot_18.08.2026_01.09.2026.xlsx"
+    assert "Filial: Nukus" in document.caption

@@ -99,7 +99,7 @@ cp .env.example .env
 | `BOT_TOKEN` | ✅ | — | BotFather'dan olingan token |
 | `ADMIN_IDS` | ✅ | — | Admin Telegram ID lari (vergul bilan ajratilgan) |
 | `ALLOW_OPEN_ACCESS` | — | `false` | Faqat development: bo'sh `ADMIN_IDS` bilan ochiq kirish |
-| `DATABASE_URL` | ✅ | — | PostgreSQL DSN (Supabase) |
+| `DATABASE_URL` | ✅ | — | PostgreSQL DSN (Supabase). Filiallar (Mangit/Nukus/Lassa) shu bazada alohida sxemalarda |
 | `PORT` | — | `8080` | Web server porti |
 | `RENDER_EXTERNAL_URL` | — | — | Mini App / keep-alive URL |
 | `API_RATE_LIMIT_PER_MINUTE` | — | `120` | Foydalanuvchi/IP uchun API chegarasi |

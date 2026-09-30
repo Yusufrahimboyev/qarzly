@@ -17,6 +17,7 @@ from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
 from bot.domain.entities.currency import Currency
+from bot.infrastructure.branches import Branch
 from bot.presentation.keyboards.main_menu_kb import get_main_menu_keyboard
 from bot.presentation.keyboards.payment_kb import (
     get_debtors_list_keyboard,
@@ -99,6 +100,7 @@ async def show_debtors_payment_list(
     message: Message,
     client_service: ClientService,
     state: FSMContext,
+    branch: Branch,
 ) -> None:
     """Qarz to'lash uchun barcha qarzdorlar ro'yxatini ko'rsatadi."""
     await state.clear()
@@ -112,7 +114,7 @@ async def show_debtors_payment_list(
         return
 
     await message.answer(
-        _debtors_header(debtors),
+        f"🏢 <b>Filial:</b> {esc_html(branch.title)}\n" + _debtors_header(debtors),
         reply_markup=get_debtors_list_keyboard(debtors, page=1),
     )
 

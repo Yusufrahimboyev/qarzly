@@ -15,7 +15,7 @@ from datetime import date
 from aiogram import Bot
 from aiogram.types import BufferedInputFile
 
-from bot.application.common.formatters import format_date, format_money_map, today
+from bot.application.common.formatters import esc_html, format_date, format_money_map, today
 from bot.application.services.debt_service import DebtService
 from bot.domain.entities.period_report import PeriodReport
 from bot.infrastructure.export.excel import build_file_name, build_period_workbook
@@ -30,6 +30,8 @@ async def send_daily_report(
     channel_id: int,
     start_date: date,
     report_date: date | None = None,
+    branch_code: str = "",
+    branch_title: str = "",
 ) -> bool:
     """Kunlik hisobotni yig'ib kanalga yuboradi.
 
@@ -51,16 +53,18 @@ async def send_daily_report(
         content = await asyncio.to_thread(
             build_period_workbook, report, include_day_sheet=True
         )
+        file_name = build_file_name(start_date, day)
+        if branch_code:
+            file_name = f"{branch_code}_{file_name}"
         await bot.send_document(
             chat_id=channel_id,
-            document=BufferedInputFile(
-                content, filename=build_file_name(start_date, day)
-            ),
-            caption=build_caption(report),
+            document=BufferedInputFile(content, filename=file_name),
+            caption=build_caption(report, branch_title),
         )
     except Exception:
         logger.exception(
-            "Kunlik hisobot yuborilmadi (kanal=%s, sana=%s)",
+            "Kunlik hisobot yuborilmadi (filial=%s, kanal=%s, sana=%s)",
+            branch_code or "-",
             channel_id,
             day.isoformat(),
         )
@@ -75,9 +79,11 @@ async def send_daily_report(
     return True
 
 
-def build_caption(report: PeriodReport) -> str:
+def build_caption(report: PeriodReport, branch_title: str = "") -> str:
     """Kanalga yuboriladigan fayl ostidagi kunlik xulosa."""
+    branch_line = f"🏢 <b>Filial: {esc_html(branch_title)}</b>\n" if branch_title else ""
     return (
+        f"{branch_line}"
         f"📊 <b>KUNLIK HISOBOT — {format_date(report.date_to)}</b>\n\n"
         "🆕 <b>Bugun:</b>\n"
         f"   ➕ Berilgan: {format_money_map(report.day_given)} "

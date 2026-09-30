@@ -24,9 +24,14 @@ from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.application.services.user_service import UserService
 from bot.application.services.voice_debt_service import VoiceDebtService
-from bot.core.config import get_settings
+from bot.core.branches import BRANCH_SCHEMAS, BRANCH_TITLES, DEFAULT_BRANCH
+from bot.core.config import Settings, get_settings
 from bot.core.logging import setup_logging
+from bot.infrastructure.branches import Branch, BranchRegistry
 from bot.infrastructure.database.connection import Database
+from bot.infrastructure.database.repositories.branch_preference_repository import (
+    BranchPreferenceStore,
+)
 from bot.infrastructure.database.repositories.client_repository import (
     PgClientRepository,
 )
@@ -68,6 +73,50 @@ async def _closing(resource, close) -> AsyncIterator[object]:
             logger.exception("Resursni yopishda xatolik (davom etilmoqda)")
 
 
+async def _open_branch(
+    stack: AsyncExitStack,
+    settings: Settings,
+    code: str,
+    laya: LayaKitClient | None,
+) -> Branch:
+    """Filial sxemasini (migratsiyalar bilan) ochadi va servislarini yig'adi."""
+    database = Database(
+        settings.dsn,
+        schema=BRANCH_SCHEMAS[code],
+        min_size=settings.db_pool_min_size,
+        max_size=settings.db_pool_max_size,
+        command_timeout=settings.db_command_timeout,
+        apply_migrations=settings.apply_migrations,
+    )
+    await database.connect()
+    await stack.enter_async_context(_closing(database, database.disconnect))
+
+    pool = database.pool
+    client_repository = PgClientRepository(pool)
+    debt_repository = PgDebtRepository(pool)
+    client_service = ClientService(clients=client_repository, debts=debt_repository)
+    debt_service = DebtService(
+        clients=client_repository,
+        debts=debt_repository,
+        payments=PgPaymentRepository(pool),
+        uow_factory=create_unit_of_work_factory(pool),
+    )
+    return Branch(
+        code=code,
+        title=BRANCH_TITLES[code],
+        client_service=client_service,
+        debt_service=debt_service,
+        user_service=UserService(PgUserRepository(pool)),
+        database=database,
+        idempotency_store=IdempotencyStore(pool),
+        voice_debt_service=(
+            VoiceDebtService(laya=laya, client_service=client_service)
+            if laya is not None
+            else None
+        ),
+    )
+
+
 async def run() -> None:
     """Botni sozlaydi, ishga tushiradi va to'xtaganda resurslarni tozalaydi."""
     settings = get_settings()
@@ -82,48 +131,23 @@ async def run() -> None:
         )
 
     async with AsyncExitStack() as stack:
-        # --- Infrastructure: ma'lumotlar bazasi (Supabase PostgreSQL) ---
-        database = Database(
-            settings.dsn,
-            min_size=settings.db_pool_min_size,
-            max_size=settings.db_pool_max_size,
-            command_timeout=settings.db_command_timeout,
-            apply_migrations=settings.apply_migrations,
-        )
-        await database.connect()
-        await stack.enter_async_context(_closing(database, database.disconnect))
-
-        # --- Repositories ---
-        pool = database.pool
-        user_repository = PgUserRepository(pool)
-        client_repository = PgClientRepository(pool)
-        debt_repository = PgDebtRepository(pool)
-        payment_repository = PgPaymentRepository(pool)
-        idempotency_store = IdempotencyStore(pool)
-        uow_factory = create_unit_of_work_factory(pool)
-
-        # --- Application Services ---
-        user_service = UserService(user_repository)
-        client_service = ClientService(
-            clients=client_repository,
-            debts=debt_repository,
-        )
-        debt_service = DebtService(
-            clients=client_repository,
-            debts=debt_repository,
-            payments=payment_repository,
-            uow_factory=uow_factory,
-        )
-        voice_debt_service = None
+        # --- Infrastructure: har filial uchun alohida baza va servislar ---
+        laya = None
         if settings.voice_enabled:
-            voice_debt_service = VoiceDebtService(
-                laya=LayaKitClient(
-                    base_url=settings.layakit_url,
-                    token=settings.layakit_token.get_secret_value(),
-                    timeout_seconds=settings.layakit_timeout_seconds,
-                ),
-                client_service=client_service,
+            laya = LayaKitClient(
+                base_url=settings.layakit_url,
+                token=settings.layakit_token.get_secret_value(),
+                timeout_seconds=settings.layakit_timeout_seconds,
             )
+
+        branches: list[Branch] = []
+        for code in BRANCH_TITLES:
+            branches.append(await _open_branch(stack, settings, code, laya))
+        registry = BranchRegistry(branches, DEFAULT_BRANCH)
+        logger.info(
+            "Filiallar ulandi: %s", ", ".join(branch.code for branch in registry)
+        )
+        preferences = BranchPreferenceStore(registry.default.database.pool)
 
         # --- Aiogram: Bot va Dispatcher ---
         bot = Bot(
@@ -138,11 +162,9 @@ async def run() -> None:
         # --- Middlewares & Handlers ---
         register_middlewares(
             dp=dp,
-            user_service=user_service,
-            client_service=client_service,
-            debt_service=debt_service,
+            registry=registry,
+            preferences=preferences,
             settings=settings,
-            voice_debt_service=voice_debt_service,
         )
         register_handlers(dp)
 
@@ -150,12 +172,17 @@ async def run() -> None:
         daily_report_job = None
         if settings.report_channel_id:
             async def daily_report_job() -> None:  # noqa: E306
-                await send_daily_report(
-                    bot=bot,
-                    debt_service=debt_service,
-                    channel_id=settings.report_channel_id,
-                    start_date=settings.report_start_date,
-                )
+                # Bir filialdagi xato boshqasining hisobotini to'xtatmaydi
+                # (send_daily_report xatoni o'zi log'ga yozadi).
+                for branch in registry:
+                    await send_daily_report(
+                        bot=bot,
+                        debt_service=branch.debt_service,
+                        channel_id=settings.report_channel_id,
+                        start_date=settings.report_start_date,
+                        branch_code=branch.code,
+                        branch_title=branch.title,
+                    )
 
         scheduler = create_scheduler(
             settings.render_external_url,
@@ -168,11 +195,8 @@ async def run() -> None:
         )
 
         web_server = WebServer(
-            client_service=client_service,
-            debt_service=debt_service,
+            registry=registry,
             settings=settings,
-            database=database,
-            idempotency_store=idempotency_store,
             host="0.0.0.0",
             port=settings.port,
         )

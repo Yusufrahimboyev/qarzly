@@ -9,7 +9,11 @@ from aiogram.types import CallbackQuery, Message
 from bot.application.common.formatters import esc_html
 from bot.application.services.user_service import UserService
 from bot.core.config import Settings
-from bot.presentation.keyboards.main_menu_kb import get_main_menu_keyboard
+from bot.infrastructure.branches import Branch
+from bot.presentation.keyboards.main_menu_kb import (
+    BRANCH_BUTTON_TEXT,
+    get_main_menu_keyboard,
+)
 
 router = Router()
 
@@ -20,6 +24,7 @@ async def cmd_start(
     user_service: UserService,
     settings: Settings,
     state: FSMContext,
+    branch: Branch,
 ) -> None:
     """Foydalanuvchini ro'yxatdan o'tkazadi va asosiy menyuni chiqaradi."""
     await state.clear()
@@ -35,6 +40,8 @@ async def cmd_start(
     await message.answer(
         f"👋 <b>Assalomu alaykum, {esc_html(first_name)}!</b>\n\n"
         "📖 <b>Qarz Daftar</b> botiga xush kelibsiz.\n"
+        f"🏢 <b>Filial:</b> {esc_html(branch.title)} "
+        f"(almashtirish: <b>{BRANCH_BUTTON_TEXT}</b>)\n"
         "Kerakli bo'limni tanlang:",
         reply_markup=get_main_menu_keyboard(settings.web_app_url),
     )
@@ -51,6 +58,8 @@ async def cmd_help(message: Message) -> None:
         "• <b>➕ Yaratish</b> — Yangi qarz yozuvi kiritish (tovar, "
         "exchange/ayirboshlash, berilgan pul va hisob-kitob).\n"
         "• <b>💰 Qarz to'lovi</b> — Mijozlarning qarzini to'liq yoki qisman yopish.\n\n"
+        f"• <b>{BRANCH_BUTTON_TEXT}</b> — Filialni almashtirish (har filialning "
+        "ma'lumotlari alohida).\n"
         "• /start — Asosiy menyuni qayta ochish"
     )
 

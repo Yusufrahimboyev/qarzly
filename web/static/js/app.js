@@ -314,10 +314,26 @@ function statusErrorMessage(status) {
     return `So'rovni bajarib bo'lmadi (kod ${status}).`;
 }
 
+// Filial: har filialning ma'lumotlar bazasi alohida. Tanlov serverga `X-Branch`
+// header'i bilan boradi; oxirgi tanlov faqat qulaylik uchun eslab qolinadi.
+const BRANCH_STORAGE_KEY = 'qarz-branch';
+let currentBranch = 'mangit';
+try {
+    currentBranch = localStorage.getItem(BRANCH_STORAGE_KEY) || currentBranch;
+} catch (e) {}
+
+function setCurrentBranch(code) {
+    currentBranch = code;
+    try {
+        localStorage.setItem(BRANCH_STORAGE_KEY, code);
+    } catch (e) {}
+}
+
 // Barcha API so'rovlarini Telegram initData imzosi bilan yuboradi.
 // Server imzoni tekshiradi — begona shaxs URLni bilsa ham ma'lumot ololmaydi.
 async function apiFetch(url, options = {}) {
-    const headers = { ...(options.headers || {}) };
+    const requestBranch = currentBranch;
+    const headers = { ...(options.headers || {}), 'X-Branch': requestBranch };
     if (tg && tg.initData) {
         headers['X-Telegram-Init-Data'] = tg.initData;
     }
@@ -335,6 +351,12 @@ async function apiFetch(url, options = {}) {
             : "Serverga ulanib bo'lmadi. Internet aloqasini tekshirib, qayta urinib ko'ring.");
     } finally {
         clearTimeout(timer);
+    }
+    // Filial almashgan bo'lsa, eski filialning kech kelgan o'qish javobi yangi
+    // ma'lumotni bosib ketmasin (yoki xato ko'rsatmasin) — javob tashlanadi.
+    // Yozuv (POST) javobi tashlanmaydi: u baribir bajarilgan.
+    if (requestBranch !== currentBranch && (options.method || 'GET') === 'GET') {
+        return new Promise(() => {});
     }
     if (res.status === 401) {
         // initData 24 soatdan keyin eskiradi — Mini App uzoq ochiq qolganda ham shu holat
@@ -2114,6 +2136,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    initBranches();
+
     // Initial Fetch — barcha asosiy ma'lumotlarni birdaniga yuklaymiz
     fetchStats();
     fetchSummaries();
@@ -2528,6 +2552,61 @@ function fetchAndRenderTrash() {
 
 function setupPaidTab() {
     paidList.setup();
+}
+
+// Filial almashganda avvalgi filial ma'lumoti ekranda qolib ketmasligi uchun
+// barcha ro'yxat va qidiruv holati tozalanib, qayta yuklanadi.
+function resetForBranchChange() {
+    state.summaries = [];
+    state.filteredList = [];
+    state.renderedCount = 0;
+    state.summariesLoaded = false;
+    state.selectedClientReport = null;
+    state.searchQuery = '';
+    const search = document.getElementById('table-search-input');
+    if (search) search.value = '';
+    if (paidList.isSelecting) paidList.exit();
+    if (trashList.isSelecting) trashList.exit();
+    const list = document.getElementById('clients-list');
+    if (list) list.innerHTML = skeletonRowsHTML(4);
+}
+
+function renderBranchSwitch(branches) {
+    const box = document.getElementById('branch-switch');
+    if (!box) return;
+    box.innerHTML = branches.map(b => `
+        <button type="button" class="branch-chip${b.code === currentBranch ? ' active' : ''}"
+                data-branch="${escapeHtml(b.code)}" aria-pressed="${b.code === currentBranch}">
+            ${escapeHtml(b.title)}
+        </button>`).join('');
+    box.hidden = branches.length < 2;
+}
+
+async function initBranches() {
+    let info;
+    try {
+        info = await apiJson('/api/branches');
+    } catch (err) {
+        return;
+    }
+    const branches = info.branches || [];
+    if (!branches.length) return;
+    // Saqlangan filial endi mavjud bo'lmasa — asosiy filialga qaytamiz.
+    if (!branches.some(b => b.code === currentBranch)) {
+        setCurrentBranch(info.default || branches[0].code);
+        resetForBranchChange();
+        refreshAllData();
+    }
+    renderBranchSwitch(branches);
+    document.getElementById('branch-switch')?.addEventListener('click', (e) => {
+        const chip = e.target.closest('[data-branch]');
+        if (!chip || chip.dataset.branch === currentBranch) return;
+        hapticImpact();
+        setCurrentBranch(chip.dataset.branch);
+        renderBranchSwitch(branches);
+        resetForBranchChange();
+        refreshAllData();
+    });
 }
 
 // Yozuv amallaridan keyin barcha ko'rinishlar bir vaqtda yangilanadi

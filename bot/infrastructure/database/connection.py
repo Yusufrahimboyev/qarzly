@@ -26,8 +26,10 @@ class Database:
         max_size: int = 10,
         command_timeout: int = 60,
         apply_migrations: bool = True,
+        schema: str | None = None,
     ) -> None:
         self._dsn = dsn
+        self._schema = schema
         self._pool: asyncpg.Pool | None = None
         self._min_size = min_size
         self._max_size = max_size
@@ -47,8 +49,15 @@ class Database:
         Migratsiya xatosi jimgina yutilmaydi — ilova ishga tushmaydi, chunki
         noto'g'ri sxema bilan ishlagan bot moliyaviy yozuvlarni buzishi mumkin.
         """
+        server_settings = None
+        if self._schema:
+            await self._ensure_schema()
+            # Faqat shu sxema: boshqa filial yoki public jadvallariga
+            # tasodifan tushib qolish imkoni yo'q.
+            server_settings = {"search_path": self._schema}
         self._pool = await asyncpg.create_pool(
             dsn=self._dsn,
+            server_settings=server_settings,
             min_size=self._min_size,
             max_size=self._max_size,
             statement_cache_size=0,
@@ -60,6 +69,20 @@ class Database:
         else:
             logger.info("Migratsiyalar o'tkazib yuborildi (APPLY_MIGRATIONS=false).")
         logger.info("Supabase PostgreSQL bazasiga muvaffaqiyatli ulandi.")
+
+    async def _ensure_schema(self) -> None:
+        """Filial sxemasini yaratadi (mavjud bo'lsa tegmaydi)."""
+        conn = await asyncpg.connect(
+            dsn=self._dsn,
+            statement_cache_size=0,
+            timeout=self._command_timeout,
+        )
+        try:
+            # Sxema nomi faqat BRANCH_SCHEMAS dan keladi; baribir qo'shtirnoqlanadi.
+            quoted = '"' + self._schema.replace('"', '""') + '"'  # type: ignore[union-attr]
+            await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {quoted}")
+        finally:
+            await conn.close()
 
     async def _init_schema(self) -> None:
         """Jadvallar va indekslarni yaratadi (faqat mavjud bo'lmaganlarini)."""

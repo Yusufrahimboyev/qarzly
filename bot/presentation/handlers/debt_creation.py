@@ -27,6 +27,7 @@ from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
 from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import DebtProduct
+from bot.infrastructure.branches import Branch
 from bot.presentation.keyboards.creation_kb import (
     get_back_cancel_keyboard,
     get_creation_confirm_keyboard,
@@ -276,12 +277,15 @@ def _current_product_number(data: dict) -> int:
 
 
 @router.message(F.text == "➕ Yaratish")
-async def start_debt_creation(message: Message, state: FSMContext) -> None:
+async def start_debt_creation(
+    message: Message, state: FSMContext, branch: Branch
+) -> None:
     """Qarz yaratish jarayonini boshlaydi."""
     await state.clear()
     await state.set_state(DebtCreationStates.waiting_date)
     await message.answer(
-        "📝 <b>YANGI QARZ YARATISH</b>\n\n"
+        "📝 <b>YANGI QARZ YARATISH</b>\n"
+        f"🏢 <b>Filial:</b> {esc_html(branch.title)}\n\n"
         "📅 <b>1-bosqich: Qarzga olingan sanani kiriting:</b>\n\n"
         "<i>Masalan: 16.08.2026 yoki 'Bugun' tugmasini bosing</i>",
         reply_markup=get_date_picker_keyboard(),

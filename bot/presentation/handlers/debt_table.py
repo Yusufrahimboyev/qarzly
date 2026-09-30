@@ -18,6 +18,7 @@ from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import DebtStatus
 from bot.domain.entities.payment import PaymentType
 from bot.domain.entities.report import ClientReport
+from bot.infrastructure.branches import Branch
 from bot.presentation.common.messaging import split_message
 from bot.presentation.keyboards.debt_table_kb import (
     get_client_report_keyboard,
@@ -45,6 +46,7 @@ async def show_debt_table_msg(
     message: Message,
     client_service: ClientService,
     state: FSMContext,
+    branch: Branch,
 ) -> None:
     """Qarzlar jadvalini birinchi sahifadan ko'rsatadi."""
     await state.clear()
@@ -59,7 +61,7 @@ async def show_debt_table_msg(
         return
 
     await message.answer(
-        _table_header(summaries),
+        f"🏢 <b>Filial:</b> {esc_html(branch.title)}\n" + _table_header(summaries),
         reply_markup=get_debt_table_keyboard(summaries, page=1),
     )
 

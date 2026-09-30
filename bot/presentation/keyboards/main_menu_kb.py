@@ -9,13 +9,16 @@ from aiogram.types import (
     WebAppInfo,
 )
 
+BRANCH_BUTTON_TEXT = "🏢 Filial"
+
 
 def get_main_menu_keyboard(web_app_url: str = "") -> ReplyKeyboardMarkup:
     """Asosiy menyu tugmalari:
     1. 📋 Qarzlar jadvali
     2. ➕ Yaratish
     3. 💰 Qarz to'lovi
-    4. 🚀 Mini App (agar URL sozlangan bo'lsa)
+    4. 🏢 Filial (almashtirish)
+    5. 🚀 Mini App (agar URL sozlangan bo'lsa)
     """
     rows: list[list[KeyboardButton]] = [
         [
@@ -24,6 +27,9 @@ def get_main_menu_keyboard(web_app_url: str = "") -> ReplyKeyboardMarkup:
         [
             KeyboardButton(text="➕ Yaratish"),
             KeyboardButton(text="💰 Qarz to'lovi"),
+        ],
+        [
+            KeyboardButton(text=BRANCH_BUTTON_TEXT),
         ],
     ]
 
@@ -51,6 +57,23 @@ def get_web_app_inline_keyboard(web_app_url: str) -> InlineKeyboardMarkup:
                     text="🚀 Qarz Daftar Mini App",
                     web_app=WebAppInfo(url=web_app_url),
                 )
+            ]
+        ]
+    )
+
+
+def get_branch_keyboard(
+    branches: list[tuple[str, str]], current: str
+) -> InlineKeyboardMarkup:
+    """Filial tanlash inline klaviaturasi: [(kod, nom)], joriysi ✅ bilan."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"✅ {title}" if code == current else title,
+                    callback_data=f"branch:{code}",
+                )
+                for code, title in branches
             ]
         ]
     )

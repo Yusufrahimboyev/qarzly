@@ -10,18 +10,11 @@ import logging
 
 from aiohttp import web
 
-from bot.application.services.client_service import ClientService
-from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
-from bot.infrastructure.database.connection import Database
-from bot.infrastructure.database.repositories.idempotency_repository import (
-    IdempotencyStore,
-)
+from bot.infrastructure.branches import BranchRegistry
 from bot.infrastructure.web.routes import (
-    CLIENT_SERVICE_KEY,
-    DATABASE_KEY,
-    DEBT_SERVICE_KEY,
-    IDEMPOTENCY_KEY,
+    BRANCH_REGISTRY_KEY,
+    branch_middleware,
     setup_routes,
     static_cache_middleware,
 )
@@ -38,19 +31,13 @@ class WebServer:
 
     def __init__(
         self,
-        client_service: ClientService,
-        debt_service: DebtService,
+        registry: BranchRegistry,
         settings: Settings,
-        database: Database | None = None,
-        idempotency_store: IdempotencyStore | None = None,
         host: str = "0.0.0.0",
         port: int = 8080,
     ) -> None:
-        self._client_service = client_service
-        self._debt_service = debt_service
+        self._registry = registry
         self._settings = settings
-        self._database = database
-        self._idempotency_store = idempotency_store
         self._host = host
         self._port = port
         self._runner: web.AppRunner | None = None
@@ -68,14 +55,10 @@ class WebServer:
                     rate_limit_per_minute=self._settings.api_rate_limit_per_minute,
                     max_age_seconds=self._settings.init_data_max_age_seconds,
                 ),
+                branch_middleware,
             ]
         )
-        app[CLIENT_SERVICE_KEY] = self._client_service
-        app[DEBT_SERVICE_KEY] = self._debt_service
-        if self._database is not None:
-            app[DATABASE_KEY] = self._database
-        if self._idempotency_store is not None:
-            app[IDEMPOTENCY_KEY] = self._idempotency_store
+        app[BRANCH_REGISTRY_KEY] = self._registry
 
         setup_routes(app)
 
