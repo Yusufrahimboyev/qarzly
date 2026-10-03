@@ -33,11 +33,9 @@ def _table_header(summaries) -> str:
     debtors_count = sum(1 for s in summaries if s.has_debt)
     total_market_debt = aggregate_remaining(summaries)
     return (
-        "📋 <b>Qarzlar jadvali (Alifbo bo'yicha):</b>\n\n"
         f"👥 <b>Jami mijozlar:</b> {len(summaries)} ta\n"
         f"🔴 <b>Qarzdorlar:</b> {debtors_count} ta\n"
-        f"💳 <b>Jami qoldiq qarz:</b> <b>{format_money_map(total_market_debt)}</b>\n\n"
-        "<i>Batafsil hisobotni ko'rish uchun mijoz ustiga bosing:</i>"
+        f"💳 <b>Jami qoldiq qarz:</b> <b>{format_money_map(total_market_debt)}</b>"
     )
 
 

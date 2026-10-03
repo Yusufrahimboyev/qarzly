@@ -1,49 +1,252 @@
 """Presentation qatlami: Qarz yaratish (wizard) handler'lari.
 
 Bir qarzda bir nechta tovar bo'lishi mumkin. Tovar kiritish sikli:
-    tovar nomi → nechta → narxi → "Yana tovar?" → (takrorlanadi yoki keyingi)
-Keyin: valyuta → exchange → berilgan pul → tasdiqlash.
+    tur → brend → razmer → soni → valyuta → narxi → yig'ma xabar
+    (yana tovar / tahrirlash / tasdiqlash)
+Keyin: exchange → berilgan pul → tasdiqlash.
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from aiogram import F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from bot.application.common.formatters import (
     esc_html,
+    format_date,
     format_money,
     format_money_map,
     is_valid_phone,
     normalize_phone,
     parse_date_input,
     parse_money,
+    today,
     today_str,
 )
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
 from bot.domain.entities.currency import Currency
-from bot.domain.entities.debt import DebtProduct
+from bot.domain.entities.debt import MAX_MONEY, MAX_QUANTITY, DebtProduct
 from bot.infrastructure.branches import Branch
+from bot.presentation.common.product_catalog import (
+    BRANDS,
+    PRODUCT_TYPES,
+    build_product_name,
+)
 from bot.presentation.keyboards.creation_kb import (
+    get_akkum_size_keyboard,
     get_back_cancel_keyboard,
+    get_brand_keyboard,
     get_creation_confirm_keyboard,
     get_date_picker_keyboard,
+    get_edit_product_actions_keyboard,
+    get_edit_products_keyboard,
     get_exchange_choice_keyboard,
     get_exchange_currency_keyboard,
     get_given_currency_keyboard,
     get_given_money_choice_keyboard,
+    get_month_keyboard,
     get_more_products_keyboard,
+    get_numpad_keyboard,
     get_phone_keyboard,
     get_product_currency_keyboard,
+    get_product_type_keyboard,
+    get_year_keyboard,
 )
 from bot.presentation.keyboards.main_menu_kb import get_main_menu_keyboard
 from bot.presentation.states.debt_creation import DebtCreationStates
 
 router = Router()
+
+S = DebtCreationStates
+Prompt = tuple[str, InlineKeyboardMarkup]
+
+
+# ==========================================
+# BOSQICH XABARLARI (oldinga va ortga bir xil matn)
+# ==========================================
+
+
+def _date_prompt(data: dict[str, Any]) -> Prompt:
+    header = (
+        f"🏢 <b>Filial:</b> {esc_html(data['branch_title'])}\n\n"
+        if data.get("branch_title")
+        else ""
+    )
+    return (
+        header + "📅 <b>Qarzga olingan kunni tanlang:</b>\n\n"
+        "<i>Keyin oy va yil so'raladi. Bugun bo'lsa 'Bugun' tugmasini bosing</i>",
+        get_date_picker_keyboard(),
+    )
+
+
+def _month_prompt(data: dict[str, Any]) -> Prompt:
+    return (
+        f"📅 <b>Kun:</b> {data['_date_day']}\n\n🗓 <b>Oyni tanlang:</b>",
+        get_month_keyboard(),
+    )
+
+
+def _year_prompt(data: dict[str, Any]) -> Prompt:
+    year = today().year
+    return (
+        f"📅 <b>Sana:</b> {data['_date_day']:02d}.{data['_date_month']:02d}\n\n"
+        "🗓 <b>Yilni tanlang:</b>",
+        get_year_keyboard([year, year + 1]),
+    )
+
+
+def _name_prompt(_data: dict[str, Any]) -> Prompt:
+    return (
+        "👤 <b>Qarz oluvchining ismini kiriting:</b>\n\n"
+        "<i>Masalan: Aliyev Anvar</i>",
+        get_back_cancel_keyboard(show_back=True),
+    )
+
+
+def _phone_prompt(_data: dict[str, Any]) -> Prompt:
+    return (
+        "📞 <b>Telefon raqamini kiriting:</b>\n\n"
+        "<i>Masalan: +998901234567 yoki telefon bo'lmasa 'O'tkazib yuborish' tugmasini bosing:</i>",
+        get_phone_keyboard(),
+    )
+
+
+def _type_prompt(data: dict[str, Any]) -> Prompt:
+    num = len(data.get("_products", [])) + 1
+    title = "Tovar turini tanlang" if num == 1 else f"{num}-tovar turini tanlang"
+    return f"📦 <b>{title}:</b>", get_product_type_keyboard()
+
+
+def _brand_prompt(data: dict[str, Any]) -> Prompt:
+    type_key = data["product_type"]
+    header = f"📦 <b>Tovar:</b> {PRODUCT_TYPES[type_key]}\n\n"
+    if data.get("_brand_manual"):
+        return (
+            header + "✍️ <b>Brend nomini yozing:</b>",
+            get_back_cancel_keyboard(show_back=True),
+        )
+    return header + "🏷 <b>Brendini tanlang:</b>", get_brand_keyboard(BRANDS[type_key])
+
+
+def _size_prompt(data: dict[str, Any]) -> Prompt:
+    type_key = data["product_type"]
+    header = (
+        f"📦 <b>Tovar:</b> {PRODUCT_TYPES[type_key]} "
+        f"{esc_html(data['product_brand'])}\n\n"
+    )
+    if type_key == "akkum":
+        return header + "🔋 <b>Razmerini tanlang:</b>", get_akkum_size_keyboard()
+    example = "R16 malibu" if type_key == "diska" else "R16"
+    return (
+        header + f"📏 <b>Razmerini kiriting:</b>\n\n<i>Masalan: {example}</i>",
+        get_back_cancel_keyboard(show_back=True),
+    )
+
+
+def _quantity_prompt(data: dict[str, Any]) -> Prompt:
+    value = data.get("_np") or "—"
+    return (
+        f"📦 <b>Tovar:</b> {esc_html(data['product_name'])}\n\n"
+        "🔢 <b>Tovar sonini kiriting:</b>\n\n"
+        f"Kiritildi: <b>{value}</b>",
+        get_numpad_keyboard(),
+    )
+
+
+def _currency_prompt(data: dict[str, Any]) -> Prompt:
+    return (
+        f"📦 <b>Tovar:</b> {esc_html(data['product_name'])} — "
+        f"{data['product_quantity']} ta\n\n"
+        "💱 <b>Valyutani tanlang:</b>",
+        get_product_currency_keyboard(),
+    )
+
+
+def _price_prompt(data: dict[str, Any]) -> Prompt:
+    currency = Currency(data["product_currency"])
+    raw = data.get("_np")
+    value = format_money(int(raw), currency) if raw else "—"
+    return (
+        f"📦 <b>Tovar:</b> {esc_html(data['product_name'])} — "
+        f"{data['product_quantity']} ta\n\n"
+        "💰 <b>1 dona tovar narxini kiriting:</b>\n\n"
+        f"Kiritildi: <b>{value}</b>",
+        get_numpad_keyboard(with_thousands=True),
+    )
+
+
+def _product_line(p: DebtProduct) -> str:
+    if p.quantity > 1:
+        return (
+            f"📦 <b>{esc_html(p.name)}</b> — {p.quantity} × "
+            f"{format_money(p.price_per_unit, p.currency)} = "
+            f"{format_money(p.total_price, p.currency)}"
+        )
+    return f"📦 <b>{esc_html(p.name)}</b> — {format_money(p.price_per_unit, p.currency)}"
+
+
+def _summary_prompt(data: dict[str, Any]) -> Prompt:
+    """Shu paytgacha kiritilgan barcha ma'lumotlar bitta xabarda."""
+    products = _get_products(data)
+    totals: dict[str, int] = {}
+    for p in products:
+        totals[p.currency.value] = totals.get(p.currency.value, 0) + p.total_price
+
+    lines = []
+    if data.get("branch_title"):
+        lines.append(f"🏢 <b>Filial:</b> {esc_html(data['branch_title'])}")
+    lines.append(f"👤 <b>Qarz oluvchi:</b> {esc_html(data.get('client_name', '-'))}")
+    if data.get("client_phone"):
+        lines.append(f"📞 <b>Telefon:</b> {esc_html(data['client_phone'])}")
+    lines.append(f"📅 <b>Sana:</b> {data.get('debt_date', '-')}")
+    lines.append("━━━━━━━━ <b>TOVARLAR:</b> ━━━━━━━━")
+    lines.extend(f"{i}. {_product_line(p)}" for i, p in enumerate(products, start=1))
+    lines.append(f"\n💰 <b>Jami:</b> {format_money_map(totals)}")
+    return "\n".join(lines), get_more_products_keyboard()
+
+
+_PROMPTS = {
+    S.waiting_date.state: _date_prompt,
+    S.waiting_date_month.state: _month_prompt,
+    S.waiting_date_year.state: _year_prompt,
+    S.waiting_client_name.state: _name_prompt,
+    S.waiting_client_phone.state: _phone_prompt,
+    S.waiting_product_type.state: _type_prompt,
+    S.waiting_product_brand.state: _brand_prompt,
+    S.waiting_product_size.state: _size_prompt,
+    S.waiting_product_quantity.state: _quantity_prompt,
+    S.waiting_product_currency.state: _currency_prompt,
+    S.waiting_product_price.state: _price_prompt,
+    S.waiting_more_products.state: _summary_prompt,
+}
+
+
+def _previous_state(current: str | None, data: dict[str, Any]) -> str | None:
+    """Tovar kiritishgacha bo'lgan bosqichlar uchun 'Ortga' manzili."""
+    if current == S.waiting_product_type.state:
+        if data.get("_products"):
+            return S.waiting_more_products.state
+        if data.get("_existing_client"):
+            return S.waiting_date.state
+        return S.waiting_client_phone.state
+    return {
+        S.waiting_date_month.state: S.waiting_date.state,
+        S.waiting_date_year.state: S.waiting_date_month.state,
+        S.waiting_client_name.state: S.waiting_date.state,
+        S.waiting_client_phone.state: S.waiting_client_name.state,
+        S.waiting_product_brand.state: S.waiting_product_type.state,
+        S.waiting_product_size.state: S.waiting_product_brand.state,
+        S.waiting_product_quantity.state: S.waiting_product_size.state,
+        S.waiting_product_currency.state: S.waiting_product_quantity.state,
+        S.waiting_product_price.state: S.waiting_product_currency.state,
+        S.waiting_exchange_choice.state: S.waiting_more_products.state,
+    }.get(current or "")
 
 
 # ==========================================
@@ -56,6 +259,7 @@ async def cb_add_debt_for_client(
     callback: CallbackQuery,
     state: FSMContext,
     client_service: ClientService,
+    branch: Branch,
 ) -> None:
     """Jadvaldan tanlangan mavjud mijozga yangi qarz qo'shishni boshlaydi.
 
@@ -78,17 +282,19 @@ async def cb_add_debt_for_client(
 
     await state.clear()
     await state.update_data(
+        branch_title=branch.title,
         client_name=client.full_name,
         client_phone=client.phone,
+        _existing_client=True,
     )
-    await state.set_state(DebtCreationStates.waiting_date)
+    await state.set_state(S.waiting_date)
 
     await callback.message.edit_text(
         "📝 <b>YANGI QARZ YARATISH</b>\n\n"
         f"👤 <b>Mijoz:</b> {client.full_name}\n"
         f"📞 <b>Telefon:</b> {client.phone}\n\n"
-        "📅 <b>Qarzga olingan sanani kiriting:</b>\n\n"
-        "<i>Masalan: 17.08.2026 yoki 'Bugun' tugmasini bosing</i>",
+        "📅 <b>Qarzga olingan kunni tanlang:</b>\n\n"
+        "<i>Keyin oy va yil so'raladi. Bugun bo'lsa 'Bugun' tugmasini bosing</i>",
         reply_markup=get_date_picker_keyboard(),
     )
     await callback.answer()
@@ -121,90 +327,26 @@ async def cb_create_back(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer()
         return
 
-    if current_state == DebtCreationStates.waiting_client_name:
-        await state.set_state(DebtCreationStates.waiting_date)
-        await callback.message.edit_text(
-            "📅 <b>1-bosqich: Qarzga olingan sanani kiriting:</b>\n\n"
-            "<i>Masalan: 16.08.2026 yoki 'Bugun' tugmasini bosing</i>",
-            reply_markup=get_date_picker_keyboard(),
-        )
+    if current_state == S.waiting_product_brand.state and data.get("_brand_manual"):
+        # Qo'lda yozishdan brend tugmalariga qaytish
+        await state.update_data(_brand_manual=False)
+        data["_brand_manual"] = False
+        text, markup = _brand_prompt(data)
+        await callback.message.edit_text(text, reply_markup=markup)
+        await callback.answer()
+        return
 
-    elif current_state == DebtCreationStates.waiting_client_phone:
-        await state.set_state(DebtCreationStates.waiting_client_name)
-        await callback.message.edit_text(
-            "👤 <b>2-bosqich: Qarz oluvchining ism-familiyasini kiriting:</b>\n\n"
-            "<i>Masalan: Aliyev Anvar</i>",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
+    previous = _previous_state(current_state, data)
+    if previous is not None:
+        if previous in (S.waiting_product_quantity.state, S.waiting_product_price.state):
+            await state.update_data(_np="")
+            data["_np"] = ""
+        await state.set_state(previous)
+        text, markup = _PROMPTS[previous](data)
+        await callback.message.edit_text(text, reply_markup=markup)
 
-        if (
-            data.get("client_name")
-            and "client_phone" in data
-            and not data.get("_manual_flow", True)
-        ):
-            # Mavjud mijozga qarz qo'shilmoqda — sanaga qaytamiz
-            await state.set_state(DebtCreationStates.waiting_date)
-            await callback.message.edit_text(
-                "📅 <b>Qarzga olingan sanani kiriting:</b>\n\n"
-                "<i>Masalan: 17.08.2026 yoki 'Bugun' tugmasini bosing</i>",
-                reply_markup=get_date_picker_keyboard(),
-            )
-        else:
-            await state.set_state(DebtCreationStates.waiting_client_phone)
-            await callback.message.edit_text(
-                "📞 <b>3-bosqich: Telefon raqamini kiriting (ixtiyoriy):</b>\n\n"
-                "<i>Masalan: +998901234567 yoki 'O'tkazib yuborish'ni bosing:</i>",
-                reply_markup=get_phone_keyboard(),
-            )
-
-    elif current_state == DebtCreationStates.waiting_product_quantity:
-        await state.set_state(DebtCreationStates.waiting_product_name)
-        product_num = _current_product_number(data) + 1
-        await callback.message.edit_text(
-            f"📦 <b>4-bosqich: {product_num}-tovar nomini kiriting:</b>\n\n"
-            "<i>Masalan: Shina, Akkumulyator</i>",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-
-    elif current_state == DebtCreationStates.waiting_product_price:
-        await state.set_state(DebtCreationStates.waiting_product_quantity)
-        await callback.message.edit_text(
-            "🔢 <b>5-bosqich: Tovardan nechta olindi?</b>\n\n"
-            "<i>Masalan: 2 — bitta bo'lsa 1 deb yozing</i>",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-
-    elif current_state == DebtCreationStates.waiting_product_currency:
-        await state.set_state(DebtCreationStates.waiting_product_price)
-        await callback.message.edit_text(
-            "💰 <b>Bitta tovar narxini kiriting:</b>\n\n"
-            "<i>Masalan: 2 500 000 — jami summa o'zi hisoblanadi</i>",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-
-    elif current_state == DebtCreationStates.waiting_more_products:
-        # "Yana tovar?" dan ortga — oxirgi tovarni olib tashlash
-        products = list(data.get("_products", []))
-        if products:
-            products.pop()
-            await state.update_data(_products=products)
-        await state.set_state(DebtCreationStates.waiting_product_price)
-        await callback.message.edit_text(
-            "💰 <b>Bitta tovar narxini kiriting:</b>\n\n"
-            "<i>Masalan: 2 500 000 — jami summa o'zi hisoblanadi</i>",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-
-    elif current_state == DebtCreationStates.waiting_exchange_choice:
-        await state.set_state(DebtCreationStates.waiting_more_products)
-        await callback.message.edit_text(
-            "➕ <b>Yana tovar qo'shasizmi?</b>\n\n"
-            "<i>Agar bir nechta turli tovar olgan bo'lsa, yana qo'shing.</i>",
-            reply_markup=get_more_products_keyboard(),
-        )
-
-    elif current_state == DebtCreationStates.waiting_exchange_currency:
-        await state.set_state(DebtCreationStates.waiting_exchange_choice)
+    elif current_state == S.waiting_exchange_currency:
+        await state.set_state(S.waiting_exchange_choice)
         await callback.message.edit_text(
             "🔄 <b>Ayirboshlash (Exchange) tovari bormi?</b>",
             reply_markup=get_exchange_choice_keyboard(),
@@ -266,13 +408,8 @@ async def cb_create_back(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-def _current_product_number(data: dict) -> int:
-    """Hozirgi kiritilayotgan tovar tartib raqami (1-asosiy)."""
-    return len(data.get("_products", []))
-
-
 # ==========================================
-# 1. BOSHLASH: SANA KIRITISH
+# 1. BOSHLASH: SANA (kun → oy → yil)
 # ==========================================
 
 
@@ -282,24 +419,65 @@ async def start_debt_creation(
 ) -> None:
     """Qarz yaratish jarayonini boshlaydi."""
     await state.clear()
-    await state.set_state(DebtCreationStates.waiting_date)
-    await message.answer(
-        "📝 <b>YANGI QARZ YARATISH</b>\n"
-        f"🏢 <b>Filial:</b> {esc_html(branch.title)}\n\n"
-        "📅 <b>1-bosqich: Qarzga olingan sanani kiriting:</b>\n\n"
-        "<i>Masalan: 16.08.2026 yoki 'Bugun' tugmasini bosing</i>",
-        reply_markup=get_date_picker_keyboard(),
-    )
+    await state.update_data(branch_title=branch.title)
+    await state.set_state(S.waiting_date)
+    text, markup = _date_prompt({"branch_title": branch.title})
+    await message.answer(text, reply_markup=markup)
 
 
-@router.callback_query(DebtCreationStates.waiting_date, F.data == "create_date_today")
+@router.callback_query(S.waiting_date, F.data == "create_date_today")
 async def cb_date_today(callback: CallbackQuery, state: FSMContext) -> None:
     """Bugungi sanani qabul qiladi."""
-    today = today_str()
-    await state.update_data(debt_date=today)
+    today_value = today_str()
+    await state.update_data(debt_date=today_value)
 
     if isinstance(callback.message, Message):
-        await _proceed_after_date(callback.message, state, today)
+        await _proceed_after_date(callback.message, state, today_value)
+    await callback.answer()
+
+
+@router.callback_query(S.waiting_date, F.data.startswith("dday:"))
+async def cb_date_day(callback: CallbackQuery, state: FSMContext) -> None:
+    """Kun tanlandi — oyni so'raydi."""
+    await state.update_data(_date_day=int((callback.data or "").split(":", 1)[1]))
+    await state.set_state(S.waiting_date_month)
+    if isinstance(callback.message, Message):
+        text, markup = _month_prompt(await state.get_data())
+        await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.callback_query(S.waiting_date_month, F.data.startswith("dmon:"))
+async def cb_date_month(callback: CallbackQuery, state: FSMContext) -> None:
+    """Oy tanlandi — yilni so'raydi."""
+    await state.update_data(_date_month=int((callback.data or "").split(":", 1)[1]))
+    await state.set_state(S.waiting_date_year)
+    if isinstance(callback.message, Message):
+        text, markup = _year_prompt(await state.get_data())
+        await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.callback_query(S.waiting_date_year, F.data.startswith("dyear:"))
+async def cb_date_year(callback: CallbackQuery, state: FSMContext) -> None:
+    """Yil tanlandi — sanani tekshirib, keyingi bosqichga o'tadi."""
+    data = await state.get_data()
+    year = int((callback.data or "").split(":", 1)[1])
+    try:
+        chosen = date(year, data["_date_month"], data["_date_day"])
+    except ValueError:
+        # Masalan 31.02 — bunday sana yo'q, kunni qayta tanlatamiz
+        await state.set_state(S.waiting_date)
+        if isinstance(callback.message, Message):
+            text, markup = _date_prompt(data)
+            await callback.message.edit_text(text, reply_markup=markup)
+        await callback.answer("⚠️ Bunday sana yo'q. Kunni qayta tanlang.", show_alert=True)
+        return
+
+    debt_date = format_date(chosen)
+    await state.update_data(debt_date=debt_date)
+    if isinstance(callback.message, Message):
+        await _proceed_after_date(callback.message, state, debt_date)
     await callback.answer()
 
 
@@ -315,25 +493,21 @@ async def _proceed_after_date(message: Message, state: FSMContext, date_str: str
         client_name = data["client_name"]
         client_phone = data["client_phone"]
         await state.update_data(_products=[])
-        await state.set_state(DebtCreationStates.waiting_product_name)
+        await _start_product(state)
+        text, markup = _type_prompt({})
         await message.answer(
             f"📅 <b>Sana:</b> {date_str}\n"
             f"👤 <b>Mijoz:</b> {esc_html(client_name)} ({esc_html(client_phone)})\n\n"
-            "📦 <b>Tovar (mahsulot) nomini kiriting:</b>\n\n"
-            "<i>Masalan: Shina, Akkumulyator, Generator</i>",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
+            + text,
+            reply_markup=markup,
         )
     else:
-        await state.set_state(DebtCreationStates.waiting_client_name)
-        await message.answer(
-            f"📅 <b>Sana:</b> {date_str}\n\n"
-            "👤 <b>2-bosqich: Qarz oluvchining ism-familiyasini kiriting:</b>\n\n"
-            "<i>Masalan: Aliyev Anvar</i>",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
+        await state.set_state(S.waiting_client_name)
+        text, markup = _name_prompt(data)
+        await message.answer(f"📅 <b>Sana:</b> {date_str}\n\n" + text, reply_markup=markup)
 
 
-@router.message(DebtCreationStates.waiting_date)
+@router.message(S.waiting_date)
 async def process_custom_date(message: Message, state: FSMContext) -> None:
     """Foydalanuvchi yozgan sanani tekshiradi."""
     if message.text is None:
@@ -346,7 +520,7 @@ async def process_custom_date(message: Message, state: FSMContext) -> None:
             "⚠️ <b>Noto'g'ri sana formati!</b>\n\n"
             "Iltimos, sanani <b>DD.MM.YYYY</b> ko'rinishida kiriting "
             "(masalan: <code>16.08.2026</code>) "
-            "yoki quyidagi 'Bugun' tugmasini bosing:",
+            "yoki quyidagi tugmalardan tanlang:",
             reply_markup=get_date_picker_keyboard(),
         )
         return
@@ -360,7 +534,7 @@ async def process_custom_date(message: Message, state: FSMContext) -> None:
 # ==========================================
 
 
-@router.message(DebtCreationStates.waiting_client_name)
+@router.message(S.waiting_client_name)
 async def process_client_name(message: Message, state: FSMContext) -> None:
     """Mijoz ism-familiyasini qabul qiladi."""
     name = (message.text or "").strip()
@@ -380,12 +554,11 @@ async def process_client_name(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(client_name=name)
-    await state.set_state(DebtCreationStates.waiting_client_phone)
+    await state.set_state(S.waiting_client_phone)
+    text, markup = _phone_prompt({})
     await message.answer(
-        f"👤 <b>Qarz oluvchi:</b> {esc_html(name)}\n\n"
-        "📞 <b>3-bosqich: Telefon raqamini kiriting (ixtiyoriy):</b>\n\n"
-        "<i>Masalan: +998901234567 yoki telefon bo'lmasa 'O'tkazib yuborish' tugmasini bosing:</i>",
-        reply_markup=get_phone_keyboard(),
+        f"👤 <b>Qarz oluvchi:</b> {esc_html(name)}\n\n" + text,
+        reply_markup=markup,
     )
 
 
@@ -396,19 +569,17 @@ async def cb_skip_client_phone(callback: CallbackQuery, state: FSMContext) -> No
         await callback.answer()
         return
 
-    await state.update_data(client_phone="")
-    await state.update_data(_products=[])
-    await state.set_state(DebtCreationStates.waiting_product_name)
+    await state.update_data(client_phone="", _products=[])
+    await _start_product(state)
+    text, markup = _type_prompt({})
     await callback.message.edit_text(
-        "📞 <b>Telefon:</b> <i>Kiritilmadi</i>\n\n"
-        "📦 <b>4-bosqich: Tovar (mahsulot) nomini kiriting:</b>\n\n"
-        "<i>Masalan: Shina, Akkumulyator, Generator</i>",
-        reply_markup=get_back_cancel_keyboard(show_back=True),
+        "📞 <b>Telefon:</b> <i>Kiritilmadi</i>\n\n" + text,
+        reply_markup=markup,
     )
     await callback.answer()
 
 
-@router.message(DebtCreationStates.waiting_client_phone)
+@router.message(S.waiting_client_phone)
 async def process_client_phone(message: Message, state: FSMContext) -> None:
     """Telefon raqamini qabul qiladi yoki o'tkazib yuborishni qayta ishlaydi."""
     phone_raw = (message.text or "").strip()
@@ -429,185 +600,383 @@ async def process_client_phone(message: Message, state: FSMContext) -> None:
             )
             return
 
-    await state.update_data(client_phone=clean_phone)
     # Tovarlar ro'yxatini bo'sh boshlaymiz
-    await state.update_data(_products=[])
-    await state.set_state(DebtCreationStates.waiting_product_name)
+    await state.update_data(client_phone=clean_phone, _products=[])
+    await _start_product(state)
     phone_display = clean_phone if clean_phone else "<i>Kiritilmadi</i>"
+    text, markup = _type_prompt({})
     await message.answer(
-        f"📞 <b>Telefon:</b> {phone_display}\n\n"
-        "📦 <b>4-bosqich: Tovar (mahsulot) nomini kiriting:</b>\n\n"
-        "<i>Masalan: Shina, Akkumulyator, Generator</i>",
-        reply_markup=get_back_cancel_keyboard(show_back=True),
+        f"📞 <b>Telefon:</b> {phone_display}\n\n" + text,
+        reply_markup=markup,
     )
 
 
 # ==========================================
-# 3. TOVAR KIRITISH SIKLI (nom → nechta → narxi → yana?)
+# 3. TOVAR KIRITISH SIKLI
+#    tur → brend → razmer → soni → valyuta → narxi → yig'ma xabar
 # ==========================================
 
 
-@router.message(DebtCreationStates.waiting_product_name)
-async def process_product_name(message: Message, state: FSMContext) -> None:
-    """Tovar nomini qabul qiladi."""
-    product = (message.text or "").strip()
-    if not product:
-        await message.answer(
-            "⚠️ Tovar nomini kiriting:",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-        return
-    if len(product) > 80:
-        await message.answer(
-            "⚠️ <b>Tovar nomi juda uzun!</b>\n\n"
-            "Iltimos, 80 belgidan qisqa kiriting:",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-        return
-
-    await state.update_data(product_name=product)
-    await state.set_state(DebtCreationStates.waiting_product_quantity)
-    await message.answer(
-        f"📦 <b>Tovar:</b> {esc_html(product)}\n\n"
-        "🔢 <b>5-bosqich: Tovardan nechta olindi?</b>\n\n"
-        "<i>Masalan: 2 — bitta bo'lsa 1 deb yozing</i>",
-        reply_markup=get_back_cancel_keyboard(show_back=True),
+async def _start_product(state: FSMContext) -> None:
+    """Yangi tovar kiritishni boshlaydi (oldingi tovar maydonlarini tozalaydi)."""
+    await state.update_data(
+        product_type=None,
+        product_brand=None,
+        product_name=None,
+        product_price=None,
+        _brand_manual=False,
+        _replace_index=None,
     )
+    await state.set_state(S.waiting_product_type)
 
 
-@router.message(DebtCreationStates.waiting_product_quantity)
-async def process_product_quantity(message: Message, state: FSMContext) -> None:
-    """Tovar miqdorini (nechta) qabul qiladi."""
-    quantity = parse_money(message.text or "")
-    if quantity is None or quantity < 1:
+@router.callback_query(S.waiting_product_type, F.data.startswith("ptype:"))
+async def cb_product_type(callback: CallbackQuery, state: FSMContext) -> None:
+    """Tovar turi tanlandi — brendni so'raydi."""
+    type_key = (callback.data or "").split(":", 1)[1]
+    if type_key not in PRODUCT_TYPES:
+        await callback.answer()
+        return
+    await state.update_data(product_type=type_key, _brand_manual=False)
+    await state.set_state(S.waiting_product_brand)
+    if isinstance(callback.message, Message):
+        text, markup = _brand_prompt(await state.get_data())
+        await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.callback_query(S.waiting_product_brand, F.data.startswith("pbrand:"))
+async def cb_product_brand(callback: CallbackQuery, state: FSMContext) -> None:
+    """Brend tanlandi (yoki 'Boshqa' — qo'lda yozish so'raladi)."""
+    choice = (callback.data or "").split(":", 1)[1]
+    data = await state.get_data()
+    brands = BRANDS[data["product_type"]]
+
+    if choice == "other":
+        await state.update_data(_brand_manual=True)
+        data["_brand_manual"] = True
+        if isinstance(callback.message, Message):
+            text, markup = _brand_prompt(data)
+            await callback.message.edit_text(text, reply_markup=markup)
+        await callback.answer()
+        return
+
+    if not choice.isdigit() or int(choice) >= len(brands):
+        await callback.answer()
+        return
+
+    await state.update_data(product_brand=brands[int(choice)])
+    await state.set_state(S.waiting_product_size)
+    if isinstance(callback.message, Message):
+        text, markup = _size_prompt(await state.get_data())
+        await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.message(S.waiting_product_brand)
+async def process_product_brand(message: Message, state: FSMContext) -> None:
+    """Qo'lda yozilgan brend nomini qabul qiladi."""
+    brand = (message.text or "").strip()
+    if not brand or len(brand) > 30:
         await message.answer(
-            "⚠️ <b>Noto'g'ri miqdor!</b>\n\n"
-            "Iltimos, 1 dan katta son kiriting (masalan: <code>2</code>):",
+            "⚠️ Brend nomini 30 belgigacha kiriting:",
             reply_markup=get_back_cancel_keyboard(show_back=True),
         )
         return
 
+    await state.update_data(product_brand=brand, _brand_manual=False)
+    await state.set_state(S.waiting_product_size)
+    text, markup = _size_prompt(await state.get_data())
+    await message.answer(text, reply_markup=markup)
+
+
+@router.callback_query(S.waiting_product_size, F.data.startswith("psize:"))
+async def cb_akkum_size(callback: CallbackQuery, state: FSMContext) -> None:
+    """Akkumulyator razmeri tugma orqali tanlandi."""
+    size = f"{(callback.data or '').split(':', 1)[1]}Ah"
+    text, markup = await _accept_size(state, size)
+    if isinstance(callback.message, Message):
+        await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.message(S.waiting_product_size)
+async def process_product_size(message: Message, state: FSMContext) -> None:
+    """Shina/diska razmerini qo'lda qabul qiladi."""
+    data = await state.get_data()
+    size = (message.text or "").strip()
+    if data.get("product_type") == "akkum" or not size or len(size) > 30:
+        text, markup = _size_prompt(data)
+        await message.answer("⚠️ " + text, reply_markup=markup)
+        return
+
+    text, markup = await _accept_size(state, size)
+    await message.answer(text, reply_markup=markup)
+
+
+async def _accept_size(state: FSMContext, size: str) -> Prompt:
+    """Razmerdan keyin tovar nomini yig'ib, sonini so'raydi."""
+    data = await state.get_data()
+    name = build_product_name(data["product_type"], data["product_brand"], size)
+    await state.update_data(product_name=name, _np="")
+    await state.set_state(S.waiting_product_quantity)
+    return _quantity_prompt(await state.get_data())
+
+
+@router.callback_query(
+    StateFilter(S.waiting_product_quantity, S.waiting_product_price),
+    F.data.startswith("np:"),
+)
+async def cb_numpad(callback: CallbackQuery, state: FSMContext) -> None:
+    """Raqam klaviaturasi: raqam qo'shish, o'chirish, tozalash, tayyor."""
+    key = (callback.data or "").split(":", 1)[1]
+    current_state = await state.get_state()
+    data = await state.get_data()
+    value: str = data.get("_np", "")
+
+    if key == "ok":
+        amount = int(value) if value else 0
+        if current_state == S.waiting_product_quantity.state:
+            prompt = await _accept_quantity(state, amount)
+        else:
+            prompt = await _accept_price(state, amount)
+        if prompt is None:
+            await callback.answer("⚠️ Noto'g'ri qiymat. Musbat son kiriting.", show_alert=True)
+            return
+        if isinstance(callback.message, Message):
+            await callback.message.edit_text(prompt[0], reply_markup=prompt[1])
+        await callback.answer()
+        return
+
+    if key == "del":
+        new_value = value[:-1]
+    elif key == "clr":
+        new_value = ""
+    else:
+        new_value = (value + key).lstrip("0")
+    if len(new_value) > 15:
+        new_value = value
+
+    if new_value != value:
+        await state.update_data(_np=new_value)
+        data["_np"] = new_value
+        if isinstance(callback.message, Message) and current_state is not None:
+            text, markup = _PROMPTS[current_state](data)
+            await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer()
+
+
+async def _accept_quantity(state: FSMContext, quantity: int) -> Prompt | None:
+    """Tovar sonini saqlab, valyutani so'raydi. Noto'g'ri bo'lsa None."""
+    if not 1 <= quantity <= MAX_QUANTITY:
+        return None
     await state.update_data(product_quantity=quantity)
-    await state.set_state(DebtCreationStates.waiting_product_price)
-    await message.answer(
-        f"🔢 <b>Miqdor:</b> {quantity} ta\n\n"
-        "💰 <b>6-bosqich: Bitta tovar narxini kiriting:</b>\n\n"
-        "<i>Masalan: 2 500 000 — jami summa o'zi hisoblanadi</i>",
-        reply_markup=get_back_cancel_keyboard(show_back=True),
-    )
+    await state.set_state(S.waiting_product_currency)
+    return _currency_prompt(await state.get_data())
 
 
-@router.message(DebtCreationStates.waiting_product_price)
-async def process_product_price(message: Message, state: FSMContext) -> None:
-    """Tovar narxini qabul qiladi va tovarni ro'yxatga qo'shib, 'Yana tovar?' deb so'raydi."""
-    price = parse_money(message.text or "")
-    if price is None or price <= 0:
-        await message.answer(
-            "⚠️ <b>Noto'g'ri narx!</b>\n\n"
-            "Iltimos, faqat musbat son kiriting (masalan: <code>2 500 000</code>):",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-        return
-
+async def _accept_price(state: FSMContext, price: int) -> Prompt | None:
+    """Narxni saqlab, tovarni ro'yxatga qo'shadi. Noto'g'ri bo'lsa None."""
+    if not 0 < price <= MAX_MONEY:
+        return None
     await state.update_data(product_price=price)
-
-    # Tovar valyutasi so'raladi — har bir tovar o'z valyutasida bo'ladi
-    await state.set_state(DebtCreationStates.waiting_product_currency)
-    await message.answer(
-        "💰 <b>Narx qabul qilindi.</b>\n\n"
-        "💱 <b>Bu tovar qaysi valyutada?</b>\n\n"
-        "<i>Har bir tovar o'z valyutasida bo'lishi mumkin — so'm yoki dollar</i>",
-        reply_markup=get_product_currency_keyboard(),
-    )
+    data = await state.get_data()
+    return await _append_product(state, Currency(data["product_currency"]))
 
 
-@router.callback_query(DebtCreationStates.waiting_product_currency, F.data == "prodcur_uzs")
+@router.message(S.waiting_product_quantity)
+async def process_product_quantity(message: Message, state: FSMContext) -> None:
+    """Tovar sonini matn sifatida qabul qiladi."""
+    prompt = await _accept_quantity(state, parse_money(message.text or "") or 0)
+    if prompt is None:
+        text, markup = _quantity_prompt(await state.get_data())
+        await message.answer("⚠️ <b>Noto'g'ri miqdor!</b>\n\n" + text, reply_markup=markup)
+        return
+    await message.answer(prompt[0], reply_markup=prompt[1])
+
+
+@router.message(S.waiting_product_price)
+async def process_product_price(message: Message, state: FSMContext) -> None:
+    """Tovar narxini matn sifatida qabul qiladi."""
+    prompt = await _accept_price(state, parse_money(message.text or "") or 0)
+    if prompt is None:
+        text, markup = _price_prompt(await state.get_data())
+        await message.answer("⚠️ <b>Noto'g'ri narx!</b>\n\n" + text, reply_markup=markup)
+        return
+    await message.answer(prompt[0], reply_markup=prompt[1])
+
+
+@router.callback_query(S.waiting_product_currency, F.data == "prodcur_uzs")
 async def cb_prodcur_uzs(callback: CallbackQuery, state: FSMContext) -> None:
-    """Tovar so'mda — tovarni ro'yxatga qo'shib 'Yana tovar?' deb so'raydi."""
-    await _append_product_with_currency(callback, state, Currency.UZS)
+    """Tovar so'mda."""
+    await _choose_product_currency(callback, state, Currency.UZS)
 
 
-@router.callback_query(DebtCreationStates.waiting_product_currency, F.data == "prodcur_usd")
+@router.callback_query(S.waiting_product_currency, F.data == "prodcur_usd")
 async def cb_prodcur_usd(callback: CallbackQuery, state: FSMContext) -> None:
-    """Tovar dollarda — tovarni ro'yxatga qo'shib 'Yana tovar?' deb so'raydi."""
-    await _append_product_with_currency(callback, state, Currency.USD)
+    """Tovar dollarda."""
+    await _choose_product_currency(callback, state, Currency.USD)
 
 
-async def _append_product_with_currency(
+async def _choose_product_currency(
     callback: CallbackQuery,
     state: FSMContext,
     currency: Currency,
 ) -> None:
-    """Valyutasi tanlangan tovarni ro'yxatga qo'shib, 'Yana tovar?' so'raydi."""
+    """Valyuta tanlandi — narxni so'raydi.
+
+    Ovozli xabardan kelgan qoralamada narx allaqachon ma'lum — tovar
+    to'g'ridan-to'g'ri ro'yxatga qo'shiladi.
+    """
     data = await state.get_data()
-    product_name: str = data.get("product_name", "")
-    quantity: int = data.get("product_quantity", 1)
-    price: int = data.get("product_price", 0)
-
-    products = list(data.get("_products", []))
-    products.append(DebtProduct(
-        name=product_name,
-        quantity=quantity,
-        price_per_unit=price,
-        currency=currency,
-    ))
-    await state.update_data(_products=products)
-
-    total_this = price * quantity
-    if quantity > 1:
-        added_line = (
-            f"✅ <b>Qo'shildi:</b> {esc_html(product_name)} — {quantity} × "
-            f"{format_money(price, currency)} = {format_money(total_this, currency)}\n\n"
-        )
+    if data.get("product_price"):
+        text, markup = await _append_product(state, currency)
     else:
-        added_line = (
-            f"✅ <b>Qo'shildi:</b> {esc_html(product_name)} — "
-            f"{format_money(price, currency)}\n\n"
-        )
-
-    await state.set_state(DebtCreationStates.waiting_more_products)
+        await state.update_data(product_currency=currency.value, _np="")
+        await state.set_state(S.waiting_product_price)
+        text, markup = _price_prompt(await state.get_data())
 
     if isinstance(callback.message, Message):
-        await callback.message.edit_text(
-            added_line + "➕ <b>Yana tovar qo'shasizmi?</b>\n\n"
-            "<i>Agar bir nechta turli tovar olgan bo'lsa, yana qo'shing.</i>",
-            reply_markup=get_more_products_keyboard(),
-        )
+        await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
 
 
-@router.callback_query(DebtCreationStates.waiting_more_products, F.data == "more_products_yes")
+async def _append_product(state: FSMContext, currency: Currency) -> Prompt:
+    """Tovarni ro'yxatga qo'shadi (tahrirlashda — o'z o'rniga) va yig'ma xabarni qaytaradi."""
+    data = await state.get_data()
+    product = DebtProduct(
+        name=data.get("product_name", ""),
+        quantity=data.get("product_quantity", 1),
+        price_per_unit=data.get("product_price", 0),
+        currency=currency,
+    )
+    products = list(data.get("_products", []))
+    replace_index = data.get("_replace_index")
+    if replace_index is not None and 0 <= replace_index < len(products):
+        products[replace_index] = product
+    else:
+        products.append(product)
+
+    await state.update_data(_products=products, _replace_index=None)
+    await state.set_state(S.waiting_more_products)
+    return _summary_prompt(await state.get_data())
+
+
+@router.callback_query(S.waiting_more_products, F.data == "more_products_yes")
 async def cb_more_products_yes(
     callback: CallbackQuery,
     state: FSMContext,
 ) -> None:
     """Yana tovar kiritish — siklni qayta boshlaydi."""
-    data = await state.get_data()
-    num = _current_product_number(data) + 1
-    await state.set_state(DebtCreationStates.waiting_product_name)
+    await _start_product(state)
 
     if isinstance(callback.message, Message):
-        await callback.message.edit_text(
-            f"📦 <b>{num}-tovar nomini kiriting:</b>\n\n"
-            "<i>Masalan: Shina, Akkumulyator</i>",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
+        text, markup = _type_prompt(await state.get_data())
+        await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
 
 
-@router.callback_query(DebtCreationStates.waiting_more_products, F.data == "more_products_no")
+@router.callback_query(S.waiting_more_products, F.data == "more_products_no")
 async def cb_more_products_no(
     callback: CallbackQuery,
     state: FSMContext,
 ) -> None:
-    """Tovarlar kiritish tugadi — exchange bosqichiga o'tadi."""
-    await state.set_state(DebtCreationStates.waiting_exchange_choice)
+    """Tovarlar tasdiqlandi — exchange bosqichiga o'tadi."""
+    await state.set_state(S.waiting_exchange_choice)
 
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
             "🔄 <b>Ayirboshlash (Exchange) tovari bormi?</b>\n\n"
             "<i>Mijoz berilgan tovar evaziga boshqa tovar berdimi?</i>",
             reply_markup=get_exchange_choice_keyboard(),
+        )
+    await callback.answer()
+
+
+# ==========================================
+# 3.1. TOVARLARNI TAHRIRLASH
+# ==========================================
+
+
+@router.callback_query(S.waiting_more_products, F.data == "edit_products")
+async def cb_edit_products(callback: CallbackQuery, state: FSMContext) -> None:
+    """Tahrirlash uchun tovarlar ro'yxatini ko'rsatadi."""
+    products = _get_products(await state.get_data())
+    if isinstance(callback.message, Message):
+        await callback.message.edit_text(
+            "✏️ <b>Qaysi tovarni tahrirlaysiz?</b>",
+            reply_markup=get_edit_products_keyboard([p.name for p in products]),
+        )
+    await callback.answer()
+
+
+@router.callback_query(S.waiting_more_products, F.data == "edit_back")
+async def cb_edit_back(callback: CallbackQuery, state: FSMContext) -> None:
+    """Tahrirlashdan yig'ma xabarga qaytadi."""
+    if isinstance(callback.message, Message):
+        text, markup = _summary_prompt(await state.get_data())
+        await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer()
+
+
+async def _edit_index(callback: CallbackQuery, state: FSMContext) -> int | None:
+    """Callback'dagi tovar indeksini tekshiradi."""
+    raw = (callback.data or "").split(":", 1)[1]
+    products = (await state.get_data()).get("_products", [])
+    if not raw.isdigit() or int(raw) >= len(products):
+        await callback.answer("Tovar topilmadi.", show_alert=True)
+        return None
+    return int(raw)
+
+
+@router.callback_query(S.waiting_more_products, F.data.startswith("edit_prod:"))
+async def cb_edit_product(callback: CallbackQuery, state: FSMContext) -> None:
+    """Tanlangan tovar uchun amallarni ko'rsatadi."""
+    index = await _edit_index(callback, state)
+    if index is None:
+        return
+    product = _get_products(await state.get_data())[index]
+    if isinstance(callback.message, Message):
+        await callback.message.edit_text(
+            f"✏️ {index + 1}. {_product_line(product)}\n\n<b>Nima qilamiz?</b>",
+            reply_markup=get_edit_product_actions_keyboard(index),
+        )
+    await callback.answer()
+
+
+@router.callback_query(S.waiting_more_products, F.data.startswith("edit_del:"))
+async def cb_edit_delete(callback: CallbackQuery, state: FSMContext) -> None:
+    """Tovarni o'chiradi; ro'yxat bo'shab qolsa yangi tovar so'raladi."""
+    index = await _edit_index(callback, state)
+    if index is None:
+        return
+    products = list((await state.get_data())["_products"])
+    products.pop(index)
+    await state.update_data(_products=products)
+
+    if products:
+        text, markup = _summary_prompt(await state.get_data())
+    else:
+        await _start_product(state)
+        text, markup = _type_prompt(await state.get_data())
+    if isinstance(callback.message, Message):
+        await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer("O'chirildi")
+
+
+@router.callback_query(S.waiting_more_products, F.data.startswith("edit_redo:"))
+async def cb_edit_redo(callback: CallbackQuery, state: FSMContext) -> None:
+    """Tovarni qayta kiritish — yangi tovar shu o'ringa yoziladi."""
+    index = await _edit_index(callback, state)
+    if index is None:
+        return
+    await _start_product(state)
+    await state.update_data(_replace_index=index)
+    if isinstance(callback.message, Message):
+        text, markup = _type_prompt({})
+        await callback.message.edit_text(
+            f"🔄 <b>{index + 1}-tovar qayta kiritilmoqda</b>\n\n" + text,
+            reply_markup=markup,
         )
     await callback.answer()
 

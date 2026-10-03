@@ -13,12 +13,16 @@ class DebtCreationStates(StatesGroup):
     """Qarz yaratish bosqichlari."""
 
     waiting_date = State()
+    waiting_date_month = State()
+    waiting_date_year = State()
     waiting_client_name = State()
     waiting_client_phone = State()
-    waiting_product_name = State()
+    waiting_product_type = State()
+    waiting_product_brand = State()
+    waiting_product_size = State()
     waiting_product_quantity = State()
-    waiting_product_price = State()
     waiting_product_currency = State()
+    waiting_product_price = State()
     waiting_more_products = State()
     waiting_exchange_choice = State()
     waiting_exchange_currency = State()
