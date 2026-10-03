@@ -36,6 +36,7 @@ from bot.infrastructure.branches import Branch
 from bot.presentation.common.product_catalog import (
     BRANDS,
     PRODUCT_TYPES,
+    akkum_sizes,
     build_product_name,
 )
 from bot.presentation.keyboards.creation_kb import (
@@ -141,7 +142,10 @@ def _size_prompt(data: dict[str, Any]) -> Prompt:
         f"{esc_html(data['product_brand'])}\n\n"
     )
     if type_key == "akkum":
-        return header + "🔋 <b>Razmerini tanlang:</b>", get_akkum_size_keyboard()
+        return (
+            header + "🔋 <b>Razmerini tanlang:</b>",
+            get_akkum_size_keyboard(akkum_sizes(data["product_brand"])),
+        )
     example = "R16 malibu" if type_key == "diska" else "R16"
     return (
         header + f"📏 <b>Razmerini kiriting:</b>\n\n<i>Masalan: {example}</i>",
@@ -693,8 +697,12 @@ async def process_product_brand(message: Message, state: FSMContext) -> None:
 @router.callback_query(S.waiting_product_size, F.data.startswith("psize:"))
 async def cb_akkum_size(callback: CallbackQuery, state: FSMContext) -> None:
     """Akkumulyator razmeri tugma orqali tanlandi."""
-    size = f"{(callback.data or '').split(':', 1)[1]}Ah"
-    text, markup = await _accept_size(state, size)
+    raw = (callback.data or "").split(":", 1)[1]
+    sizes = akkum_sizes((await state.get_data())["product_brand"])
+    if not raw.isdigit() or int(raw) >= len(sizes):
+        await callback.answer()
+        return
+    text, markup = await _accept_size(state, sizes[int(raw)])
     if isinstance(callback.message, Message):
         await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()

@@ -14,7 +14,7 @@ from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
 from bot.domain.entities.currency import Currency
-from bot.presentation.common.product_catalog import build_product_name
+from bot.presentation.common.product_catalog import akkum_sizes, build_product_name
 from bot.presentation.handlers.debt_creation import (
     cb_akkum_size,
     cb_confirm_create_debt,
@@ -63,7 +63,7 @@ async def type_number(message, state, digits: str) -> None:
 
 
 async def fill_until_summary(state: FSMContext) -> VoiceStubMessage:
-    """Sana → ism → telefonsiz → Akkumulyator Jazz 60Ah × 2 × 120 $."""
+    """Sana → ism → telefonsiz → Akkumulyator Jazz 60L но × 2 × 120 $."""
     start = msg()
     await start_debt_creation(start, state, SimpleNamespace(title="Mangit"))
     assert "Filial:</b> Mangit" in start.last_answer
@@ -84,7 +84,8 @@ async def fill_until_summary(state: FSMContext) -> VoiceStubMessage:
     await press(m, cb_product_type, state, "ptype:akkum")
     assert m.button_data[:4] == ["pbrand:0", "pbrand:1", "pbrand:2", "pbrand:3"]
     await press(m, cb_product_brand, state, "pbrand:0")
-    await press(m, cb_akkum_size, state, "psize:60")
+    assert m.button_data[5] == "psize:5"  # Jazz: 6-razmer = "60L но"
+    await press(m, cb_akkum_size, state, "psize:5")
     await type_number(m, state, "2")
     await press(m, cb_prodcur_usd, state, "prodcur_usd")
     assert await state.get_state() == S.waiting_product_price.state
@@ -98,7 +99,7 @@ async def test_full_flow_saves_debt(state, client_repo, debt_repo, payment_repo)
     summary = m.last_answer
     assert "Filial:</b> Mangit" in summary
     assert "Qarz oluvchi:</b> Anvar" in summary
-    assert "Akkumulyator Jazz 60Ah" in summary
+    assert "Akkumulyator Jazz 60L но" in summary
     assert "2 × 120 $ = 240 $" in summary
     assert m.button_data == [
         "more_products_yes", "edit_products", "more_products_no", "cancel_creation",
@@ -177,4 +178,12 @@ def test_build_product_name() -> None:
     assert build_product_name("shina", "Kumho", "R16") == "Shina Kumho R16"
     assert build_product_name("diska", "Qo'qon diska", "R15") == "Qo'qon diska R15"
     assert build_product_name("diska", "Литий диска", "R17") == "Литий диска R17"
-    assert build_product_name("akkum", "Jazz", "60Ah") == "Akkumulyator Jazz 60Ah"
+    assert build_product_name("akkum", "Jazz", "60L но") == "Akkumulyator Jazz 60L но"
+
+
+def test_akkum_sizes_per_brand() -> None:
+    assert akkum_sizes("Atlant") == [
+        "60/45L сз", "60/45R сз", "90/77L сз", "132/105 ач", "190/150 ач",
+    ]
+    assert akkum_sizes("Wolter") == ["60R ач"]
+    assert akkum_sizes("Qaynar")[0] == "35Ah"  # brendga xos ro'yxat yo'q — umumiy

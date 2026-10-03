@@ -14,11 +14,37 @@ PRODUCT_TYPES: dict[str, str] = {
 BRANDS: dict[str, list[str]] = {
     "shina": ["Lassa", "Bars", "Kumho"],
     "diska": ["Zitto", "Falcon", "Qo'qon diska", "Литий диска", "Диска"],
-    "akkum": ["Jazz", "Qaynar", "Energy", "Delkor"],
+    "akkum": [
+        "Jazz", "Qaynar", "Energy", "Delkor",
+        "Atlant", "Inera", "Largo", "Vinco", "Rover", "Wolter",
+    ],
 }
 
 # Akkumulyator razmeri tugmalar orqali tanlanadi, qolganlari qo'lda yoziladi.
-AKKUM_SIZES_AH: list[int] = [35, 45, 55, 60, 62, 66, 75, 90, 100, 132, 190, 240]
+# Brendga xos ro'yxat bo'lmasa (yoki brend qo'lda yozilgan bo'lsa) — umumiy ro'yxat.
+DEFAULT_AKKUM_SIZES: list[str] = [
+    f"{ah}Ah" for ah in (35, 45, 55, 60, 62, 66, 75, 90, 100, 132, 190, 240)
+]
+
+AKKUM_SIZES: dict[str, list[str]] = {
+    "Jazz": [
+        "35R но", "35L но", "50R но", "50L но", "50L EFB",
+        "60L но", "60R но", "70L EFB", "75L но", "75R но", "75R сз", "75L сз",
+        "90R но", "90L но", "100 ач", "140 ач", "190 ач", "225 ач", "240 ач",
+    ],
+    "Atlant": ["60/45L сз", "60/45R сз", "90/77L сз", "132/105 ач", "190/150 ач"],
+    "Inera": ["36R ач", "60L ач"],
+    "Largo": ["36L ач"],
+    "Vinco": ["60R ач", "75L ач"],
+    "Rover": ["60R ач"],
+    "Wolter": ["60R ач"],
+}
+
+
+def akkum_sizes(brand: str) -> list[str]:
+    """Brendning akkumulyator razmerlari (bo'lmasa — umumiy ro'yxat)."""
+    return AKKUM_SIZES.get(brand, DEFAULT_AKKUM_SIZES)
+
 
 MONTHS: list[str] = [
     "Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun",

@@ -4,7 +4,7 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.application.common.formatters import clip_button_text, today_str
-from bot.presentation.common.product_catalog import AKKUM_SIZES_AH, MONTHS, PRODUCT_TYPES
+from bot.presentation.common.product_catalog import MONTHS, PRODUCT_TYPES
 
 _BACK_CANCEL_ROW = [
     InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
@@ -102,14 +102,14 @@ def get_brand_keyboard(brands: list[str]) -> InlineKeyboardMarkup:
     )
 
 
-def get_akkum_size_keyboard() -> InlineKeyboardMarkup:
-    """Akkumulyator razmeri (Ah) tugmalari."""
+def get_akkum_size_keyboard(sizes: list[str]) -> InlineKeyboardMarkup:
+    """Akkumulyator razmeri tugmalari (indeks bo'yicha)."""
     buttons = [
-        InlineKeyboardButton(text=f"{ah}Ah", callback_data=f"psize:{ah}")
-        for ah in AKKUM_SIZES_AH
+        InlineKeyboardButton(text=size, callback_data=f"psize:{i}")
+        for i, size in enumerate(sizes)
     ]
     return InlineKeyboardMarkup(
-        inline_keyboard=[*[buttons[i:i + 4] for i in range(0, len(buttons), 4)], _BACK_CANCEL_ROW]
+        inline_keyboard=[*[buttons[i:i + 3] for i in range(0, len(buttons), 3)], _BACK_CANCEL_ROW]
     )
 
 
