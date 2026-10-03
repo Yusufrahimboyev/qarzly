@@ -26,12 +26,18 @@ DEFAULT_AKKUM_SIZES: list[str] = [
     f"{ah}Ah" for ah in (35, 45, 55, 60, 62, 66, 75, 90, 100, 132, 190, 240)
 ]
 
+_JAZZ_SIZES: list[str] = [
+    "35R но", "35L но", "50R но", "50L но", "50L EFB",
+    "60L но", "60R но", "70L EFB", "75L но", "75R но", "75R сз", "75L сз",
+    "90R но", "90L но", "100 ач", "140 ач", "190 ач", "225 ач", "240 ач",
+]
+
 AKKUM_SIZES: dict[str, list[str]] = {
-    "Jazz": [
-        "35R но", "35L но", "50R но", "50L но", "50L EFB",
-        "60L но", "60R но", "70L EFB", "75L но", "75R но", "75R сз", "75L сз",
-        "90R но", "90L но", "100 ач", "140 ач", "190 ач", "225 ач", "240 ач",
-    ],
+    "Jazz": _JAZZ_SIZES,
+    # Vaqtincha Jazz razmerlari — o'z ro'yxatlari kelguncha.
+    "Qaynar": _JAZZ_SIZES,
+    "Energy": _JAZZ_SIZES,
+    "Delkor": _JAZZ_SIZES,
     "Atlant": ["60/45L сз", "60/45R сз", "90/77L сз", "132/105 ач", "190/150 ач"],
     "Inera": ["36R ач", "60L ач"],
     "Largo": ["36L ач"],

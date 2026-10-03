@@ -186,4 +186,5 @@ def test_akkum_sizes_per_brand() -> None:
         "60/45L сз", "60/45R сз", "90/77L сз", "132/105 ач", "190/150 ач",
     ]
     assert akkum_sizes("Wolter") == ["60R ач"]
-    assert akkum_sizes("Qaynar")[0] == "35Ah"  # brendga xos ro'yxat yo'q — umumiy
+    assert akkum_sizes("Qaynar") == akkum_sizes("Jazz")  # vaqtincha
+    assert akkum_sizes("Boshqa brend")[0] == "35Ah"  # qo'lda yozilgan — umumiy
