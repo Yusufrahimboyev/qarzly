@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from aiogram import BaseMiddleware
-from aiogram.types import CallbackQuery, Message, TelegramObject
+from aiogram.types import CallbackQuery, InlineQuery, Message, TelegramObject
 
 from bot.core.config import Settings
 from bot.infrastructure.branches import Branch, BranchRegistry
@@ -34,7 +34,7 @@ class DependencyMiddleware(BaseMiddleware):
     async def _resolve_branch(self, event: TelegramObject) -> Branch:
         """Foydalanuvchi tanlagan filial (tanlanmagan/o'chirilgan bo'lsa — asosiy)."""
         user = None
-        if isinstance(event, (Message, CallbackQuery)):
+        if isinstance(event, (Message, CallbackQuery, InlineQuery)):
             user = event.from_user
         if user is not None:
             branch = self._registry.get(await self._preferences.get(user.id))

@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from aiogram import BaseMiddleware
-from aiogram.types import CallbackQuery, Message, TelegramObject
+from aiogram.types import CallbackQuery, InlineQuery, Message, TelegramObject
 
 from bot.core.config import Settings
 
@@ -38,7 +38,7 @@ class AdminMiddleware(BaseMiddleware):
         user_id: int | None = None
         if isinstance(event, Message) and event.from_user is not None:
             user_id = event.from_user.id
-        elif isinstance(event, CallbackQuery) and event.from_user is not None:
+        elif isinstance(event, (CallbackQuery, InlineQuery)) and event.from_user is not None:
             user_id = event.from_user.id
 
         if not allowed_ids:
@@ -69,3 +69,5 @@ class AdminMiddleware(BaseMiddleware):
             )
         elif isinstance(event, CallbackQuery):
             await event.answer("⛔️ Ruxsat berilmagan.", show_alert=True)
+        elif isinstance(event, InlineQuery):
+            await event.answer([], cache_time=0, is_personal=True)

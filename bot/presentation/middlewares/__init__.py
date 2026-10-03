@@ -28,7 +28,7 @@ def register_middlewares(
         settings=settings,
     )
 
-    for observer in (dp.message, dp.callback_query):
+    for observer in (dp.message, dp.callback_query, dp.inline_query):
         observer.middleware(error_mw)
         observer.middleware(admin_mw)
         observer.middleware(dependency_mw)
