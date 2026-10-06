@@ -251,18 +251,10 @@
                                 </span>
                             </div>
                             <div id="exchange-fields" class="toggle-body" style="display: none;">
-                                <div class="form-group">
-                                    <label for="create-exchange-name">Exchange tovar nomi</label>
-                                    <input type="text" id="create-exchange-name" placeholder="Masalan: Eski shina" autocomplete="off">
-                                </div>
-                                <div class="form-group">
-                                    <label for="create-exchange-price">Exchange tovar narxi</label>
-                                    <input type="number" id="create-exchange-price" placeholder="0" min="0" step="1000" inputmode="numeric">
-                                </div>
-                                <div class="currency-chips" id="exchange-currency-chips" role="group" aria-label="Exchange valyutasi">
-                                    <button type="button" class="cur-chip active" data-currency="UZS" aria-pressed="true">So'm</button>
-                                    <button type="button" class="cur-chip" data-currency="USD" aria-pressed="false">Dollar</button>
-                                </div>
+                                <div id="exchanges-container"></div>
+                                <button type="button" id="btn-add-exchange" class="btn btn-dashed btn-block">
+                                    <svg width="20" height="20" class="icon"><use href="#i-plus"/></svg> Yana exchange qo'shish
+                                </button>
                             </div>
                         </div>
 
@@ -298,7 +290,7 @@
                             <strong id="calc-product-price">0 so'm</strong>
                         </div>
                         <div class="summary-row" id="calc-exchange-row" style="display: none;">
-                            <span>Exchange tovar</span>
+                            <span>Exchange</span>
                             <span id="calc-exchange-price" class="text-deduct">-0 so'm</span>
                         </div>
                         <div class="summary-row" id="calc-given-row" style="display: none;">

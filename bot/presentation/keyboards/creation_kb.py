@@ -113,31 +113,47 @@ def get_akkum_size_keyboard(sizes: list[str]) -> InlineKeyboardMarkup:
     )
 
 
-def get_edit_products_keyboard(names: list[str]) -> InlineKeyboardMarkup:
-    """Tahrirlash uchun tovarlar ro'yxati."""
+def get_edit_products_keyboard(names: list[str], prefix: str = "edit") -> InlineKeyboardMarkup:
+    """Tahrirlash uchun tovarlar (yoki exchange'lar: prefix="exedit") ro'yxati."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             *[
                 [InlineKeyboardButton(
                     text=clip_button_text(f"✏️ {i}. {name}"),
-                    callback_data=f"edit_prod:{i - 1}",
+                    callback_data=f"{prefix}_prod:{i - 1}",
                 )]
                 for i, name in enumerate(names, start=1)
             ],
-            [InlineKeyboardButton(text="🔙 Ortga", callback_data="edit_back")],
+            [InlineKeyboardButton(text="🔙 Ortga", callback_data=f"{prefix}_back")],
         ]
     )
 
 
-def get_edit_product_actions_keyboard(index: int) -> InlineKeyboardMarkup:
+def get_edit_product_actions_keyboard(index: int, prefix: str = "edit") -> InlineKeyboardMarkup:
     """Tanlangan tovar ustida amallar."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"edit_del:{index}"),
-                InlineKeyboardButton(text="🔄 Qayta kiritish", callback_data=f"edit_redo:{index}"),
+                InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"{prefix}_del:{index}"),
+                InlineKeyboardButton(
+                    text="🔄 Qayta kiritish", callback_data=f"{prefix}_redo:{index}"
+                ),
             ],
-            [InlineKeyboardButton(text="🔙 Ortga", callback_data="edit_products")],
+            [InlineKeyboardButton(text="🔙 Ortga", callback_data=f"{prefix}_products")],
+        ]
+    )
+
+
+def get_exchange_more_keyboard() -> InlineKeyboardMarkup:
+    """Exchange yig'ma xabari: yana exchange, tahrirlash, tayyor."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="➕ Yana exchange qo'shish", callback_data="exchange_more_yes",
+            )],
+            [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="exedit_products")],
+            [InlineKeyboardButton(text="✅ Tayyor", callback_data="exchange_done")],
+            [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation")],
         ]
     )
 

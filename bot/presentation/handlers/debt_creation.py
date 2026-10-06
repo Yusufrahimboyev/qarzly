@@ -49,6 +49,7 @@ from bot.presentation.keyboards.creation_kb import (
     get_edit_products_keyboard,
     get_exchange_choice_keyboard,
     get_exchange_currency_keyboard,
+    get_exchange_more_keyboard,
     get_given_currency_keyboard,
     get_given_money_choice_keyboard,
     get_month_keyboard,
@@ -185,23 +186,27 @@ def _price_prompt(data: dict[str, Any]) -> Prompt:
     )
 
 
-def _product_line(p: DebtProduct) -> str:
+def _product_line(p: DebtProduct, icon: str = "📦") -> str:
     if p.quantity > 1:
         return (
-            f"📦 <b>{esc_html(p.name)}</b> — {p.quantity} × "
+            f"{icon} <b>{esc_html(p.name)}</b> — {p.quantity} × "
             f"{format_money(p.price_per_unit, p.currency)} = "
             f"{format_money(p.total_price, p.currency)}"
         )
-    return f"📦 <b>{esc_html(p.name)}</b> — {format_money(p.price_per_unit, p.currency)}"
+    return f"{icon} <b>{esc_html(p.name)}</b> — {format_money(p.price_per_unit, p.currency)}"
 
 
-def _summary_prompt(data: dict[str, Any]) -> Prompt:
-    """Shu paytgacha kiritilgan barcha ma'lumotlar bitta xabarda."""
-    products = _get_products(data)
+def _totals(items: list[DebtProduct]) -> dict[str, int]:
+    """Valyutalar bo'yicha jami narxlar."""
     totals: dict[str, int] = {}
-    for p in products:
+    for p in items:
         totals[p.currency.value] = totals.get(p.currency.value, 0) + p.total_price
+    return totals
 
+
+def _summary_lines(data: dict[str, Any]) -> list[str]:
+    """Mijoz ma'lumotlari va tovarlar ro'yxati (yig'ma xabarlar uchun)."""
+    products = _get_products(data)
     lines = []
     if data.get("branch_title"):
         lines.append(f"🏢 <b>Filial:</b> {esc_html(data['branch_title'])}")
@@ -211,8 +216,83 @@ def _summary_prompt(data: dict[str, Any]) -> Prompt:
     lines.append(f"📅 <b>Sana:</b> {data.get('debt_date', '-')}")
     lines.append("━━━━━━━━ <b>TOVARLAR:</b> ━━━━━━━━")
     lines.extend(f"{i}. {_product_line(p)}" for i, p in enumerate(products, start=1))
-    lines.append(f"\n💰 <b>Jami:</b> {format_money_map(totals)}")
-    return "\n".join(lines), get_more_products_keyboard()
+    lines.append(f"\n💰 <b>Jami:</b> {format_money_map(_totals(products))}")
+    return lines
+
+
+def _summary_prompt(data: dict[str, Any]) -> Prompt:
+    """Shu paytgacha kiritilgan barcha ma'lumotlar bitta xabarda."""
+    return "\n".join(_summary_lines(data)), get_more_products_keyboard()
+
+
+def _exchange_choice_prompt(_data: dict[str, Any]) -> Prompt:
+    return (
+        "🔄 <b>Ayirboshlash (Exchange) tovari bormi?</b>\n\n"
+        "<i>Mijoz berilgan tovar evaziga boshqa tovar berdimi?</i>",
+        get_exchange_choice_keyboard(),
+    )
+
+
+def _ex_name_prompt(data: dict[str, Any]) -> Prompt:
+    num = len(data.get("_exchanges", [])) + 1
+    title = "Ayirboshlash tovari nomini kiriting" if num == 1 else (
+        f"{num}-ayirboshlash tovari nomini kiriting"
+    )
+    return (
+        f"🔄 <b>{title}:</b>\n\n<i>Masalan: Eski shina R16, Eski akkumulyator</i>",
+        get_back_cancel_keyboard(show_back=True),
+    )
+
+
+def _ex_quantity_prompt(data: dict[str, Any]) -> Prompt:
+    value = data.get("_np") or "—"
+    return (
+        f"🔄 <b>Exchange:</b> {esc_html(data['ex_name'])}\n\n"
+        "🔢 <b>Sonini kiriting:</b>\n\n"
+        f"Kiritildi: <b>{value}</b>",
+        get_numpad_keyboard(),
+    )
+
+
+def _ex_currency_prompt(data: dict[str, Any]) -> Prompt:
+    return (
+        f"🔄 <b>Exchange:</b> {esc_html(data['ex_name'])} — {data['ex_quantity']} ta\n\n"
+        "💱 <b>Valyutani tanlang:</b>\n\n"
+        "<i>Exchange shu valyutadagi tovarlar qarzidan chegiriladi</i>",
+        get_exchange_currency_keyboard(),
+    )
+
+
+def _ex_price_prompt(data: dict[str, Any]) -> Prompt:
+    currency = Currency(data["ex_currency"])
+    raw = data.get("_np")
+    value = format_money(int(raw), currency) if raw else "—"
+    return (
+        f"🔄 <b>Exchange:</b> {esc_html(data['ex_name'])} — {data['ex_quantity']} ta\n\n"
+        "💰 <b>1 dona narxini kiriting:</b>\n\n"
+        f"Kiritildi: <b>{value}</b>",
+        get_numpad_keyboard(with_thousands=True),
+    )
+
+
+def _ex_summary_prompt(data: dict[str, Any]) -> Prompt:
+    """Tovarlar va exchange'lar bitta xabarda."""
+    exchanges = _get_exchanges(data)
+    lines = _summary_lines(data)
+    lines.append("━━━━━━━━ <b>EXCHANGE:</b> ━━━━━━━━")
+    lines.extend(
+        f"{i}. {_product_line(e, icon='🔄')}" for i, e in enumerate(exchanges, start=1)
+    )
+    lines.append(f"\n🔄 <b>Exchange jami:</b> {format_money_map(_totals(exchanges))}")
+    return "\n".join(lines), get_exchange_more_keyboard()
+
+
+def _given_choice_prompt(_data: dict[str, Any]) -> Prompt:
+    return (
+        "💵 <b>Qarzdan oldindan pul berildimi?</b>\n\n"
+        "<i>Mijoz tovar olingan paytda ma'lum bir summa to'ladimi?</i>",
+        get_given_money_choice_keyboard(),
+    )
 
 
 _PROMPTS = {
@@ -228,17 +308,36 @@ _PROMPTS = {
     S.waiting_product_currency.state: _currency_prompt,
     S.waiting_product_price.state: _price_prompt,
     S.waiting_more_products.state: _summary_prompt,
+    S.waiting_exchange_choice.state: _exchange_choice_prompt,
+    S.waiting_exchange_name.state: _ex_name_prompt,
+    S.waiting_exchange_quantity.state: _ex_quantity_prompt,
+    S.waiting_exchange_currency.state: _ex_currency_prompt,
+    S.waiting_exchange_price.state: _ex_price_prompt,
+    S.waiting_exchange_more.state: _ex_summary_prompt,
+    S.waiting_given_money_choice.state: _given_choice_prompt,
 }
+
+# Raqam klaviaturasi ishlaydigan holatlar
+_NUMPAD_STATES = (
+    S.waiting_product_quantity.state,
+    S.waiting_product_price.state,
+    S.waiting_exchange_quantity.state,
+    S.waiting_exchange_price.state,
+)
 
 
 def _previous_state(current: str | None, data: dict[str, Any]) -> str | None:
-    """Tovar kiritishgacha bo'lgan bosqichlar uchun 'Ortga' manzili."""
+    """'Ortga' tugmasi manzili (berilgan pul summasidan tashqari)."""
     if current == S.waiting_product_type.state:
         if data.get("_products"):
             return S.waiting_more_products.state
         if data.get("_existing_client"):
             return S.waiting_date.state
         return S.waiting_client_phone.state
+    if current in (S.waiting_exchange_name.state, S.waiting_given_money_choice.state):
+        if data.get("_exchanges"):
+            return S.waiting_exchange_more.state
+        return S.waiting_exchange_choice.state
     return {
         S.waiting_date_month.state: S.waiting_date.state,
         S.waiting_date_year.state: S.waiting_date_month.state,
@@ -250,6 +349,11 @@ def _previous_state(current: str | None, data: dict[str, Any]) -> str | None:
         S.waiting_product_currency.state: S.waiting_product_quantity.state,
         S.waiting_product_price.state: S.waiting_product_currency.state,
         S.waiting_exchange_choice.state: S.waiting_more_products.state,
+        S.waiting_exchange_quantity.state: S.waiting_exchange_name.state,
+        S.waiting_exchange_currency.state: S.waiting_exchange_quantity.state,
+        S.waiting_exchange_price.state: S.waiting_exchange_currency.state,
+        S.waiting_given_currency.state: S.waiting_given_money_choice.state,
+        S.waiting_confirm.state: S.waiting_given_money_choice.state,
     }.get(current or "")
 
 
@@ -342,57 +446,12 @@ async def cb_create_back(callback: CallbackQuery, state: FSMContext) -> None:
 
     previous = _previous_state(current_state, data)
     if previous is not None:
-        if previous in (S.waiting_product_quantity.state, S.waiting_product_price.state):
+        if previous in _NUMPAD_STATES:
             await state.update_data(_np="")
             data["_np"] = ""
         await state.set_state(previous)
         text, markup = _PROMPTS[previous](data)
         await callback.message.edit_text(text, reply_markup=markup)
-
-    elif current_state == S.waiting_exchange_currency:
-        await state.set_state(S.waiting_exchange_choice)
-        await callback.message.edit_text(
-            "🔄 <b>Ayirboshlash (Exchange) tovari bormi?</b>",
-            reply_markup=get_exchange_choice_keyboard(),
-        )
-
-    elif current_state == DebtCreationStates.waiting_exchange_name:
-        await state.set_state(DebtCreationStates.waiting_exchange_currency)
-        await callback.message.edit_text(
-            "💱 <b>Ayirboshlash tovari qaysi valyutada?</b>\n\n"
-            "<i>Exchange shu valyutadagi tovarlar qarzidan chegiriladi</i>",
-            reply_markup=get_exchange_currency_keyboard(),
-        )
-
-    elif current_state == DebtCreationStates.waiting_exchange_price:
-        await state.set_state(DebtCreationStates.waiting_exchange_name)
-        await callback.message.edit_text(
-            "📦 <b>Ayirboshlash tovari nomini kiriting:</b>\n\n"
-            "<i>Masalan: Eski shina</i>",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-
-    elif current_state == DebtCreationStates.waiting_given_money_choice:
-        if data.get("exchange_exists", False):
-            await state.set_state(DebtCreationStates.waiting_exchange_price)
-            await callback.message.edit_text(
-                "💰 <b>Ayirboshlash tovari narxini kiriting:</b>\n\n"
-                "<i>Masalan: 800 000</i>",
-                reply_markup=get_back_cancel_keyboard(show_back=True),
-            )
-        else:
-            await state.set_state(DebtCreationStates.waiting_exchange_choice)
-            await callback.message.edit_text(
-                "🔄 <b>Ayirboshlash (Exchange) tovari bormi?</b>",
-                reply_markup=get_exchange_choice_keyboard(),
-            )
-
-    elif current_state == DebtCreationStates.waiting_given_currency:
-        await state.set_state(DebtCreationStates.waiting_given_money_choice)
-        await callback.message.edit_text(
-            "💵 <b>Qarzdan oldindan pul berildimi?</b>",
-            reply_markup=get_given_money_choice_keyboard(),
-        )
 
     elif current_state == DebtCreationStates.waiting_given_money_amount:
         await state.set_state(DebtCreationStates.waiting_given_currency)
@@ -400,13 +459,6 @@ async def cb_create_back(callback: CallbackQuery, state: FSMContext) -> None:
             "💱 <b>Berilgan pul qaysi valyutada?</b>\n\n"
             "<i>Shu valyutadagi tovarlar qarzidan chegiriladi</i>",
             reply_markup=get_given_currency_keyboard(),
-        )
-
-    elif current_state == DebtCreationStates.waiting_confirm:
-        await state.set_state(DebtCreationStates.waiting_given_money_choice)
-        await callback.message.edit_text(
-            "💵 <b>Qarzdan oldindan pul berildimi?</b>",
-            reply_markup=get_given_money_choice_keyboard(),
         )
 
     await callback.answer()
@@ -731,10 +783,7 @@ async def _accept_size(state: FSMContext, size: str) -> Prompt:
     return _quantity_prompt(await state.get_data())
 
 
-@router.callback_query(
-    StateFilter(S.waiting_product_quantity, S.waiting_product_price),
-    F.data.startswith("np:"),
-)
+@router.callback_query(StateFilter(*_NUMPAD_STATES), F.data.startswith("np:"))
 async def cb_numpad(callback: CallbackQuery, state: FSMContext) -> None:
     """Raqam klaviaturasi: raqam qo'shish, o'chirish, tozalash, tayyor."""
     key = (callback.data or "").split(":", 1)[1]
@@ -743,16 +792,12 @@ async def cb_numpad(callback: CallbackQuery, state: FSMContext) -> None:
     value: str = data.get("_np", "")
 
     if key == "ok":
-        amount = int(value) if value else 0
-        if current_state == S.waiting_product_quantity.state:
-            prompt = await _accept_quantity(state, amount)
-        else:
-            prompt = await _accept_price(state, amount)
-        if prompt is None:
-            await callback.answer("⚠️ Noto'g'ri qiymat. Musbat son kiriting.", show_alert=True)
+        result = await _ACCEPT[current_state or ""](state, int(value) if value else 0)
+        if isinstance(result, str):
+            await callback.answer(result, show_alert=True)
             return
         if isinstance(callback.message, Message):
-            await callback.message.edit_text(prompt[0], reply_markup=prompt[1])
+            await callback.message.edit_text(result[0], reply_markup=result[1])
         await callback.answer()
         return
 
@@ -774,44 +819,89 @@ async def cb_numpad(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-async def _accept_quantity(state: FSMContext, quantity: int) -> Prompt | None:
-    """Tovar sonini saqlab, valyutani so'raydi. Noto'g'ri bo'lsa None."""
+_INVALID_NUMBER = "⚠️ Noto'g'ri qiymat. Musbat son kiriting."
+
+
+async def _accept_quantity(state: FSMContext, quantity: int) -> Prompt | str:
+    """Tovar sonini saqlab, valyutani so'raydi. Noto'g'ri bo'lsa xato matni."""
     if not 1 <= quantity <= MAX_QUANTITY:
-        return None
+        return _INVALID_NUMBER
     await state.update_data(product_quantity=quantity)
     await state.set_state(S.waiting_product_currency)
     return _currency_prompt(await state.get_data())
 
 
-async def _accept_price(state: FSMContext, price: int) -> Prompt | None:
-    """Narxni saqlab, tovarni ro'yxatga qo'shadi. Noto'g'ri bo'lsa None."""
+async def _accept_price(state: FSMContext, price: int) -> Prompt | str:
+    """Narxni saqlab, tovarni ro'yxatga qo'shadi. Noto'g'ri bo'lsa xato matni."""
     if not 0 < price <= MAX_MONEY:
-        return None
+        return _INVALID_NUMBER
     await state.update_data(product_price=price)
     data = await state.get_data()
     return await _append_product(state, Currency(data["product_currency"]))
 
 
-@router.message(S.waiting_product_quantity)
-async def process_product_quantity(message: Message, state: FSMContext) -> None:
-    """Tovar sonini matn sifatida qabul qiladi."""
-    prompt = await _accept_quantity(state, parse_money(message.text or "") or 0)
-    if prompt is None:
-        text, markup = _quantity_prompt(await state.get_data())
-        await message.answer("⚠️ <b>Noto'g'ri miqdor!</b>\n\n" + text, reply_markup=markup)
-        return
-    await message.answer(prompt[0], reply_markup=prompt[1])
+async def _accept_ex_quantity(state: FSMContext, quantity: int) -> Prompt | str:
+    """Exchange sonini saqlab, valyutani so'raydi."""
+    if not 1 <= quantity <= MAX_QUANTITY:
+        return _INVALID_NUMBER
+    await state.update_data(ex_quantity=quantity)
+    await state.set_state(S.waiting_exchange_currency)
+    return _ex_currency_prompt(await state.get_data())
 
 
-@router.message(S.waiting_product_price)
-async def process_product_price(message: Message, state: FSMContext) -> None:
-    """Tovar narxini matn sifatida qabul qiladi."""
-    prompt = await _accept_price(state, parse_money(message.text or "") or 0)
-    if prompt is None:
-        text, markup = _price_prompt(await state.get_data())
-        await message.answer("⚠️ <b>Noto'g'ri narx!</b>\n\n" + text, reply_markup=markup)
+async def _accept_ex_price(state: FSMContext, price: int) -> Prompt | str:
+    """Exchange narxini tekshirib, ro'yxatga qo'shadi.
+
+    Shu valyutadagi barcha exchange'lar jami tovarlar jamidan oshmasligi kerak.
+    """
+    if not 0 < price <= MAX_MONEY:
+        return _INVALID_NUMBER
+    data = await state.get_data()
+    currency = Currency(data["ex_currency"])
+    item = DebtProduct(
+        name=data["ex_name"],
+        quantity=data["ex_quantity"],
+        price_per_unit=price,
+        currency=currency,
+    )
+    exchanges = _get_exchanges(data)
+    replace_index = data.get("_ex_replace_index")
+    if replace_index is not None and 0 <= replace_index < len(exchanges):
+        exchanges[replace_index] = item
+    else:
+        exchanges.append(item)
+
+    limit = _totals(_get_products(data)).get(currency.value, 0)
+    total = _totals(exchanges).get(currency.value, 0)
+    if total > limit:
+        return (
+            f"⚠️ Exchange jami ({format_money(total, currency)}) shu valyutadagi "
+            f"tovarlar jamidan ({format_money(limit, currency)}) oshmasligi kerak."
+        )
+
+    await state.update_data(_exchanges=exchanges, _ex_replace_index=None)
+    await state.set_state(S.waiting_exchange_more)
+    return _ex_summary_prompt(await state.get_data())
+
+
+_ACCEPT = {
+    S.waiting_product_quantity.state: _accept_quantity,
+    S.waiting_product_price.state: _accept_price,
+    S.waiting_exchange_quantity.state: _accept_ex_quantity,
+    S.waiting_exchange_price.state: _accept_ex_price,
+}
+
+
+@router.message(StateFilter(*_NUMPAD_STATES))
+async def process_numpad_text(message: Message, state: FSMContext) -> None:
+    """Son yoki narx klaviatura o'rniga matn bilan yozilganda."""
+    current_state = await state.get_state() or ""
+    result = await _ACCEPT[current_state](state, parse_money(message.text or "") or 0)
+    if isinstance(result, str):
+        text, markup = _PROMPTS[current_state](await state.get_data())
+        await message.answer(f"{result}\n\n{text}", reply_markup=markup)
         return
-    await message.answer(prompt[0], reply_markup=prompt[1])
+    await message.answer(result[0], reply_markup=result[1])
 
 
 @router.callback_query(S.waiting_product_currency, F.data == "prodcur_uzs")
@@ -906,84 +996,119 @@ async def cb_more_products_no(
 # ==========================================
 
 
-@router.callback_query(S.waiting_more_products, F.data == "edit_products")
+# Tahrirlash tovarlar ("edit_*") va exchange'lar ("exedit_*") uchun umumiy.
+# prefix → (ro'yxat kaliti, qayta kiritish indeksi kaliti, ikonka)
+_EDIT_TARGETS = {
+    "edit": ("_products", "_replace_index", "📦"),
+    "exedit": ("_exchanges", "_ex_replace_index", "🔄"),
+}
+_EDIT_STATES = StateFilter(S.waiting_more_products, S.waiting_exchange_more)
+
+
+def _edit_prefix(callback: CallbackQuery) -> str:
+    return (callback.data or "").split("_", 1)[0]
+
+
+def _edit_summary(prefix: str, data: dict[str, Any]) -> Prompt:
+    return _summary_prompt(data) if prefix == "edit" else _ex_summary_prompt(data)
+
+
+def _edit_items(prefix: str, data: dict[str, Any]) -> list[DebtProduct]:
+    return _get_products(data) if prefix == "edit" else _get_exchanges(data)
+
+
+@router.callback_query(_EDIT_STATES, F.data.in_({"edit_products", "exedit_products"}))
 async def cb_edit_products(callback: CallbackQuery, state: FSMContext) -> None:
-    """Tahrirlash uchun tovarlar ro'yxatini ko'rsatadi."""
-    products = _get_products(await state.get_data())
+    """Tahrirlash uchun ro'yxatni ko'rsatadi."""
+    prefix = _edit_prefix(callback)
+    items = _edit_items(prefix, await state.get_data())
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
-            "✏️ <b>Qaysi tovarni tahrirlaysiz?</b>",
-            reply_markup=get_edit_products_keyboard([p.name for p in products]),
+            "✏️ <b>Qaysi birini tahrirlaysiz?</b>",
+            reply_markup=get_edit_products_keyboard([p.name for p in items], prefix),
         )
     await callback.answer()
 
 
-@router.callback_query(S.waiting_more_products, F.data == "edit_back")
+@router.callback_query(_EDIT_STATES, F.data.in_({"edit_back", "exedit_back"}))
 async def cb_edit_back(callback: CallbackQuery, state: FSMContext) -> None:
     """Tahrirlashdan yig'ma xabarga qaytadi."""
     if isinstance(callback.message, Message):
-        text, markup = _summary_prompt(await state.get_data())
+        text, markup = _edit_summary(_edit_prefix(callback), await state.get_data())
         await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
 
 
 async def _edit_index(callback: CallbackQuery, state: FSMContext) -> int | None:
-    """Callback'dagi tovar indeksini tekshiradi."""
+    """Callback'dagi indeksni tekshiradi."""
     raw = (callback.data or "").split(":", 1)[1]
-    products = (await state.get_data()).get("_products", [])
-    if not raw.isdigit() or int(raw) >= len(products):
-        await callback.answer("Tovar topilmadi.", show_alert=True)
+    list_key = _EDIT_TARGETS[_edit_prefix(callback)][0]
+    items = (await state.get_data()).get(list_key, [])
+    if not raw.isdigit() or int(raw) >= len(items):
+        await callback.answer("Topilmadi.", show_alert=True)
         return None
     return int(raw)
 
 
-@router.callback_query(S.waiting_more_products, F.data.startswith("edit_prod:"))
+@router.callback_query(_EDIT_STATES, F.data.startswith(("edit_prod:", "exedit_prod:")))
 async def cb_edit_product(callback: CallbackQuery, state: FSMContext) -> None:
-    """Tanlangan tovar uchun amallarni ko'rsatadi."""
+    """Tanlangan element uchun amallarni ko'rsatadi."""
     index = await _edit_index(callback, state)
     if index is None:
         return
-    product = _get_products(await state.get_data())[index]
+    prefix = _edit_prefix(callback)
+    item = _edit_items(prefix, await state.get_data())[index]
     if isinstance(callback.message, Message):
+        line = _product_line(item, icon=_EDIT_TARGETS[prefix][2])
         await callback.message.edit_text(
-            f"✏️ {index + 1}. {_product_line(product)}\n\n<b>Nima qilamiz?</b>",
-            reply_markup=get_edit_product_actions_keyboard(index),
+            f"✏️ {index + 1}. {line}\n\n<b>Nima qilamiz?</b>",
+            reply_markup=get_edit_product_actions_keyboard(index, prefix),
         )
     await callback.answer()
 
 
-@router.callback_query(S.waiting_more_products, F.data.startswith("edit_del:"))
+@router.callback_query(_EDIT_STATES, F.data.startswith(("edit_del:", "exedit_del:")))
 async def cb_edit_delete(callback: CallbackQuery, state: FSMContext) -> None:
-    """Tovarni o'chiradi; ro'yxat bo'shab qolsa yangi tovar so'raladi."""
+    """O'chiradi; ro'yxat bo'shab qolsa — tovar turi yoki 'Exchange bormi?' so'raladi."""
     index = await _edit_index(callback, state)
     if index is None:
         return
-    products = list((await state.get_data())["_products"])
-    products.pop(index)
-    await state.update_data(_products=products)
+    prefix = _edit_prefix(callback)
+    list_key = _EDIT_TARGETS[prefix][0]
+    items = list((await state.get_data())[list_key])
+    items.pop(index)
+    await state.update_data(**{list_key: items})
 
-    if products:
-        text, markup = _summary_prompt(await state.get_data())
-    else:
+    if items:
+        text, markup = _edit_summary(prefix, await state.get_data())
+    elif prefix == "edit":
         await _start_product(state)
         text, markup = _type_prompt(await state.get_data())
+    else:
+        await state.set_state(S.waiting_exchange_choice)
+        text, markup = _exchange_choice_prompt({})
     if isinstance(callback.message, Message):
         await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer("O'chirildi")
 
 
-@router.callback_query(S.waiting_more_products, F.data.startswith("edit_redo:"))
+@router.callback_query(_EDIT_STATES, F.data.startswith(("edit_redo:", "exedit_redo:")))
 async def cb_edit_redo(callback: CallbackQuery, state: FSMContext) -> None:
-    """Tovarni qayta kiritish — yangi tovar shu o'ringa yoziladi."""
+    """Qayta kiritish — yangi qiymat shu o'ringa yoziladi."""
     index = await _edit_index(callback, state)
     if index is None:
         return
-    await _start_product(state)
-    await state.update_data(_replace_index=index)
-    if isinstance(callback.message, Message):
+    prefix = _edit_prefix(callback)
+    if prefix == "edit":
+        await _start_product(state)
         text, markup = _type_prompt({})
+    else:
+        await _start_exchange(state)
+        text, markup = _ex_name_prompt({})
+    await state.update_data(**{_EDIT_TARGETS[prefix][1]: index})
+    if isinstance(callback.message, Message):
         await callback.message.edit_text(
-            f"🔄 <b>{index + 1}-tovar qayta kiritilmoqda</b>\n\n" + text,
+            f"🔄 <b>{index + 1}-qator qayta kiritilmoqda</b>\n\n" + text,
             reply_markup=markup,
         )
     await callback.answer()
@@ -994,140 +1119,84 @@ async def cb_edit_redo(callback: CallbackQuery, state: FSMContext) -> None:
 # ==========================================
 
 
-@router.callback_query(DebtCreationStates.waiting_exchange_choice, F.data == "exchange_no")
+@router.callback_query(S.waiting_exchange_choice, F.data == "exchange_no")
 async def cb_exchange_no(callback: CallbackQuery, state: FSMContext) -> None:
     """Exchange yo'q bo'lsa to'g'ridan-to'g'ri berilgan pul bosqichiga o'tadi."""
-    await state.update_data(
-        exchange_exists=False,
-        exchange_product_name=None,
-        exchange_product_price=0,
-    )
-    await state.set_state(DebtCreationStates.waiting_given_money_choice)
+    await state.update_data(_exchanges=[])
+    await state.set_state(S.waiting_given_money_choice)
 
     if isinstance(callback.message, Message):
+        text, markup = _given_choice_prompt({})
         await callback.message.edit_text(
-            "🔄 <b>Exchange:</b> Yo'q\n\n"
-            "💵 <b>Qarzdan oldindan pul berildimi?</b>\n\n"
-            "<i>Mijoz tovar olingan paytda ma'lum bir summa to'ladimi?</i>",
-            reply_markup=get_given_money_choice_keyboard(),
+            "🔄 <b>Exchange:</b> Yo'q\n\n" + text, reply_markup=markup
         )
     await callback.answer()
 
 
-@router.callback_query(DebtCreationStates.waiting_exchange_choice, F.data == "exchange_yes")
+@router.callback_query(S.waiting_exchange_choice, F.data == "exchange_yes")
 async def cb_exchange_yes(callback: CallbackQuery, state: FSMContext) -> None:
-    """Exchange bor — avval valyutasi so'raladi."""
-    await state.update_data(exchange_exists=True)
-    await state.set_state(DebtCreationStates.waiting_exchange_currency)
+    """Exchange bor — birinchi exchange tovari nomini so'raydi."""
+    await state.update_data(_exchanges=[])
+    await _start_exchange(state)
 
     if isinstance(callback.message, Message):
-        await callback.message.edit_text(
-            "🔄 <b>Exchange:</b> Ha\n\n"
-            "💱 <b>Ayirboshlash tovari qaysi valyutada?</b>\n\n"
-            "<i>Exchange shu valyutadagi tovarlar qarzidan chegiriladi</i>",
-            reply_markup=get_exchange_currency_keyboard(),
-        )
+        text, markup = _ex_name_prompt({})
+        await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
 
 
-@router.callback_query(DebtCreationStates.waiting_exchange_currency, F.data == "excur_uzs")
-async def cb_excur_uzs(callback: CallbackQuery, state: FSMContext) -> None:
-    """Exchange so'mda — nomini so'raydi."""
-    await _apply_exchange_currency(callback, state, Currency.UZS)
+async def _start_exchange(state: FSMContext) -> None:
+    """Yangi exchange tovarini kiritishni boshlaydi."""
+    await state.update_data(ex_name=None, ex_quantity=None, ex_currency=None,
+                            _ex_replace_index=None)
+    await state.set_state(S.waiting_exchange_name)
 
 
-@router.callback_query(DebtCreationStates.waiting_exchange_currency, F.data == "excur_usd")
-async def cb_excur_usd(callback: CallbackQuery, state: FSMContext) -> None:
-    """Exchange dollarda — nomini so'raydi."""
-    await _apply_exchange_currency(callback, state, Currency.USD)
-
-
-async def _apply_exchange_currency(
-    callback: CallbackQuery,
-    state: FSMContext,
-    currency: Currency,
-) -> None:
-    """Exchange valyutasini saqlab, tovar nomini so'raydi."""
-    await state.update_data(exchange_currency=currency.value)
-    await state.set_state(DebtCreationStates.waiting_exchange_name)
-
-    label = "So'm 💵" if currency == Currency.UZS else "Dollar $"
-    if isinstance(callback.message, Message):
-        await callback.message.edit_text(
-            f"💱 <b>Exchange valyutasi:</b> {label}\n\n"
-            "📦 <b>Ayirboshlash tovari nomini kiriting:</b>\n\n"
-            "<i>Masalan: Eski akkumulyator, Eski shina</i>",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-    await callback.answer()
-
-
-@router.message(DebtCreationStates.waiting_exchange_name)
+@router.message(S.waiting_exchange_name)
 async def process_exchange_name(message: Message, state: FSMContext) -> None:
-    """Ayirboshlash tovari nomini qabul qiladi."""
+    """Exchange tovari nomini qabul qiladi va sonini so'raydi."""
     ex_name = (message.text or "").strip()
-    if not ex_name:
-        await message.answer(
-            "⚠️ Ayirboshlash tovari nomini kiriting:",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-        return
-    if len(ex_name) > 80:
-        await message.answer(
-            "⚠️ <b>Nom juda uzun!</b>\n\nIltimos, 80 belgidan qisqa kiriting:",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
+    if not ex_name or len(ex_name) > 80:
+        text, markup = _ex_name_prompt(await state.get_data())
+        await message.answer("⚠️ Nomni 80 belgigacha kiriting.\n\n" + text, reply_markup=markup)
         return
 
-    await state.update_data(exchange_product_name=ex_name)
-    await state.set_state(DebtCreationStates.waiting_exchange_price)
-    await message.answer(
-        f"📦 <b>Ayirboshlash tovari:</b> {esc_html(ex_name)}\n\n"
-        "💰 <b>Ayirboshlash tovari narxini kiriting:</b>\n\n"
-        "<i>Masalan: 800 000</i>",
-        reply_markup=get_back_cancel_keyboard(show_back=True),
-    )
+    await state.update_data(ex_name=ex_name, _np="")
+    await state.set_state(S.waiting_exchange_quantity)
+    text, markup = _ex_quantity_prompt(await state.get_data())
+    await message.answer(text, reply_markup=markup)
 
 
-@router.message(DebtCreationStates.waiting_exchange_price)
-async def process_exchange_price(message: Message, state: FSMContext) -> None:
-    """Ayirboshlash tovari narxini tekshiradi (o'z valyutasidagi jami bilan)."""
-    ex_price = parse_money(message.text or "")
-    data = await state.get_data()
-    currency = Currency(data.get("exchange_currency", Currency.UZS.value))
-    products = _get_products(data)
-    total_in_currency = sum(
-        p.total_price for p in products if p.currency == currency
-    )
+@router.callback_query(S.waiting_exchange_currency, F.data.in_({"excur_uzs", "excur_usd"}))
+async def cb_exchange_currency(callback: CallbackQuery, state: FSMContext) -> None:
+    """Exchange valyutasi tanlandi — 1 dona narxini so'raydi."""
+    currency = Currency.UZS if callback.data == "excur_uzs" else Currency.USD
+    await state.update_data(ex_currency=currency.value, _np="")
+    await state.set_state(S.waiting_exchange_price)
+    if isinstance(callback.message, Message):
+        text, markup = _ex_price_prompt(await state.get_data())
+        await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer()
 
-    if ex_price is None or ex_price < 0:
-        await message.answer(
-            "⚠️ <b>Noto'g'ri narx!</b>\n\n"
-            "Iltimos, son kiriting (masalan: <code>800 000</code>):",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-        return
 
-    if ex_price > total_in_currency:
-        await message.answer(
-            f"⚠️ <b>Exchange narxi ({format_money(ex_price, currency)}) "
-            f"{currency.value} valyutasidagi tovarlar jami narxidan "
-            f"({format_money(total_in_currency, currency)}) "
-            f"katta bo'lishi mumkin emas!</b>\n\n"
-            "Iltimos, qayta kiriting:",
-            reply_markup=get_back_cancel_keyboard(show_back=True),
-        )
-        return
+@router.callback_query(S.waiting_exchange_more, F.data == "exchange_more_yes")
+async def cb_exchange_more_yes(callback: CallbackQuery, state: FSMContext) -> None:
+    """Yana exchange tovari qo'shish."""
+    await _start_exchange(state)
+    if isinstance(callback.message, Message):
+        text, markup = _ex_name_prompt(await state.get_data())
+        await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer()
 
-    await state.update_data(exchange_product_price=ex_price)
-    await state.set_state(DebtCreationStates.waiting_given_money_choice)
-    ex_price_str = format_money(ex_price, currency)
-    await message.answer(
-        f"💰 <b>Exchange narxi:</b> {ex_price_str}\n\n"
-        "💵 <b>Qarzdan oldindan pul berildimi?</b>\n\n"
-        "<i>Mijoz tovar olingan paytda qarzidan ma'lum summa to'ladimi?</i>",
-        reply_markup=get_given_money_choice_keyboard(),
-    )
+
+@router.callback_query(S.waiting_exchange_more, F.data == "exchange_done")
+async def cb_exchange_done(callback: CallbackQuery, state: FSMContext) -> None:
+    """Exchange'lar tayyor — berilgan pul bosqichiga o'tadi."""
+    await state.set_state(S.waiting_given_money_choice)
+    if isinstance(callback.message, Message):
+        text, markup = _given_choice_prompt({})
+        await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer()
 
 
 # ==========================================
@@ -1209,12 +1278,7 @@ async def process_given_money_amount(message: Message, state: FSMContext) -> Non
     total_in_currency = sum(
         p.total_price for p in products if p.currency == currency
     )
-    exchange_currency = Currency(data.get("exchange_currency", Currency.UZS.value))
-    exchange_price: int = (
-        data.get("exchange_product_price", 0)
-        if data.get("exchange_exists", False) and exchange_currency == currency
-        else 0
-    )
+    exchange_price = _totals(_get_exchanges(data)).get(currency.value, 0)
     max_allowable = total_in_currency - exchange_price
 
     if amount is None or amount < 0:
@@ -1270,10 +1334,7 @@ async def cb_confirm_create_debt(
     client_name: str = data["client_name"]
     client_phone: str = data["client_phone"]
     products = _get_products(data)
-    exchange_exists: bool = data.get("exchange_exists", False)
-    exchange_product_name: str | None = data.get("exchange_product_name")
-    exchange_product_price: int = data.get("exchange_product_price", 0)
-    exchange_currency = Currency(data.get("exchange_currency", Currency.UZS.value))
+    exchanges = _get_exchanges(data)
     given_money: int = data.get("given_money", 0)
     given_currency = Currency(data.get("given_currency", Currency.UZS.value))
 
@@ -1290,12 +1351,9 @@ async def cb_confirm_create_debt(
             client_id=client.id,
             debt_date=debt_date,
             products=products,
-            exchange_exists=exchange_exists,
-            exchange_product_name=exchange_product_name,
-            exchange_product_price=exchange_product_price,
-            exchange_currency=exchange_currency,
             given_money=given_money,
             given_currency=given_currency,
+            exchanges=exchanges,
         )
 
         # Valyutalar bo'yicha jami narxlar
@@ -1329,11 +1387,7 @@ async def cb_confirm_create_debt(
             f"💰 <b>Jami narxi:</b> {format_money_map(totals)}"
         )
 
-        if exchange_exists:
-            success_lines.append(
-                f"🔄 <b>Exchange:</b> {esc_html(exchange_product_name or '')} "
-                f"({format_money(exchange_product_price, exchange_currency)})"
-            )
+        success_lines.extend(_product_line(e, icon="🔄") for e in exchanges)
         if given_money > 0:
             success_lines.append(
                 f"💵 <b>Boshlang'ich to'lov:</b> "
@@ -1386,6 +1440,14 @@ def _get_products(data: dict[str, Any]) -> list[DebtProduct]:
     return []
 
 
+def _get_exchanges(data: dict[str, Any]) -> list[DebtProduct]:
+    """State dan exchange tovarlari ro'yxatini olish."""
+    return [
+        e if isinstance(e, DebtProduct) else DebtProduct.from_dict(e)
+        for e in data.get("_exchanges", [])
+    ]
+
+
 def _render_preview(data: dict[str, Any]) -> str:
     """Kiritilgan qarz ma'lumotlarining chiroyli preview ko'rinishi.
 
@@ -1395,10 +1457,7 @@ def _render_preview(data: dict[str, Any]) -> str:
     debt_date = data.get("debt_date", "-")
     client_name = data.get("client_name", "-")
     client_phone = data.get("client_phone", "-")
-    exchange_exists = data.get("exchange_exists", False)
-    exchange_product_name = data.get("exchange_product_name")
-    exchange_product_price: int = data.get("exchange_product_price", 0)
-    exchange_currency = Currency(data.get("exchange_currency", Currency.UZS.value))
+    exchanges = _get_exchanges(data)
     given_money: int = data.get("given_money", 0)
     given_currency = Currency(data.get("given_currency", Currency.UZS.value))
 
@@ -1411,9 +1470,8 @@ def _render_preview(data: dict[str, Any]) -> str:
 
     # Har bir valyutada chegirmalarni hisoblab, qoldiqni topamiz
     remaining: dict[str, int] = dict(totals)
-    if exchange_exists and exchange_product_price > 0:
-        cur = exchange_currency.value
-        remaining[cur] = max(0, remaining.get(cur, 0) - exchange_product_price)
+    for cur, amount in _totals(exchanges).items():
+        remaining[cur] = max(0, remaining.get(cur, 0) - amount)
     if given_money > 0:
         cur = given_currency.value
         remaining[cur] = max(0, remaining.get(cur, 0) - given_money)
@@ -1442,11 +1500,10 @@ def _render_preview(data: dict[str, Any]) -> str:
 
     lines.append(f"\n💰 <b>Tovarlar jami narxi:</b> {format_money_map(totals)}")
 
-    if exchange_exists:
-        lines.append(
-            f"🔄 <b>Exchange tovar:</b> {esc_html(exchange_product_name or 'Tovar')} "
-            f"({format_money(exchange_product_price, exchange_currency)})"
-        )
+    if exchanges:
+        lines.append("🔄 <b>Exchange:</b>")
+        lines.extend(f"  {i}. {_product_line(e, icon='🔄')}"
+                     for i, e in enumerate(exchanges, start=1))
     else:
         lines.append("🔄 <b>Exchange tovar:</b> Yo'q")
 

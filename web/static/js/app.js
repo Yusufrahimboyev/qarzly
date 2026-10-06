@@ -1150,19 +1150,26 @@ function closeClientReportModal() {
 // TAB 2: CREATE DEBT FORM — DINAMIK TOVARLAR (har biri o'z valyutasida)
 // ==========================================
 
-function createProductGroupHTML(index) {
+// Tovar va exchange kartalari bir xil tuzilishda: nomi, soni, narxi, valyutasi
+const GROUP_KINDS = {
+    product: { container: 'products-container', label: 'tovar', placeholder: 'Masalan: Shina, Akkumulyator' },
+    exchange: { container: 'exchanges-container', label: 'exchange', placeholder: 'Masalan: Eski shina R16' },
+};
+
+function createProductGroupHTML(index, kind = 'product') {
+    const { label, placeholder } = GROUP_KINDS[kind];
     const removeBtn = index > 0
-        ? `<button type="button" class="btn-remove-product" aria-label="${index + 1}-tovarni o'chirish">${icon('trash')}O'chirish</button>`
+        ? `<button type="button" class="btn-remove-product" aria-label="${index + 1}-${label}ni o'chirish">${icon('trash')}O'chirish</button>`
         : '';
     return `
         <div class="product-group" data-product-index="${index}">
             <div class="product-group-header">
-                <span class="product-group-title">${index + 1}-tovar</span>
+                <span class="product-group-title">${index + 1}-${label}</span>
                 ${removeBtn}
             </div>
             <div class="form-group">
-                <label>Tovar nomi <span class="req" aria-hidden="true">*</span></label>
-                <input type="text" class="product-name" placeholder="Masalan: Shina, Akkumulyator" autocomplete="off" required>
+                <label>Nomi <span class="req" aria-hidden="true">*</span></label>
+                <input type="text" class="product-name" placeholder="${placeholder}" autocomplete="off" required>
             </div>
             <div class="product-row">
                 <div class="form-group">
@@ -1188,8 +1195,8 @@ function createProductGroupHTML(index) {
     `;
 }
 
-function getProductGroups() {
-    return document.querySelectorAll('#products-container .product-group');
+function getProductGroups(kind = 'product') {
+    return document.querySelectorAll(`#${GROUP_KINDS[kind].container} .product-group`);
 }
 
 function getGroupCurrency(group) {
@@ -1197,18 +1204,19 @@ function getGroupCurrency(group) {
     return active ? active.getAttribute('data-currency') : 'UZS';
 }
 
-function renumberProductGroups() {
-    const groups = getProductGroups();
+function renumberProductGroups(kind = 'product') {
+    const { label } = GROUP_KINDS[kind];
+    const groups = getProductGroups(kind);
     groups.forEach((group, i) => {
         const title = group.querySelector('.product-group-title');
-        if (title) title.textContent = `${i + 1}-tovar`;
-        group.querySelector('.btn-remove-product')?.setAttribute('aria-label', `${i + 1}-tovarni o'chirish`);
+        if (title) title.textContent = `${i + 1}-${label}`;
+        group.querySelector('.btn-remove-product')?.setAttribute('aria-label', `${i + 1}-${label}ni o'chirish`);
         group.setAttribute('data-product-index', i);
     });
 }
 
-function getProductsData() {
-    const groups = getProductGroups();
+function getProductsData(kind = 'product') {
+    const groups = getProductGroups(kind);
     const products = [];
     groups.forEach(group => {
         const name = group.querySelector('.product-name')?.value.trim() || '';
@@ -1246,8 +1254,8 @@ function attachChipsListeners(container) {
 function updateCreateCalculation() {
     const products = getProductsData();
 
-    // Har bir guruhning subtotal'ini o'z valyutasida yangilaymiz
-    const groups = getProductGroups();
+    // Har bir guruhning (tovar va exchange) subtotal'ini o'z valyutasida yangilaymiz
+    const groups = [...getProductGroups(), ...getProductGroups('exchange')];
     groups.forEach(group => {
         const qty = Math.max(1, Math.floor(Number(group.querySelector('.product-qty')?.value) || 1));
         const price = Math.floor(Number(group.querySelector('.product-price')?.value) || 0);
@@ -1268,13 +1276,16 @@ function updateCreateCalculation() {
     });
 
     const exchangeToggle = document.getElementById('create-exchange-toggle');
-    const exchangePriceInput = document.getElementById('create-exchange-price');
     const givenToggle = document.getElementById('create-given-toggle');
     const givenAmountInput = document.getElementById('create-given-amount');
 
     const hasExchange = exchangeToggle?.checked;
-    const exchangeCurrency = getChipsCurrency('exchange-currency-chips');
-    const exchangePrice = hasExchange ? (Number(exchangePriceInput?.value) || 0) : 0;
+    const exchangeTotals = {};
+    if (hasExchange) {
+        getProductsData('exchange').forEach(e => {
+            exchangeTotals[e.currency] = (exchangeTotals[e.currency] || 0) + e.quantity * e.price_per_unit;
+        });
+    }
     const hasGiven = givenToggle?.checked;
     const givenCurrency = getChipsCurrency('given-currency-chips');
     const givenAmount = hasGiven ? (Number(givenAmountInput?.value) || 0) : 0;
@@ -1294,7 +1305,7 @@ function updateCreateCalculation() {
     const exRow = document.getElementById('calc-exchange-row');
     if (exRow) {
         exRow.style.display = hasExchange ? 'flex' : 'none';
-        document.getElementById('calc-exchange-price').textContent = `-${formatMoney(exchangePrice, exchangeCurrency)}`;
+        document.getElementById('calc-exchange-price').textContent = `-${formatMoneyMap(exchangeTotals)}`;
     }
 
     const givenRow = document.getElementById('calc-given-row');
@@ -1305,9 +1316,9 @@ function updateCreateCalculation() {
 
     // Har bir valyutada alohida hisoblab, jami qarzni yig'amiz
     const remaining = { ...totals };
-    if (hasExchange && exchangePrice > 0) {
-        remaining[exchangeCurrency] = Math.max(0, (remaining[exchangeCurrency] || 0) - exchangePrice);
-    }
+    Object.entries(exchangeTotals).forEach(([cur, amount]) => {
+        remaining[cur] = Math.max(0, (remaining[cur] || 0) - amount);
+    });
     if (hasGiven && givenAmount > 0) {
         remaining[givenCurrency] = Math.max(0, (remaining[givenCurrency] || 0) - givenAmount);
     }
@@ -1329,8 +1340,9 @@ function attachProductGroupListeners(container) {
         btn.addEventListener('click', () => {
             const group = btn.closest('.product-group');
             if (group) {
+                const kind = group.closest('#exchanges-container') ? 'exchange' : 'product';
                 group.remove();
-                renumberProductGroups();
+                renumberProductGroups(kind);
                 updateCreateCalculation();
                 hapticImpact();
             }
@@ -1344,7 +1356,8 @@ function setupCreateForm() {
     const btnAddProduct = document.getElementById('btn-add-product');
     const exchangeToggle = document.getElementById('create-exchange-toggle');
     const exchangeFields = document.getElementById('exchange-fields');
-    const exchangePriceInput = document.getElementById('create-exchange-price');
+    const exchangesContainer = document.getElementById('exchanges-container');
+    const btnAddExchange = document.getElementById('btn-add-exchange');
     const givenToggle = document.getElementById('create-given-toggle');
     const givenFields = document.getElementById('given-money-fields');
     const givenAmountInput = document.getElementById('create-given-amount');
@@ -1375,33 +1388,34 @@ function setupCreateForm() {
     const container = document.getElementById('products-container');
     if (container) attachProductGroupListeners(container);
 
-    // "Yana tovar qo'shish" tugmasi
-    if (btnAddProduct) {
-        btnAddProduct.addEventListener('click', () => {
-            const groups = getProductGroups();
-            const newIndex = groups.length;
-            const html = createProductGroupHTML(newIndex);
-            const wrapper = document.createElement('div');
-            wrapper.innerHTML = html;
-            const newGroup = wrapper.firstElementChild;
-            container.appendChild(newGroup);
-            attachProductGroupListeners(newGroup);
-            updateCreateCalculation();
-            hapticImpact();
+    // Yangi tovar yoki exchange kartasini qo'shadi
+    const addGroup = (kind, scroll = true) => {
+        const target = document.getElementById(GROUP_KINDS[kind].container);
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = createProductGroupHTML(getProductGroups(kind).length, kind);
+        const newGroup = wrapper.firstElementChild;
+        target.appendChild(newGroup);
+        attachProductGroupListeners(newGroup);
+        updateCreateCalculation();
+        hapticImpact();
 
-            // Yangi tovar kartini ko'rinadigan joyga silliq suramiz —
-            // fokus qo'ymaymiz, klaviatura o'z-o'zidan ochilib yuborilmaydi
+        // Yangi kartani ko'rinadigan joyga silliq suramiz —
+        // fokus qo'ymaymiz, klaviatura o'z-o'zidan ochilib yuborilmaydi
+        if (scroll) {
             setTimeout(() => {
                 newGroup.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 50);
-        });
-    }
+        }
+    };
+    btnAddProduct?.addEventListener('click', () => addGroup('product'));
+    btnAddExchange?.addEventListener('click', () => addGroup('exchange'));
 
-    // Toggle Exchange
+    // Toggle Exchange: yoqilganda birinchi exchange kartasi paydo bo'ladi
     if (exchangeToggle) {
         exchangeToggle.addEventListener('change', () => {
             exchangeFields.style.display = exchangeToggle.checked ? 'block' : 'none';
-            if (!exchangeToggle.checked && exchangePriceInput) exchangePriceInput.value = '';
+            if (exchangesContainer) exchangesContainer.innerHTML = '';
+            if (exchangeToggle.checked) addGroup('exchange', false);
             updateCreateCalculation();
             hapticImpact();
         });
@@ -1417,14 +1431,11 @@ function setupCreateForm() {
         });
     }
 
-    // Exchange/given valyuta chipslari va input'lari
-    attachChipsListeners(document.getElementById('exchange-currency-chips') || document.createElement('div'));
+    // Berilgan pul valyuta chipslari va input'i
     attachChipsListeners(document.getElementById('given-currency-chips') || document.createElement('div'));
-    [exchangePriceInput, givenAmountInput].forEach(el => {
-        if (el) el.addEventListener('input', () => {
-            clearFieldError(el);
-            updateCreateCalculation();
-        });
+    givenAmountInput?.addEventListener('input', () => {
+        clearFieldError(givenAmountInput);
+        updateCreateCalculation();
     });
 
     // Submit New Debt
@@ -1437,9 +1448,7 @@ function setupCreateForm() {
             const products = getProductsData();
 
             const hasExchange = exchangeToggle?.checked || false;
-            const exchangeName = document.getElementById('create-exchange-name')?.value.trim() || null;
-            const exchangeCurrency = getChipsCurrency('exchange-currency-chips');
-            const exchangePrice = hasExchange ? (Number(exchangePriceInput?.value) || 0) : 0;
+            const exchanges = hasExchange ? getProductsData('exchange') : [];
 
             const hasGiven = givenToggle?.checked || false;
             const givenCurrency = getChipsCurrency('given-currency-chips');
@@ -1465,20 +1474,24 @@ function setupCreateForm() {
                 return;
             }
 
-            // Har bir tovar kartasini tekshiramiz: yarim to'ldirilgan kartani o'tkazib yubormaymiz
+            // Har bir tovar/exchange kartasini tekshiramiz: yarim to'ldirilgan kartani o'tkazib yubormaymiz
             const groups = [...getProductGroups()];
-            for (let i = 0; i < groups.length; i++) {
-                const nameEl = groups[i].querySelector('.product-name');
-                const priceEl = groups[i].querySelector('.product-price');
-                const hasName = !!nameEl?.value.trim();
-                const hasPrice = (Number(priceEl?.value) || 0) > 0;
-                if (hasName && !hasPrice) {
-                    setFieldError(priceEl, `${i + 1}-tovar narxini kiriting`);
-                    return;
-                }
-                if (!hasName && hasPrice) {
-                    setFieldError(nameEl, `${i + 1}-tovar nomini kiriting`);
-                    return;
+            for (const kind of hasExchange ? ['product', 'exchange'] : ['product']) {
+                const kindGroups = [...getProductGroups(kind)];
+                const { label } = GROUP_KINDS[kind];
+                for (let i = 0; i < kindGroups.length; i++) {
+                    const nameEl = kindGroups[i].querySelector('.product-name');
+                    const priceEl = kindGroups[i].querySelector('.product-price');
+                    const hasName = !!nameEl?.value.trim();
+                    const hasPrice = (Number(priceEl?.value) || 0) > 0;
+                    if (hasName && !hasPrice) {
+                        setFieldError(priceEl, `${i + 1}-${label} narxini kiriting`);
+                        return;
+                    }
+                    if (!hasName && hasPrice) {
+                        setFieldError(nameEl, `${i + 1}-${label} nomini kiriting`);
+                        return;
+                    }
                 }
             }
             if (products.length === 0) {
@@ -1493,16 +1506,18 @@ function setupCreateForm() {
                 totals[p.currency] = (totals[p.currency] || 0) + p.quantity * p.price_per_unit;
             });
             const deductions = {};
-            if (hasExchange && exchangePrice > 0) {
-                deductions[exchangeCurrency] = (deductions[exchangeCurrency] || 0) + exchangePrice;
-            }
+            exchanges.forEach(e => {
+                deductions[e.currency] = (deductions[e.currency] || 0) + e.quantity * e.price_per_unit;
+            });
             if (hasGiven && givenMoney > 0) {
                 deductions[givenCurrency] = (deductions[givenCurrency] || 0) + givenMoney;
             }
             for (const cur of Object.keys(deductions)) {
                 if ((deductions[cur] || 0) > (totals[cur] || 0)) {
                     const curLabel = cur === 'USD' ? 'dollar' : "so'm";
-                    const target = (hasGiven && givenCurrency === cur) ? givenAmountInput : exchangePriceInput;
+                    const target = (hasGiven && givenCurrency === cur)
+                        ? givenAmountInput
+                        : getProductGroups('exchange')[0]?.querySelector('.product-price');
                     setFieldError(target, `Exchange va boshlang'ich to'lov ${curLabel}dagi tovarlar narxidan oshmasligi kerak`);
                     return;
                 }
@@ -1516,10 +1531,7 @@ function setupCreateForm() {
                     client_phone: clientPhone,
                     debt_date: debtDate,
                     products: products,
-                    exchange_exists: hasExchange,
-                    exchange_product_name: exchangeName,
-                    exchange_product_price: exchangePrice,
-                    exchange_currency: exchangeCurrency,
+                    exchanges: exchanges,
                     given_money: givenMoney,
                     given_currency: givenCurrency,
                 };
@@ -1552,18 +1564,14 @@ function setupCreateForm() {
                 if (exchangeFields) exchangeFields.style.display = 'none';
                 if (givenFields) givenFields.style.display = 'none';
                 if (exchangeToggle) exchangeToggle.checked = false;
+                if (exchangesContainer) exchangesContainer.innerHTML = '';
                 if (givenToggle) givenToggle.checked = false;
                 // Valyuta chipslarini UZSga qaytaramiz
-                document.querySelectorAll('#exchange-currency-chips .cur-chip, #given-currency-chips .cur-chip').forEach(chip => {
+                document.querySelectorAll('#given-currency-chips .cur-chip').forEach(chip => {
                     chip.classList.toggle('active', chip.getAttribute('data-currency') === 'UZS');
-                });
-                document.querySelectorAll('#exchange-currency-chips .cur-chip, #given-currency-chips .cur-chip').forEach(chip => {
                     chip.setAttribute('aria-pressed', String(chip.classList.contains('active')));
                 });
-                ['create-exchange-name', 'create-exchange-price', 'create-given-amount'].forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.value = '';
-                });
+                if (givenAmountInput) givenAmountInput.value = '';
                 // Banner va eski qarzlar ro'yxati yashiriladi
                 clearCreateClientBanner();
                 clearFormErrors(form);

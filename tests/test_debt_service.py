@@ -761,3 +761,69 @@ async def test_report_excludes_payments_of_trashed_debts(
     # Yopilgan va korzinaga o'tkazilgan qarzning to'lovi ham ko'rsatilmaydi
     assert report.total_paid_after == {}
     assert all(p.debt_id in debt_ids for p in report.payments)
+
+
+@pytest.mark.asyncio
+async def test_create_debts_multiple_exchanges_per_currency(
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
+) -> None:
+    """Bir nechta exchange tovari o'z valyutasidagi qarzdan yig'ilib chegiriladi."""
+    from bot.domain.entities.currency import Currency
+
+    client = await client_repo.add(Client(full_name="Ko'p Exchange", phone=""))
+    assert client.id is not None
+    service = DebtService(client_repo, debt_repo, payment_repo)
+
+    products = [
+        DebtProduct(name="Shina", quantity=4, price_per_unit=100, currency=Currency.USD),
+        DebtProduct(name="Moy", quantity=1, price_per_unit=500000, currency=Currency.UZS),
+    ]
+    exchanges = [
+        DebtProduct(name="Eski shina", quantity=2, price_per_unit=30, currency=Currency.USD),
+        DebtProduct(name="Eski disk", quantity=1, price_per_unit=40, currency=Currency.USD),
+        DebtProduct(name="Eski akkum", quantity=1, price_per_unit=150000, currency=Currency.UZS),
+    ]
+
+    debts = await service.create_debts(
+        client_id=client.id, debt_date="17.08.2026", products=products, exchanges=exchanges,
+    )
+
+    usd = next(d for d in debts if d.currency == Currency.USD)
+    uzs = next(d for d in debts if d.currency == Currency.UZS)
+    assert (usd.exchange_exists, usd.exchange_product_price, usd.remaining_debt) == (True, 100, 300)
+    assert usd.exchange_product_name == "Eski shina — 2 ta, Eski disk"
+    assert (uzs.exchange_product_price, uzs.remaining_debt) == (150000, 350000)
+    assert uzs.exchange_product_name == "Eski akkum"
+
+
+@pytest.mark.asyncio
+async def test_create_debts_exchanges_validated(
+    client_repo: FakeClientRepository,
+    debt_repo: FakeDebtRepository,
+    payment_repo: FakePaymentRepository,
+) -> None:
+    """Exchange'lar jami tovardan oshsa yoki valyutasida tovar bo'lmasa — xatolik."""
+    from bot.domain.entities.currency import Currency
+
+    client = await client_repo.add(Client(full_name="Tekshiruv", phone=""))
+    assert client.id is not None
+    service = DebtService(client_repo, debt_repo, payment_repo)
+    products = [DebtProduct(name="Shina", quantity=1, price_per_unit=100, currency=Currency.USD)]
+
+    too_big = [
+        DebtProduct(name="A", quantity=1, price_per_unit=60, currency=Currency.USD),
+        DebtProduct(name="B", quantity=1, price_per_unit=60, currency=Currency.USD),
+    ]
+    with pytest.raises(ValueError, match="katta bo'lishi mumkin emas"):
+        await service.create_debts(
+            client_id=client.id, debt_date="17.08.2026", products=products, exchanges=too_big,
+        )
+
+    wrong_cur = [DebtProduct(name="A", quantity=1, price_per_unit=1000, currency=Currency.UZS)]
+    with pytest.raises(ValueError, match="tovar kiritilmagan"):
+        await service.create_debts(
+            client_id=client.id, debt_date="17.08.2026", products=products, exchanges=wrong_cur,
+        )
+    assert await debt_repo.get_all_by_client_id(client.id) == []

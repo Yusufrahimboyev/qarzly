@@ -113,6 +113,9 @@ class CreateDebtDTO(BaseModel):
     exchange_product_name: OptionalName | None = None
     exchange_product_price: int = Field(default=0, ge=0, le=MAX_MONEY)
     exchange_currency: str = Field(default="UZS")
+    exchanges: list[ProductItemDTO] | None = Field(
+        default=None, max_length=MAX_PRODUCTS_PER_DEBT
+    )
     given_money: int = Field(default=0, ge=0, le=MAX_MONEY)
     given_currency: str = Field(default="UZS")
 
@@ -571,6 +574,24 @@ async def api_create_debt(request: web.Request) -> web.Response:
                 {"error": "Tovar narxi 0 dan katta bo'lishi kerak"}, status=400
             )
 
+    exchanges: list[DebtProduct] = []
+    for idx, e in enumerate(dto.exchanges or []):
+        try:
+            e_cur = Currency(e.currency.upper())
+        except ValueError:
+            return web.json_response(
+                {"error": f"{idx + 1}-exchange valyutasi noto'g'ri (UZS yoki USD)"},
+                status=400,
+            )
+        exchanges.append(
+            DebtProduct(
+                name=e.name,
+                quantity=e.quantity,
+                price_per_unit=e.price_per_unit,
+                currency=e_cur,
+            )
+        )
+
     guard = _IdempotencyGuard(request, "create_debt")
     early = await guard.check()
     if early is not None:
@@ -597,6 +618,7 @@ async def api_create_debt(request: web.Request) -> web.Response:
                 exchange_currency=exchange_currency,
                 given_money=dto.given_money,
                 given_currency=given_currency,
+                exchanges=exchanges or None,
             )
         else:
             single_cur = Currency(dto.currency.upper())

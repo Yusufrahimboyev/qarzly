@@ -905,3 +905,43 @@ async def test_index_assets_are_versioned_and_html_not_cached(
         assert plain.headers["Cache-Control"] == "no-cache"
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_api_create_debt_with_multiple_exchanges(
+    aiohttp_app: web.Application,
+) -> None:
+    """Bir nechta exchange (har biri o'z valyutasida) o'z qarzidan chegiriladi."""
+    from aiohttp.test_utils import TestClient, TestServer
+    server = TestServer(aiohttp_app)
+    client = TestClient(server)
+    await client.start_server()
+
+    try:
+        payload = {
+            "client_name": "Ko'p Exchange",
+            "debt_date": "17.08.2026",
+            "products": [
+                {"name": "Shina", "quantity": 4, "price_per_unit": 100, "currency": "USD"},
+                {"name": "Moy", "quantity": 1, "price_per_unit": 450000, "currency": "UZS"},
+            ],
+            "exchanges": [
+                {"name": "Eski shina", "quantity": 2, "price_per_unit": 30, "currency": "USD"},
+                {"name": "Eski disk", "quantity": 1, "price_per_unit": 40, "currency": "USD"},
+                {"name": "Eski akkum", "quantity": 1, "price_per_unit": 50000, "currency": "UZS"},
+            ],
+        }
+        res = await client.post("/api/debts", json=payload, headers=auth_header())
+        assert res.status == 200
+        data = await res.json()
+        assert data["remaining_by_currency"] == {"UZS": 400000, "USD": 300}
+
+        # Exchange'lar jami tovarlardan oshsa — 400
+        payload["client_name"] = "Oshib ketgan"
+        payload["exchanges"] = [
+            {"name": "Katta", "quantity": 1, "price_per_unit": 500, "currency": "USD"},
+        ]
+        res2 = await client.post("/api/debts", json=payload, headers=auth_header())
+        assert res2.status == 400
+    finally:
+        await client.close()

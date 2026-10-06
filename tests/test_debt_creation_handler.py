@@ -24,7 +24,11 @@ from bot.presentation.handlers.debt_creation import (
     cb_date_year,
     cb_edit_delete,
     cb_edit_redo,
+    cb_exchange_currency,
+    cb_exchange_done,
+    cb_exchange_more_yes,
     cb_exchange_no,
+    cb_exchange_yes,
     cb_given_money_no,
     cb_more_products_no,
     cb_numpad,
@@ -33,6 +37,7 @@ from bot.presentation.handlers.debt_creation import (
     cb_product_type,
     cb_skip_client_phone,
     process_client_name,
+    process_exchange_name,
     process_product_size,
     start_debt_creation,
 )
@@ -188,3 +193,73 @@ def test_akkum_sizes_per_brand() -> None:
     assert akkum_sizes("Wolter") == ["60R ач"]
     assert akkum_sizes("Qaynar") == akkum_sizes("Jazz")  # vaqtincha
     assert akkum_sizes("Boshqa brend")[0] == "35Ah"  # qo'lda yozilgan — umumiy
+
+
+async def add_exchange(m, state, name: str, qty: str, cur: str, price: str) -> StubCallback:
+    await process_exchange_name(msg(name), state)
+    await type_number(m, state, qty)
+    await press(m, cb_exchange_currency, state, f"excur_{cur}")
+    for key in price:
+        await press(m, cb_numpad, state, f"np:{key}")
+    return await press(m, cb_numpad, state, "np:ok")
+
+
+async def test_multiple_exchanges_saved(state, client_repo, debt_repo, payment_repo) -> None:
+    m = await fill_until_summary(state)  # 2 × 120 $ = 240 $
+    await press(m, cb_more_products_no, state, "more_products_no")
+    await press(m, cb_exchange_yes, state, "exchange_yes")
+    assert await state.get_state() == S.waiting_exchange_name.state
+
+    await add_exchange(m, state, "Eski akkum", "1", "usd", "40")
+    assert m.button_data[:3] == ["exchange_more_yes", "exedit_products", "exchange_done"]
+    await press(m, cb_exchange_more_yes, state, "exchange_more_yes")
+    await add_exchange(m, state, "Eski shina", "2", "usd", "30")
+
+    summary = m.last_answer
+    assert "Eski akkum</b> — 40 $" in summary
+    assert "Eski shina</b> — 2 × 30 $ = 60 $" in summary
+    assert "Exchange jami:</b> 100 $" in summary
+
+    # Chegaradan oshgan exchange rad etiladi va ro'yxatga qo'shilmaydi
+    await press(m, cb_exchange_more_yes, state, "exchange_more_yes")
+    rejected = await add_exchange(m, state, "Ortiqcha", "1", "usd", "200")
+    assert "oshmasligi kerak" in rejected.alert
+    assert len((await state.get_data())["_exchanges"]) == 2
+    await press(m, cb_create_back, state, "create_back")  # narx → valyuta
+    await press(m, cb_create_back, state, "create_back")  # valyuta → soni
+    await press(m, cb_create_back, state, "create_back")  # soni → nom
+    await press(m, cb_create_back, state, "create_back")  # nom → exchange ro'yxati
+    assert await state.get_state() == S.waiting_exchange_more.state
+
+    # Tahrirlash: 1-exchange qayta kiritiladi
+    await press(m, cb_edit_redo, state, "exedit_redo:0")
+    await add_exchange(m, state, "Eski akkum 60Ah", "1", "usd", "50")
+    names = [e.name for e in (await state.get_data())["_exchanges"]]
+    assert names == ["Eski akkum 60Ah", "Eski shina"]
+
+    await press(m, cb_exchange_done, state, "exchange_done")
+    await press(m, cb_given_money_no, state, "given_money_no")
+    assert "HISOBLANGAN QARZ:</b> <b>130 $" in m.last_answer
+
+    clients = ClientService(client_repo, debt_repo)
+    debts = DebtService(clients=client_repo, debts=debt_repo, payments=payment_repo)
+    settings = Settings(bot_token=SecretStr("1:x"), admin_ids=[1], database_url=SecretStr("pg://x"))
+    await cb_confirm_create_debt(StubCallback(m), state, clients, debts, settings)
+
+    [client] = await clients.get_all_clients()
+    [debt] = await debt_repo.get_all_by_client_id(client.id)
+    assert (debt.exchange_product_price, debt.remaining_debt) == (110, 130)
+    assert debt.exchange_product_name == "Eski akkum 60Ah, Eski shina — 2 ta"
+
+
+async def test_deleting_last_exchange_returns_to_choice(state) -> None:
+    m = await fill_until_summary(state)
+    await press(m, cb_more_products_no, state, "more_products_no")
+    await press(m, cb_exchange_yes, state, "exchange_yes")
+    await add_exchange(m, state, "Eski disk", "1", "usd", "10")
+
+    await press(m, cb_edit_delete, state, "exedit_del:0")
+
+    assert await state.get_state() == S.waiting_exchange_choice.state
+    await press(m, cb_exchange_no, state, "exchange_no")
+    assert (await state.get_data())["_exchanges"] == []

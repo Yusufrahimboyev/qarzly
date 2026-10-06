@@ -287,8 +287,14 @@ class DebtService:
         exchange_currency: Currency = Currency.UZS,
         given_money: int = 0,
         given_currency: Currency = Currency.UZS,
+        exchanges: list[DebtProduct] | None = None,
     ) -> list[Debt]:
         """Aralash valyutadagi tovarlardan qarzlar yaratadi.
+
+        `exchanges` berilsa (bir nechta ayirboshlash tovari, har biri o'z
+        valyutasida), u yagona `exchange_*` parametrlari o'rniga ishlatiladi:
+        har bir valyuta qarziga shu valyutadagi exchange'lar nomi va jami
+        narxi yig'ib yoziladi.
 
         Har bir tovarning o'z valyutasi bo'lishi mumkin — tovarlar valyuta
         bo'yicha guruhlanadi va har bir valyuta uchun alohida qarz yozuvi
@@ -321,6 +327,17 @@ class DebtService:
                 ) from exc
             groups.setdefault(cur, []).append(p)
 
+        exchanges_by_cur: dict[Currency, list[DebtProduct]] = {}
+        for item in exchanges or []:
+            item.validate()
+            exchanges_by_cur.setdefault(item.currency, []).append(item)
+        for cur in exchanges_by_cur:
+            if cur not in groups:
+                raise ValueError(
+                    f"Exchange {cur.value} valyutasida, ammo shu "
+                    "valyutadagi tovar kiritilmagan."
+                )
+
         # Exchange yoki berilgan pul mos valyutadagi tovarsiz qolmasligi kerak —
         # aks holda chegirma jimgina e'tiborsiz qolardi.
         if exchange_exists and exchange_product_price > 0 and exchange_currency not in groups:
@@ -343,6 +360,11 @@ class DebtService:
             group_exchange_name = (
                 exchange_product_name if group_exchange_exists else None
             )
+            if exchanges:
+                items = exchanges_by_cur.get(cur, [])
+                group_exchange_exists = bool(items)
+                group_exchange_price = sum(e.total_price for e in items)
+                group_exchange_name = build_summary_name(items) if items else None
             group_given = given_money if cur == given_currency else 0
 
             plans.append(
