@@ -11,7 +11,7 @@ import re
 # Lotinda qoladigan so'zlar/belgilar
 _KEEP = (
     "Mini App", "Web UI", "Excel", "Exchange", "exchange", "Telegram ID",
-    "DD.MM.YYYY", "UZS", "USD", "EFB", "Ah", "OK", "ID",
+    "DD.MM.YYYY", "UZS", "USD", "EFB", "Ah", "OK", "ID", "A → Z", "Z → A",
 )
 
 # O'zgarmaydigan bo'laklar: HTML teg, entity, {placeholder}, /buyruq, saqlanadigan so'zlar

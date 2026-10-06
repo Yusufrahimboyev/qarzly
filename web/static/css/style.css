@@ -556,6 +556,12 @@ fieldset {
 
 .icon-btn.rotating .icon { animation: spin 0.8s linear infinite; }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
 /* Form fields */
 .form-section {
     padding: var(--space-4);
@@ -777,6 +783,11 @@ select { scroll-margin: calc(var(--header-h) + var(--space-6)) 0 calc(var(--nav-
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--space-2);
+}
+
+/* Sozlamalar: variantlar bir ustunda */
+.radio-cards-stack {
+    grid-template-columns: 1fr;
 }
 
 .radio-card {

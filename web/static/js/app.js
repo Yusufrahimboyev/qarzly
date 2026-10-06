@@ -12,11 +12,26 @@ if (tg) {
     } catch (e) {}
 }
 
-// Mavzu Telegram sozlamasiga moslanadi (tizim sozlamasi bilan farq qilishi mumkin)
+// Mavzu: Sozlamalarda tanlangan (light/dark) yoki "Avtomatik" — Telegram
+// sozlamasiga moslanadi. Tanlov shu qurilmada eslab qolinadi.
+const THEME_STORAGE_KEY = 'qarz-theme';
+
+function getThemePreference() {
+    try {
+        const saved = localStorage.getItem(THEME_STORAGE_KEY);
+        return saved === 'light' || saved === 'dark' ? saved : 'auto';
+    } catch (e) {
+        return 'auto';
+    }
+}
+
 function applyTheme() {
-    const scheme = tg?.colorScheme;
+    const pref = getThemePreference();
+    const scheme = pref === 'auto' ? tg?.colorScheme : pref;
     if (scheme === 'dark' || scheme === 'light') {
         document.documentElement.setAttribute('data-theme', scheme);
+    } else {
+        document.documentElement.removeAttribute('data-theme');
     }
     const bg = getComputedStyle(document.documentElement).getPropertyValue('--color-bg').trim();
     try {
@@ -66,7 +81,7 @@ const state = {
 function formatMoney(amount, currency = 'UZS') {
     const num = Math.round(Number(amount) || 0);
     const formatted = num.toLocaleString('ru-RU').replace(/,/g, ' ');
-    return currency === 'USD' ? `${formatted} $` : `${formatted} so'm`;
+    return currency === 'USD' ? `${formatted} $` : `${formatted} ${t("so'm")}`;
 }
 
 // Bir nechta valyutadagi summalarni bitta qatorga yig'adi:
@@ -255,7 +270,7 @@ function showToast(message, type = 'info') {
     toastTimer = setTimeout(() => toast.classList.remove('show'), type === 'error' ? 4500 : 3000);
 }
 
-function showUnauthorizedState(message = "Ushbu tizimga faqat ruxsat berilgan Telegram foydalanuvchilari kira oladi.", { title = 'Kirish cheklangan', canClose = true } = {}) {
+function showUnauthorizedState(message = t("Ushbu tizimga faqat ruxsat berilgan Telegram foydalanuvchilari kira oladi."), { title = 'Kirish cheklangan', canClose = true } = {}) {
     if (state.gateShown) return;
     state.gateShown = true;
     closeClientReportModal();
@@ -264,7 +279,7 @@ function showUnauthorizedState(message = "Ushbu tizimga faqat ruxsat berilgan Te
     document.getElementById('toast')?.classList.remove('show');
     const app = document.getElementById('app') || document.body;
     const closeBtn = canClose && typeof tg?.close === 'function'
-        ? `<button type="button" class="btn btn-primary btn-block" id="gate-close-btn">Ilovani yopish</button>`
+        ? `<button type="button" class="btn btn-primary btn-block" id="gate-close-btn">${t('Ilovani yopish')}</button>`
         : '';
     app.innerHTML = `
         <div class="gate">
@@ -273,7 +288,7 @@ function showUnauthorizedState(message = "Ushbu tizimga faqat ruxsat berilgan Te
                 <h2 class="gate-title">${escapeHtml(title)}</h2>
                 <p class="gate-text">${escapeHtml(message)}</p>
                 ${closeBtn}
-                <div class="gate-hint">Ilovani bot menyusidagi «Mini App» tugmasi orqali qayta oching.</div>
+                <div class="gate-hint">${t('Ilovani bot menyusidagi «Mini App» tugmasi orqali qayta oching.')}</div>
             </div>
         </div>
     `;
@@ -307,11 +322,11 @@ class ApiError extends Error {
 const API_TIMEOUT_MS = 20000;
 
 function statusErrorMessage(status) {
-    if (status === 429) return "So'rovlar juda tez yuborildi. Biroz kutib, qayta urinib ko'ring.";
-    if (status === 502 || status === 503 || status === 504) return "Server vaqtincha ishlamayapti (yangilanmoqda). 10–20 soniyadan so'ng qayta urinib ko'ring.";
-    if (status >= 500) return "Serverda xatolik yuz berdi. Birozdan so'ng qayta urinib ko'ring.";
-    if (status === 404) return "Ma'lumot topilmadi. Ro'yxatni yangilab, qayta urinib ko'ring.";
-    return `So'rovni bajarib bo'lmadi (kod ${status}).`;
+    if (status === 429) return t("So'rovlar juda tez yuborildi. Biroz kutib, qayta urinib ko'ring.");
+    if (status === 502 || status === 503 || status === 504) return t("Server vaqtincha ishlamayapti (yangilanmoqda). 10–20 soniyadan so'ng qayta urinib ko'ring.");
+    if (status >= 500) return t("Serverda xatolik yuz berdi. Birozdan so'ng qayta urinib ko'ring.");
+    if (status === 404) return t("Ma'lumot topilmadi. Ro'yxatni yangilab, qayta urinib ko'ring.");
+    return t("So'rovni bajarib bo'lmadi (kod {status}).", { status });
 }
 
 // Filial: har filialning ma'lumotlar bazasi alohida. Tanlov serverga `X-Branch`
@@ -344,11 +359,11 @@ async function apiFetch(url, options = {}) {
         res = await fetch(url, { ...options, headers, signal: controller.signal });
     } catch (err) {
         if (err && err.name === 'AbortError') {
-            throw new ApiError("Server javob bermayapti. Internet tezligini tekshirib, qayta urinib ko'ring.");
+            throw new ApiError(t("Server javob bermayapti. Internet tezligini tekshirib, qayta urinib ko'ring."));
         }
         throw new ApiError(navigator.onLine === false
-            ? "Internet aloqasi yo'q. Ulanishni tekshirib, qayta urinib ko'ring."
-            : "Serverga ulanib bo'lmadi. Internet aloqasini tekshirib, qayta urinib ko'ring.");
+            ? t("Internet aloqasi yo'q. Ulanishni tekshirib, qayta urinib ko'ring.")
+            : t("Serverga ulanib bo'lmadi. Internet aloqasini tekshirib, qayta urinib ko'ring."));
     } finally {
         clearTimeout(timer);
     }
@@ -361,8 +376,8 @@ async function apiFetch(url, options = {}) {
     if (res.status === 401) {
         // initData 24 soatdan keyin eskiradi — Mini App uzoq ochiq qolganda ham shu holat
         showUnauthorizedState(
-            "Sessiya muddati tugagan yoki ilova Telegram tashqarisida ochilgan. Xavfsizlik uchun ilovani qayta oching.",
-            { title: 'Sessiya tugadi' },
+            t("Sessiya muddati tugagan yoki ilova Telegram tashqarisida ochilgan. Xavfsizlik uchun ilovani qayta oching."),
+            { title: t('Sessiya tugadi') },
         );
     } else if (res.status === 403) {
         showUnauthorizedState("Sizning Telegram akkauntingizga ushbu tizimdan foydalanish huquqi berilmagan.");
@@ -388,14 +403,14 @@ async function apiJson(url, options = {}) {
         const message = (data && typeof data.error === 'string' && data.error) || statusErrorMessage(res.status);
         throw new ApiError(message, res.status, { handled });
     }
-    if (data === null) throw new ApiError("Serverdan noto'g'ri javob keldi. Qayta urinib ko'ring.", res.status);
+    if (data === null) throw new ApiError(t("Serverdan noto'g'ri javob keldi. Qayta urinib ko'ring."), res.status);
     return data;
 }
 
 function notifyError(err) {
     if (err && err.handled) return;
     hapticError();
-    showToast(err instanceof ApiError ? err.message : "Kutilmagan xatolik yuz berdi. Qayta urinib ko'ring.", 'error');
+    showToast(err instanceof ApiError ? err.message : t("Kutilmagan xatolik yuz berdi. Qayta urinib ko'ring."), 'error');
 }
 
 // ==========================================
@@ -403,7 +418,7 @@ function notifyError(err) {
 // ==========================================
 
 function formatCount(n) {
-    return `${(Number(n) || 0).toLocaleString('ru-RU')} ta`;
+    return t('{count} ta', { count: (Number(n) || 0).toLocaleString('ru-RU') });
 }
 
 async function fetchStats() {
@@ -450,9 +465,9 @@ async function fetchSummaries() {
             container.removeAttribute('aria-busy');
             container.innerHTML = stateBlockHTML({
                 iconName: 'alert-triangle',
-                title: "Mijozlar ro'yxatini yuklab bo'lmadi",
+                title: t("Mijozlar ro'yxatini yuklab bo'lmadi"),
                 desc: err.message,
-                action: { id: 'retry-summaries', label: 'Qayta urinish' },
+                action: { id: 'retry-summaries', label: t('Qayta urinish') },
                 isError: true,
             });
         }
@@ -564,7 +579,7 @@ function getProcessedList() {
 function renderClientCardHTML(item) {
     const phoneHtml = item.phone
         ? `<span class="row-meta-item">${icon('phone')}<span class="truncate">${escapeHtml(item.phone)}</span></span>`
-        : '<span class="row-meta-item">Telefon kiritilmagan</span>';
+        : `<span class="row-meta-item">${t('Telefon kiritilmagan')}</span>`;
     const dateHtml = item.latest_debt_date
         ? `<span class="row-meta-item">${icon('calendar')}<span class="truncate">${escapeHtml(item.latest_debt_date)}</span></span>`
         : '';
@@ -572,9 +587,12 @@ function renderClientCardHTML(item) {
         ? `<div class="row-amount client-debt-amount is-debt">${formatMoneyLinesHTML(item.remaining)}</div>`
         : '';
     const badgeHtml = item.has_debt
-        ? '<span class="badge badge-danger">Qarzdor</span>'
-        : '<span class="badge badge-success">Qarzsiz</span>';
-    const ariaLabel = `${item.full_name}. ${item.has_debt ? `Qarzi: ${formatMoneyMap(item.remaining)}` : 'Qarzi yo\'q'}. Hisobotni ochish`;
+        ? `<span class="badge badge-danger">${t('Qarzdor')}</span>`
+        : `<span class="badge badge-success">${t('Qarzsiz')}</span>`;
+    const debtLabel = item.has_debt
+        ? t('Qarzi: {amount}', { amount: formatMoneyMap(item.remaining) })
+        : t("Qarzi yo'q");
+    const ariaLabel = `${item.full_name}. ${debtLabel}. ${t('Hisobotni ochish')}`;
     return `
         <div class="list-row client-item-card" data-client-id="${item.id}" role="button" tabindex="0" aria-label="${escapeHtml(ariaLabel)}">
             <div class="avatar ${item.has_debt ? '' : 'is-muted'}" aria-hidden="true">${escapeHtml(getInitials(item.full_name))}</div>
@@ -596,7 +614,9 @@ function updateResultCount() {
     if (!el) return;
     const total = state.summaries.length;
     const shown = state.filteredList.length;
-    el.textContent = shown === total ? `${total} ta mijoz` : `${shown} / ${total} ta mijoz`;
+    el.textContent = shown === total
+        ? t('{total} ta mijoz', { total })
+        : t('{shown} / {total} ta mijoz', { shown, total });
 }
 
 function renderClientsList() {
@@ -612,22 +632,22 @@ function renderClientsList() {
         if (state.summaries.length === 0) {
             container.innerHTML = stateBlockHTML({
                 iconName: 'users',
-                title: "Hali mijozlar yo'q",
-                desc: "Birinchi qarz yozuvini yarating — mijoz avtomatik qo'shiladi.",
-                action: { id: 'go-create', label: "Yangi qarz qo'shish" },
+                title: t("Hali mijozlar yo'q"),
+                desc: t("Birinchi qarz yozuvini yarating — mijoz avtomatik qo'shiladi."),
+                action: { id: 'go-create', label: t("Yangi qarz qo'shish") },
             });
         } else if (state.searchQuery.trim()) {
             container.innerHTML = stateBlockHTML({
                 iconName: 'search',
-                title: 'Hech narsa topilmadi',
-                desc: `"${state.searchQuery.trim()}" bo'yicha mijoz topilmadi. Ism yoki raqamni tekshiring.`,
-                action: { id: 'clear-search', label: 'Qidiruvni tozalash' },
+                title: t('Hech narsa topilmadi'),
+                desc: t('"{query}" bo\'yicha mijoz topilmadi. Ism yoki raqamni tekshiring.', { query: state.searchQuery.trim() }),
+                action: { id: 'clear-search', label: t('Qidiruvni tozalash') },
             });
         } else {
             container.innerHTML = stateBlockHTML({
                 iconName: 'inbox',
-                title: state.filter === 'debtors' ? "Qarzdor mijozlar yo'q" : "Qarzsiz mijozlar yo'q",
-                desc: state.filter === 'debtors' ? "Barcha mijozlarning qarzi yopilgan." : '',
+                title: state.filter === 'debtors' ? t("Qarzdor mijozlar yo'q") : t("Qarzsiz mijozlar yo'q"),
+                desc: state.filter === 'debtors' ? t("Barcha mijozlarning qarzi yopilgan.") : '',
             });
         }
         return;
@@ -662,7 +682,7 @@ function appendClientBatch() {
         const sentinel = document.createElement('div');
         sentinel.id = 'client-list-sentinel';
         sentinel.className = 'list-sentinel';
-        sentinel.textContent = 'Yuklanmoqda…';
+        sentinel.textContent = t('Yuklanmoqda…');
         container.appendChild(sentinel);
 
         if (!listObserver) {
@@ -705,7 +725,7 @@ function selectExistingClient(person) {
     const banner = document.getElementById('create-client-banner');
     if (banner) {
         document.getElementById('banner-client-name').textContent = person.full_name || '-';
-        document.getElementById('banner-client-phone').textContent = person.phone || 'Telefon kiritilmagan';
+        document.getElementById('banner-client-phone').textContent = person.phone || t('Telefon kiritilmagan');
         banner.style.display = 'flex';
         // Ism/telefon allaqachon ma'lum — takroriy maydonlar yashiriladi
         document.getElementById('create-debt-form')?.classList.add('has-selected-client');
@@ -757,17 +777,17 @@ function renderClientSuggestions() {
         return;
     }
     listEl.innerHTML = `
-        <div class="dropdown-header">Mavjud mijozlar — tanlasangiz qarz shu mijozga yoziladi</div>
+        <div class="dropdown-header">${t('Mavjud mijozlar — tanlasangiz qarz shu mijozga yoziladi')}</div>
         ${matches.map((m, i) => `
             <div class="dropdown-option" role="option" id="client-suggestion-${i}" data-index="${i}" aria-selected="false">
                 <div class="avatar avatar-sm ${m.has_debt ? '' : 'is-muted'}" aria-hidden="true">${escapeHtml(getInitials(m.full_name))}</div>
                 <div class="dropdown-option-texts">
                     <span class="dropdown-option-title">${escapeHtml(m.full_name)}</span>
-                    <span class="dropdown-option-meta">${escapeHtml(m.phone || 'Telefon kiritilmagan')}</span>
+                    <span class="dropdown-option-meta">${escapeHtml(m.phone || t('Telefon kiritilmagan'))}</span>
                 </div>
                 ${m.has_debt
                     ? `<span class="dropdown-option-amount text-danger">${escapeHtml(formatMoneyMap(m.remaining))}</span>`
-                    : '<span class="badge badge-success">Qarzsiz</span>'}
+                    : `<span class="badge badge-success">${t('Qarzsiz')}</span>`}
             </div>
         `).join('')}
     `;
@@ -820,8 +840,8 @@ function updateDuplicateHint() {
     hint.hidden = false;
     hint.innerHTML = `
         ${icon('info')}
-        <span>«${escapeHtml(existing.full_name)}» ismli mijoz allaqachon mavjud. Qarzni unga yozish uchun tanlang, aks holda yangi mijoz yaratiladi.</span>
-        <button type="button" class="btn btn-ghost btn-sm" id="btn-use-existing-client" data-client-id="${existing.id}">Tanlash</button>
+        <span>${t('«{name}» ismli mijoz allaqachon mavjud. Qarzni unga yozish uchun tanlang, aks holda yangi mijoz yaratiladi.', { name: escapeHtml(existing.full_name) })}</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-use-existing-client" data-client-id="${existing.id}">${t('Tanlash')}</button>
     `;
 }
 
@@ -890,7 +910,7 @@ async function loadExistingDebts(clientId) {
 
     card.style.display = 'block';
     totalEl.textContent = '…';
-    listEl.innerHTML = '<div class="banner-debt-loading">Yuklanmoqda…</div>';
+    listEl.innerHTML = `<div class="banner-debt-loading">${t('Yuklanmoqda…')}</div>`;
 
     const data = await fetchClientReport(clientId);
     if (!data) {
@@ -900,12 +920,12 @@ async function loadExistingDebts(clientId) {
 
     const remaining = data.total_remaining_debt || {};
     const hasDebt = Object.values(remaining).some(v => (Number(v) || 0) > 0);
-    totalEl.textContent = hasDebt ? formatMoneyMap(remaining) : "Qarz yo'q";
+    totalEl.textContent = hasDebt ? formatMoneyMap(remaining) : t("Qarz yo'q");
     totalEl.className = hasDebt ? 'text-danger' : 'text-success';
 
     const activeDebts = (data.debts || []).filter(d => d.status === 'active');
     if (activeDebts.length === 0) {
-        listEl.innerHTML = '<div class="banner-no-debt">Yopilmagan qarzi yo&#8217;q</div>';
+        listEl.innerHTML = `<div class="banner-no-debt">${t("Yopilmagan qarzi yo'q")}</div>`;
         return;
     }
 
@@ -1001,7 +1021,7 @@ function renderDebtHistoryCard(d) {
     const isActive = d.status === 'active';
     const statusHtml = isActive
         ? `<span class="history-amount text-danger">${formatMoney(d.remaining_debt, d.currency)}</span>`
-        : '<span class="badge badge-success">Yopilgan</span>';
+        : `<span class="badge badge-success">${t('Yopilgan')}</span>`;
 
     return `
         <div class="history-card">
@@ -1012,16 +1032,16 @@ function renderDebtHistoryCard(d) {
             ${productListHtml}
             <div class="history-card-detail">
                 <span class="row-meta-item">${icon('calendar')}${escapeHtml(d.debt_date)}</span>
-                <span>Narxi: ${formatMoney(d.product_price, d.currency)}</span>
+                <span>${t('Narxi: {amount}', { amount: formatMoney(d.product_price, d.currency) })}</span>
             </div>
             ${d.exchange_exists ? `
             <div class="history-card-detail is-exchange">
-                <span>Exchange: ${escapeHtml(d.exchange_product_name || 'Tovar')}</span>
+                <span>${t('Exchange: {name}', { name: escapeHtml(d.exchange_product_name || t('Tovar')) })}</span>
                 <span>−${formatMoney(d.exchange_product_price, d.currency)}</span>
             </div>` : ''}
             ${d.given_money > 0 ? `
             <div class="history-card-detail is-given">
-                <span>Boshlang'ich to'lov</span>
+                <span>${t("Boshlang'ich to'lov")}</span>
                 <span>−${formatMoney(d.given_money, d.currency)}</span>
             </div>` : ''}
         </div>
@@ -1039,11 +1059,11 @@ async function openClientReportModal(clientId) {
     const remainingEl = document.getElementById('modal-total-remaining');
     if (cached) {
         document.getElementById('modal-client-name').textContent = cached.full_name;
-        document.getElementById('modal-client-phone').textContent = cached.phone || 'Telefon kiritilmagan';
-        remainingEl.textContent = cached.has_debt ? formatMoneyMap(cached.remaining) : "Qarz yo'q";
+        document.getElementById('modal-client-phone').textContent = cached.phone || t('Telefon kiritilmagan');
+        remainingEl.textContent = cached.has_debt ? formatMoneyMap(cached.remaining) : t("Qarz yo'q");
     } else {
-        document.getElementById('modal-client-name').textContent = 'Mijoz hisoboti';
-        document.getElementById('modal-client-phone').textContent = 'Yuklanmoqda…';
+        document.getElementById('modal-client-name').textContent = t('Mijoz hisoboti');
+        document.getElementById('modal-client-phone').textContent = t('Yuklanmoqda…');
         remainingEl.textContent = '…';
     }
     document.getElementById('modal-total-products').textContent = '…';
@@ -1051,8 +1071,8 @@ async function openClientReportModal(clientId) {
 
     const debtsList = document.getElementById('modal-debts-list');
     const paymentsList = document.getElementById('modal-payments-list');
-    if (debtsList) debtsList.innerHTML = '<div class="history-loading">Tarix yuklanmoqda…</div>';
-    if (paymentsList) paymentsList.innerHTML = '<div class="history-loading">Yuklanmoqda…</div>';
+    if (debtsList) debtsList.innerHTML = `<div class="history-loading">${t('Tarix yuklanmoqda…')}</div>`;
+    if (paymentsList) paymentsList.innerHTML = `<div class="history-loading">${t('Yuklanmoqda…')}</div>`;
 
     // Hisobot yuklanmaguncha amallar o'chiq turadi
     const payBtn = document.getElementById('modal-pay-now-btn');
@@ -1078,40 +1098,40 @@ async function openClientReportModal(clientId) {
     // Foydalanuvchi bu orada modalni yopgan yoki boshqa mijozni ochgan bo'lishi mumkin
     if (requestId !== modalRequestId || modal.style.display === 'none') return;
     if (!data) {
-        if (debtsList) debtsList.innerHTML = historyEmptyHTML("Hisobotni yuklab bo'lmadi");
+        if (debtsList) debtsList.innerHTML = historyEmptyHTML(t("Hisobotni yuklab bo'lmadi"));
         if (paymentsList) paymentsList.innerHTML = historyEmptyHTML('—');
-        showToast("Mijoz ma'lumotlarini yuklab bo'lmadi", 'error');
+        showToast(t("Mijoz ma'lumotlarini yuklab bo'lmadi"), 'error');
         return;
     }
 
     state.selectedClientReport = data;
 
     document.getElementById('modal-client-name').textContent = data.client.full_name;
-    document.getElementById('modal-client-phone').textContent = data.client.phone || 'Telefon kiritilmagan';
+    document.getElementById('modal-client-phone').textContent = data.client.phone || t('Telefon kiritilmagan');
     document.getElementById('modal-total-products').innerHTML = formatMoneyLinesHTML(data.total_product_price);
     document.getElementById('modal-total-paid').innerHTML = formatMoneyLinesHTML(sumMaps(data.total_paid_after, data.total_given_money));
 
     const remainingValues = Object.values(data.total_remaining_debt || {});
     const hasAnyDebt = remainingValues.some(v => (Number(v) || 0) > 0);
-    remainingEl.textContent = hasAnyDebt ? formatMoneyMap(data.total_remaining_debt) : "Qarz yo'q";
+    remainingEl.textContent = hasAnyDebt ? formatMoneyMap(data.total_remaining_debt) : t("Qarz yo'q");
     remainingEl.classList.toggle('text-danger', hasAnyDebt);
     remainingEl.classList.toggle('text-success', !hasAnyDebt);
     remainingEl.closest('.modal-kpi')?.classList.toggle('modal-kpi-primary', hasAnyDebt);
 
     // Qarzlar tarixi — ko'p tovarli bo'lsa har bir tovar alohida ko'rsatiladi
     debtsList.innerHTML = data.debts.length === 0
-        ? historyEmptyHTML('Qarzlar mavjud emas')
+        ? historyEmptyHTML(t('Qarzlar mavjud emas'))
         : data.debts.map(renderDebtHistoryCard).join('');
 
     // To'lovlar tarixi
     const actualPayments = data.payments.filter(p => p.payment_type !== 'initial');
     paymentsList.innerHTML = actualPayments.length === 0
-        ? historyEmptyHTML("To'lovlar mavjud emas")
+        ? historyEmptyHTML(t("To'lovlar mavjud emas"))
         : actualPayments.map(p => `
             <div class="history-card">
                 <div class="history-card-header">
                     <span class="history-amount text-success">+${formatMoney(p.amount, p.currency)}</span>
-                    <span class="badge badge-neutral">${p.payment_type === 'full' ? "To'liq" : 'Qisman'}</span>
+                    <span class="badge badge-neutral">${p.payment_type === 'full' ? t("To'liq") : t('Qisman')}</span>
                 </div>
                 <div class="history-card-detail">
                     <span class="row-meta-item">${icon('calendar')}${escapeHtml(p.payment_date)}</span>
@@ -1151,44 +1171,60 @@ function closeClientReportModal() {
 // ==========================================
 
 // Tovar va exchange kartalari bir xil tuzilishda: nomi, soni, narxi, valyutasi
+// Matnlar t() bilan ishlatilgan joyda o'giriladi ({num} — tartib raqami)
 const GROUP_KINDS = {
-    product: { container: 'products-container', label: 'tovar', placeholder: 'Masalan: Shina, Akkumulyator' },
-    exchange: { container: 'exchanges-container', label: 'exchange', placeholder: 'Masalan: Eski shina R16' },
+    product: {
+        container: 'products-container',
+        title: N_('{num}-tovar'),
+        remove: N_("{num}-tovarni o'chirish"),
+        noName: N_('{num}-tovar nomini kiriting'),
+        noPrice: N_('{num}-tovar narxini kiriting'),
+        placeholder: N_('Masalan: Shina, Akkumulyator'),
+    },
+    exchange: {
+        container: 'exchanges-container',
+        title: N_('{num}-exchange'),
+        remove: N_("{num}-exchange'ni o'chirish"),
+        noName: N_('{num}-exchange nomini kiriting'),
+        noPrice: N_('{num}-exchange narxini kiriting'),
+        placeholder: N_('Masalan: Eski shina R16'),
+    },
 };
 
 function createProductGroupHTML(index, kind = 'product') {
-    const { label, placeholder } = GROUP_KINDS[kind];
+    const g = GROUP_KINDS[kind];
+    const num = index + 1;
     const removeBtn = index > 0
-        ? `<button type="button" class="btn-remove-product" aria-label="${index + 1}-${label}ni o'chirish">${icon('trash')}O'chirish</button>`
+        ? `<button type="button" class="btn-remove-product" aria-label="${escapeHtml(t(g.remove, { num }))}">${icon('trash')}${t("O'chirish")}</button>`
         : '';
     return `
         <div class="product-group" data-product-index="${index}">
             <div class="product-group-header">
-                <span class="product-group-title">${index + 1}-${label}</span>
+                <span class="product-group-title">${t(g.title, { num })}</span>
                 ${removeBtn}
             </div>
             <div class="form-group">
-                <label>Nomi <span class="req" aria-hidden="true">*</span></label>
-                <input type="text" class="product-name" placeholder="${placeholder}" autocomplete="off" required>
+                <label>${t('Nomi')} <span class="req" aria-hidden="true">*</span></label>
+                <input type="text" class="product-name" placeholder="${escapeHtml(t(g.placeholder))}" autocomplete="off" required>
             </div>
             <div class="product-row">
                 <div class="form-group">
-                    <label>Soni</label>
+                    <label>${t('Soni')}</label>
                     <input type="number" class="product-qty" placeholder="1" min="1" step="1" value="1" inputmode="numeric" required>
                 </div>
                 <div class="form-group">
-                    <label>Narxi (1 dona) <span class="req" aria-hidden="true">*</span></label>
+                    <label>${t('Narxi (1 dona)')} <span class="req" aria-hidden="true">*</span></label>
                     <input type="number" class="product-price" placeholder="0" min="1" step="1000" inputmode="numeric" required>
                 </div>
             </div>
             <div class="product-footer">
-                <div class="currency-chips" role="group" aria-label="Valyuta">
-                    <button type="button" class="cur-chip active" data-currency="UZS" aria-pressed="true">So'm</button>
-                    <button type="button" class="cur-chip" data-currency="USD" aria-pressed="false">Dollar</button>
+                <div class="currency-chips" role="group" aria-label="${escapeHtml(t('Valyuta'))}">
+                    <button type="button" class="cur-chip active" data-currency="UZS" aria-pressed="true">${t("So'm")}</button>
+                    <button type="button" class="cur-chip" data-currency="USD" aria-pressed="false">${t('Dollar')}</button>
                 </div>
                 <div class="product-subtotal">
-                    <span>Jami</span>
-                    <strong class="product-subtotal-val">0 so'm</strong>
+                    <span>${t('Jami')}</span>
+                    <strong class="product-subtotal-val">${formatMoney(0)}</strong>
                 </div>
             </div>
         </div>
@@ -1205,12 +1241,12 @@ function getGroupCurrency(group) {
 }
 
 function renumberProductGroups(kind = 'product') {
-    const { label } = GROUP_KINDS[kind];
+    const g = GROUP_KINDS[kind];
     const groups = getProductGroups(kind);
     groups.forEach((group, i) => {
         const title = group.querySelector('.product-group-title');
-        if (title) title.textContent = `${i + 1}-${label}`;
-        group.querySelector('.btn-remove-product')?.setAttribute('aria-label', `${i + 1}-${label}ni o'chirish`);
+        if (title) title.textContent = t(g.title, { num: i + 1 });
+        group.querySelector('.btn-remove-product')?.setAttribute('aria-label', t(g.remove, { num: i + 1 }));
         group.setAttribute('data-product-index', i);
     });
 }
@@ -1459,18 +1495,18 @@ function setupCreateForm() {
 
             if (!clientName) {
                 if (hasSelectedClient) clearCreateClientBanner();
-                setFieldError(nameInput, 'Mijozning ism-familiyasini kiriting');
+                setFieldError(nameInput, t('Mijozning ism-familiyasini kiriting'));
                 return;
             }
             if (clientPhone) {
                 const phoneDigits = clientPhone.replace(/\D/g, '');
                 if (phoneDigits.length < 7 || phoneDigits.length > 15) {
-                    setFieldError(phoneInput, "Telefon raqami noto'g'ri. Masalan: +998901234567");
+                    setFieldError(phoneInput, t("Telefon raqami noto'g'ri. Masalan: +998901234567"));
                     return;
                 }
             }
             if (!isValidDateString(debtDate)) {
-                setFieldError(dateInput, "Sana noto'g'ri. KK.OO.YYYY ko'rinishida kiriting, masalan: 16.08.2026");
+                setFieldError(dateInput, t("Sana noto'g'ri. KK.OO.YYYY ko'rinishida kiriting, masalan: 16.08.2026"));
                 return;
             }
 
@@ -1478,25 +1514,25 @@ function setupCreateForm() {
             const groups = [...getProductGroups()];
             for (const kind of hasExchange ? ['product', 'exchange'] : ['product']) {
                 const kindGroups = [...getProductGroups(kind)];
-                const { label } = GROUP_KINDS[kind];
+                const g = GROUP_KINDS[kind];
                 for (let i = 0; i < kindGroups.length; i++) {
                     const nameEl = kindGroups[i].querySelector('.product-name');
                     const priceEl = kindGroups[i].querySelector('.product-price');
                     const hasName = !!nameEl?.value.trim();
                     const hasPrice = (Number(priceEl?.value) || 0) > 0;
                     if (hasName && !hasPrice) {
-                        setFieldError(priceEl, `${i + 1}-${label} narxini kiriting`);
+                        setFieldError(priceEl, t(g.noPrice, { num: i + 1 }));
                         return;
                     }
                     if (!hasName && hasPrice) {
-                        setFieldError(nameEl, `${i + 1}-${label} nomini kiriting`);
+                        setFieldError(nameEl, t(g.noName, { num: i + 1 }));
                         return;
                     }
                 }
             }
             if (products.length === 0) {
                 const firstName = groups[0]?.querySelector('.product-name');
-                setFieldError(firstName, 'Kamida bitta tovar nomi va narxini kiriting');
+                setFieldError(firstName, t('Kamida bitta tovar nomi va narxini kiriting'));
                 return;
             }
 
@@ -1514,16 +1550,17 @@ function setupCreateForm() {
             }
             for (const cur of Object.keys(deductions)) {
                 if ((deductions[cur] || 0) > (totals[cur] || 0)) {
-                    const curLabel = cur === 'USD' ? 'dollar' : "so'm";
                     const target = (hasGiven && givenCurrency === cur)
                         ? givenAmountInput
                         : getProductGroups('exchange')[0]?.querySelector('.product-price');
-                    setFieldError(target, `Exchange va boshlang'ich to'lov ${curLabel}dagi tovarlar narxidan oshmasligi kerak`);
+                    setFieldError(target, cur === 'USD'
+                        ? t("Exchange va boshlang'ich to'lov dollardagi tovarlar narxidan oshmasligi kerak")
+                        : t("Exchange va boshlang'ich to'lov so'mdagi tovarlar narxidan oshmasligi kerak"));
                     return;
                 }
             }
 
-            setButtonLoading(submitBtn, true, 'Saqlanmoqda…');
+            setButtonLoading(submitBtn, true, t('Saqlanmoqda…'));
 
             try {
                 const payload = {
@@ -1548,8 +1585,8 @@ function setupCreateForm() {
                 hapticSuccess();
                 const remainingText = json.remaining_by_currency ? formatMoneyMap(json.remaining_by_currency) : '';
                 showToast(remainingText
-                    ? `Qarz saqlandi: ${clientName} — ${remainingText}`
-                    : 'Qarz muvaffaqiyatli saqlandi', 'success');
+                    ? t('Qarz saqlandi: {name} — {amount}', { name: clientName, amount: remainingText })
+                    : t('Qarz muvaffaqiyatli saqlandi'), 'success');
 
                 // Reset form — bitta tovar guruhigacha qisqartiramiz
                 const productsContainer = document.getElementById('products-container');
@@ -1608,9 +1645,13 @@ function populatePaymentClients() {
 
     // Tanlangan mijoz filtrga mos kelmasa ham ro'yxatda qoladi — tanlov yo'qolmaydi
     const visible = debtors.filter(d => matchesClientQuery(d, query) || String(d.id) === previous);
-    let placeholder = 'Mijozni tanlang';
-    if (debtors.length === 0) placeholder = "Qarzdor mijozlar yo'q";
-    else if (query.trim()) placeholder = visible.length ? `${visible.length} ta mos mijoz — tanlang` : 'Mos mijoz topilmadi';
+    let placeholder = t('Mijozni tanlang');
+    if (debtors.length === 0) placeholder = t("Qarzdor mijozlar yo'q");
+    else if (query.trim()) {
+        placeholder = visible.length
+            ? t('{count} ta mos mijoz — tanlang', { count: visible.length })
+            : t('Mos mijoz topilmadi');
+    }
 
     select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` +
         visible.map(d => `
@@ -1687,7 +1728,7 @@ function setupPaymentForm() {
             };
 
             document.getElementById('pay-selected-client-name').textContent = name;
-            document.getElementById('pay-selected-client-phone').textContent = phone || 'Telefon kiritilmagan';
+            document.getElementById('pay-selected-client-phone').textContent = phone || t('Telefon kiritilmagan');
             document.getElementById('pay-selected-client-debt').innerHTML = formatMoneyLinesHTML(remainingMap);
 
             // Qarz faqat bitta valyutada bo'lsa, qisman to'lov valyutasi avtomatik tanlanadi
@@ -1797,7 +1838,7 @@ function setupPaymentForm() {
         if (chips.length === 0) return;
         const values = currency === 'USD'
             ? [{ v: 10, label: '10 $' }, { v: 50, label: '50 $' }, { v: 100, label: '100 $' }, { v: 'half', label: '50%' }]
-            : [{ v: 100000, label: '100 ming' }, { v: 500000, label: '500 ming' }, { v: 1000000, label: '1 mln' }, { v: 'half', label: '50%' }];
+            : [{ v: 100000, label: t('100 ming') }, { v: 500000, label: t('500 ming') }, { v: 1000000, label: t('1 mln') }, { v: 'half', label: '50%' }];
         chips.forEach((chip, i) => {
             chip.setAttribute('data-quick', String(values[i].v));
             chip.textContent = values[i].label;
@@ -1816,12 +1857,12 @@ function setupPaymentForm() {
             clearFormErrors(form);
 
             if (!clientId) {
-                setFieldError(select, 'Qarzdor mijozni tanlang');
+                setFieldError(select, t('Qarzdor mijozni tanlang'));
                 return;
             }
 
             if (!isValidDateString(payDate)) {
-                setFieldError(payDateInput, "To'lov sanasi noto'g'ri. Masalan: 20.08.2026");
+                setFieldError(payDateInput, t("To'lov sanasi noto'g'ri. Masalan: 20.08.2026"));
                 return;
             }
 
@@ -1829,20 +1870,22 @@ function setupPaymentForm() {
             if (mode === 'partial') {
                 amount = Number(partialInput?.value) || 0;
                 if (amount <= 0) {
-                    setFieldError(partialInput, "To'lov summasini kiriting");
+                    setFieldError(partialInput, t("To'lov summasini kiriting"));
                     return;
                 }
                 if (totalDebt <= 0) {
-                    setFieldError(partialInput, `Mijozning ${currency === 'USD' ? 'dollar' : "so'm"}dagi qarzi yo'q. Boshqa valyutani tanlang`);
+                    setFieldError(partialInput, currency === 'USD'
+                        ? t("Mijozning dollardagi qarzi yo'q. Boshqa valyutani tanlang")
+                        : t("Mijozning so'mdagi qarzi yo'q. Boshqa valyutani tanlang"));
                     return;
                 }
                 if (amount > totalDebt) {
-                    setFieldError(partialInput, `Summa qarzdan oshmasligi kerak (maksimal: ${formatMoney(totalDebt, currency)})`);
+                    setFieldError(partialInput, t('Summa qarzdan oshmasligi kerak (maksimal: {amount})', { amount: formatMoney(totalDebt, currency) }));
                     return;
                 }
             }
 
-            setButtonLoading(submitBtn, true, 'Qabul qilinmoqda…');
+            setButtonLoading(submitBtn, true, t('Qabul qilinmoqda…'));
 
             try {
                 const json = await apiJson('/api/payments', {
@@ -1861,7 +1904,7 @@ function setupPaymentForm() {
                 });
 
                 hapticSuccess();
-                showToast(json.is_closed ? "To'lov qabul qilindi — qarz to'liq yopildi" : "To'lov muvaffaqiyatli qabul qilindi", 'success');
+                showToast(json.is_closed ? t("To'lov qabul qilindi — qarz to'liq yopildi") : t("To'lov muvaffaqiyatli qabul qilindi"), 'success');
 
                 // Reset payment form
                 form?.reset();
@@ -1913,10 +1956,82 @@ function switchTab(tabId) {
 // EVENT LISTENERS INITIALIZATION
 // ==========================================
 
+// ==========================================
+// SOZLAMALAR: til (bot bilan umumiy) va mavzu
+// ==========================================
+
+function readStoredLanguage() {
+    try {
+        return localStorage.getItem(LANG_STORAGE_KEY);
+    } catch (e) {
+        return null;
+    }
+}
+
+// Til serverda saqlanadi (bot bilan umumiy). Shu qurilmadagi tanlov eskirgan
+// bo'lsa (masalan, botda o'zgartirilgan) — sahifa yangi tilda qayta yuklanadi.
+async function syncLanguageFromServer() {
+    let data;
+    try {
+        data = await apiJson('/api/settings');
+    } catch (e) {
+        return;
+    }
+    if (data.language && data.language !== currentLang) {
+        setLanguage(data.language);
+        // localStorage ishlamasa qayta yuklash cheksiz takrorlanardi
+        if (readStoredLanguage() === data.language) location.reload();
+    }
+}
+
+function setupSettings() {
+    document.getElementById('btn-settings')?.addEventListener('click', () => {
+        switchTab('tab-settings');
+        hapticImpact();
+    });
+
+    document.querySelectorAll('input[name="app_language"]').forEach(radio => {
+        radio.checked = radio.value === currentLang;
+        radio.addEventListener('change', async () => {
+            if (!radio.checked || radio.value === currentLang) return;
+            hapticImpact();
+            try {
+                await apiJson('/api/settings', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ language: radio.value }),
+                });
+            } catch (err) {
+                notifyError(err);
+                document.querySelector(`input[name="app_language"][value="${currentLang}"]`).checked = true;
+                return;
+            }
+            setLanguage(radio.value);
+            location.reload();
+        });
+    });
+
+    document.querySelectorAll('input[name="app_theme"]').forEach(radio => {
+        radio.checked = radio.value === getThemePreference();
+        radio.addEventListener('change', () => {
+            if (!radio.checked) return;
+            try {
+                if (radio.value === 'auto') localStorage.removeItem(THEME_STORAGE_KEY);
+                else localStorage.setItem(THEME_STORAGE_KEY, radio.value);
+            } catch (e) {}
+            applyTheme();
+            hapticImpact();
+        });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    setLanguage(currentLang);
+    translateDom(document.body);
+
     // Agar Telegram Mini App ichida ochilmagan bo'lsa (URL orqali brauzerdan kirilsa)
     if (!tg || !tg.initData) {
-        showUnauthorizedState("Ilovadan foydalanish uchun uni Telegram bot orqali oching.");
+        showUnauthorizedState(t("Ilovadan foydalanish uchun uni Telegram bot orqali oching."));
         return;
     }
 
@@ -1934,10 +2049,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 400);
             if (state.gateShown) return;
             if (results.every(Boolean)) {
-                showToast("Ma'lumotlar yangilandi", 'success');
+                showToast(t("Ma'lumotlar yangilandi"), 'success');
             } else {
                 hapticError();
-                showToast("Ba'zi ma'lumotlarni yangilab bo'lmadi. Internet aloqasini tekshiring.", 'error');
+                showToast(t("Ba'zi ma'lumotlarni yangilab bo'lmadi. Internet aloqasini tekshiring."), 'error');
             }
         });
     }
@@ -2080,7 +2195,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (select) {
                 select.value = String(clientId);
                 select.dispatchEvent(new Event('change'));
-                if (!select.value) showToast("Bu mijozda to'lanadigan qarz topilmadi", 'info');
+                if (!select.value) showToast(t("Bu mijozda to'lanadigan qarz topilmadi"), 'info');
             }
         });
     }
@@ -2111,6 +2226,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupPaymentForm();
     setupPaidTab();
     setupTrashTab();
+    setupSettings();
 
     // Klaviatura xulq-atvori: input'ga foküs qilinganda (klaviatura ochilganda)
     // pastki navigatsiya bar ekranning o'rtasiga ko'tarilib qolmasligi uchun
@@ -2145,6 +2261,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     initBranches();
+    syncLanguageFromServer();
 
     // Initial Fetch — barcha asosiy ma'lumotlarni birdaniga yuklaymiz
     fetchStats();
@@ -2284,7 +2401,7 @@ function createSelectableList(cfg) {
             const sentinel = document.createElement('div');
             sentinel.className = 'list-sentinel';
             sentinel.setAttribute('role', 'presentation');
-            sentinel.textContent = 'Yuklanmoqda…';
+            sentinel.textContent = t('Yuklanmoqda…');
             container.appendChild(sentinel);
             if (!observer) {
                 observer = new IntersectionObserver((entries) => {
@@ -2312,7 +2429,7 @@ function createSelectableList(cfg) {
     function updateToolbar() {
         const cnt = st.selected.size;
         const countLabel = $(cfg.countLabelId);
-        if (countLabel) countLabel.textContent = cnt > 0 ? `${cnt} ta tanlandi` : 'Yozuvlarni tanlang';
+        if (countLabel) countLabel.textContent = cnt > 0 ? t('{count} ta tanlandi', { count: cnt }) : t('Yozuvlarni tanlang');
         const actionBtn = $(cfg.actionBtnId);
         if (actionBtn && !actionBtn.dataset.originalHtml) {
             actionBtn.disabled = cnt === 0;
@@ -2321,7 +2438,7 @@ function createSelectableList(cfg) {
         const allBtn = $(cfg.selectAllBtnId);
         if (allBtn) {
             const allSelected = st.items.length > 0 && cnt === st.items.length;
-            allBtn.textContent = allSelected ? 'Hech biri' : 'Barchasi';
+            allBtn.textContent = allSelected ? t('Hech biri') : t('Barchasi');
         }
     }
 
@@ -2413,7 +2530,7 @@ function createSelectableList(cfg) {
                 iconName: 'alert-triangle',
                 title: cfg.errorTitle,
                 desc: err.message,
-                action: { id: `retry-${cfg.key}`, label: 'Qayta urinish' },
+                action: { id: `retry-${cfg.key}`, label: t('Qayta urinish') },
                 isError: true,
             });
             cfg.onError?.();
@@ -2485,7 +2602,7 @@ function createSelectableList(cfg) {
 const paidList = createSelectableList({
     key: 'paid',
     listId: 'paid-debts-list',
-    listLabel: 'Yopilgan qarzlar',
+    listLabel: t('Yopilgan qarzlar'),
     endpoint: '/api/paid-debts',
     actionEndpoint: '/api/trash/move',
     normalBarId: 'paid-normal-bar',
@@ -2498,22 +2615,22 @@ const paidList = createSelectableList({
     cancelBtnId: 'btn-paid-cancel-select',
     actionBtnId: 'btn-move-to-trash',
     actionIcon: 'trash',
-    actionLabel: 'Korzinaga yuborish',
-    actionLoadingLabel: 'Yuborilmoqda…',
-    statusHtml: '<span class="badge badge-success">Yopilgan</span>',
-    errorTitle: "Yopilgan qarzlarni yuklab bo'lmadi",
+    actionLabel: t('Korzinaga yuborish'),
+    actionLoadingLabel: t('Yuborilmoqda…'),
+    statusHtml: `<span class="badge badge-success">${t('Yopilgan')}</span>`,
+    errorTitle: t("Yopilgan qarzlarni yuklab bo'lmadi"),
     emptyState: {
         iconName: 'check-circle',
-        title: "Yopilgan qarzlar yo'q",
-        desc: "To'liq to'langan qarzlar shu yerda ko'rinadi.",
+        title: t("Yopilgan qarzlar yo'q"),
+        desc: t("To'liq to'langan qarzlar shu yerda ko'rinadi."),
     },
-    successMessage: (json, n) => `${json.moved ?? n} ta yozuv korzinaga yuborildi`,
+    successMessage: (json, n) => t('{count} ta yozuv korzinaga yuborildi', { count: json.moved ?? n }),
 });
 
 const trashList = createSelectableList({
     key: 'trash',
     listId: 'trash-list',
-    listLabel: 'Korzinadagi yozuvlar',
+    listLabel: t('Korzinadagi yozuvlar'),
     endpoint: '/api/trash',
     actionEndpoint: '/api/trash/restore',
     normalBarId: 'trash-normal-bar',
@@ -2526,16 +2643,16 @@ const trashList = createSelectableList({
     cancelBtnId: 'btn-trash-cancel-select',
     actionBtnId: 'btn-restore-from-trash',
     actionIcon: 'restore',
-    actionLabel: 'Yopilganlarga qaytarish',
-    actionLoadingLabel: 'Qaytarilmoqda…',
-    statusHtml: '<span class="badge badge-neutral">Korzinada</span>',
-    errorTitle: "Korzinani yuklab bo'lmadi",
+    actionLabel: t('Yopilganlarga qaytarish'),
+    actionLoadingLabel: t('Qaytarilmoqda…'),
+    statusHtml: `<span class="badge badge-neutral">${t('Korzinada')}</span>`,
+    errorTitle: t("Korzinani yuklab bo'lmadi"),
     emptyState: {
         iconName: 'trash',
-        title: "Korzina bo'sh",
-        desc: "Yopilgan bo'limidan yuborilgan yozuvlar shu yerda saqlanadi.",
+        title: t("Korzina bo'sh"),
+        desc: t("Yopilgan bo'limidan yuborilgan yozuvlar shu yerda saqlanadi."),
     },
-    successMessage: (json, n) => `${json.restored ?? n} ta yozuv yopilganlarga qaytarildi`,
+    successMessage: (json, n) => t('{count} ta yozuv yopilganlarga qaytarildi', { count: json.restored ?? n }),
     // Korzina bo'sh yoki yuklanmagan bo'lsa, tozalash paneli ko'rinmaydi
     onRender: (items) => {
         const bar = document.getElementById('trash-purge-bar');
@@ -2634,12 +2751,12 @@ function showPurgeConfirm() {
     hapticImpact();
     bar.innerHTML = `
         <div class="danger-zone-texts" role="alert">
-            <span class="danger-zone-title">${trashList.state.items.length} ta yozuv butunlay o'chirilsinmi?</span>
-            <span class="purge-bar-text">Bu amalni ortga qaytarib bo'lmaydi.</span>
+            <span class="danger-zone-title">${t("{count} ta yozuv butunlay o'chirilsinmi?", { count: trashList.state.items.length })}</span>
+            <span class="purge-bar-text">${t("Bu amalni ortga qaytarib bo'lmaydi.")}</span>
         </div>
         <div class="danger-zone-actions">
-            <button id="btn-purge-cancel" class="btn btn-secondary btn-sm" type="button">Bekor qilish</button>
-            <button id="btn-purge-confirm" class="btn btn-danger btn-sm" type="button">Ha, o'chirish</button>
+            <button id="btn-purge-cancel" class="btn btn-secondary btn-sm" type="button">${t('Bekor qilish')}</button>
+            <button id="btn-purge-confirm" class="btn btn-danger btn-sm" type="button">${t("Ha, o'chirish")}</button>
         </div>
     `;
     document.getElementById('btn-purge-cancel')?.addEventListener('click', hidePurgeConfirm);
@@ -2652,10 +2769,10 @@ function hidePurgeConfirm() {
     if (!bar) return;
     bar.innerHTML = `
         <div class="danger-zone-texts">
-            <span class="danger-zone-title">Korzinani tozalash</span>
-            <span class="purge-bar-text">Barcha yozuvlar butunlay o'chiriladi. Bu amalni ortga qaytarib bo'lmaydi.</span>
+            <span class="danger-zone-title">${t('Korzinani tozalash')}</span>
+            <span class="purge-bar-text">${t("Barcha yozuvlar butunlay o'chiriladi. Bu amalni ortga qaytarib bo'lmaydi.")}</span>
         </div>
-        <button id="btn-purge-trash" class="btn btn-danger-outline btn-sm" type="button">${icon('trash')} Tozalash</button>
+        <button id="btn-purge-trash" class="btn btn-danger-outline btn-sm" type="button">${icon('trash')} ${t('Tozalash')}</button>
     `;
     document.getElementById('btn-purge-trash')?.addEventListener('click', showPurgeConfirm);
 }
@@ -2663,7 +2780,7 @@ function hidePurgeConfirm() {
 async function executePurge() {
     const confirmBtn = document.getElementById('btn-purge-confirm');
     const cancelBtn = document.getElementById('btn-purge-cancel');
-    setButtonLoading(confirmBtn, true, "O'chirilmoqda…");
+    setButtonLoading(confirmBtn, true, t("O'chirilmoqda…"));
     if (cancelBtn) cancelBtn.disabled = true;
     try {
         const json = await apiJson('/api/trash/purge', {
@@ -2671,7 +2788,7 @@ async function executePurge() {
             headers: { 'Content-Type': 'application/json' },
         });
         hapticSuccess();
-        showToast(`${json.deleted} ta yozuv butunlay o'chirildi`, 'success');
+        showToast(t("{count} ta yozuv butunlay o'chirildi", { count: json.deleted }), 'success');
         hidePurgeConfirm();
         trashList.exit();
         await refreshAllData();
