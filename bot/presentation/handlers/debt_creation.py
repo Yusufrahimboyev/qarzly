@@ -157,7 +157,7 @@ def _size_prompt(data: dict[str, Any]) -> Prompt:
             header + _("🔋 <b>Razmerini tanlang:</b>"),
             get_akkum_size_keyboard(akkum_sizes(data["product_brand"])),
         )
-    example = "R16 malibu" if type_key == "diska" else "R16"
+    example = "R16 malibu" if type_key == "diska" else "205/65R15"
     return (
         header + _("📏 <b>Razmerini kiriting:</b>\n\n<i>Masalan: {example}</i>", example=example),
         get_back_cancel_keyboard(show_back=True),
