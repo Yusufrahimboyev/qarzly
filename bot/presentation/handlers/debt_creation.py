@@ -1115,7 +1115,7 @@ async def cb_edit_delete(callback: CallbackQuery, state: FSMContext) -> None:
     list_key = _EDIT_TARGETS[prefix][0]
     items = list((await state.get_data())[list_key])
     items.pop(index)
-    await state.update_data(**{list_key: items})
+    await state.update_data({list_key: items})
 
     if items:
         text, markup = _edit_summary(prefix, await state.get_data())
@@ -1143,7 +1143,7 @@ async def cb_edit_redo(callback: CallbackQuery, state: FSMContext) -> None:
     else:
         await _start_exchange(state)
         text, markup = _ex_name_prompt({})
-    await state.update_data(**{_EDIT_TARGETS[prefix][1]: index})
+    await state.update_data({_EDIT_TARGETS[prefix][1]: index})
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
             _("🔄 <b>{num}-qator qayta kiritilmoqda</b>", num=index + 1) + "\n\n" + text,
