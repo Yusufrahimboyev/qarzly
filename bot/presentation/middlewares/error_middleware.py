@@ -7,6 +7,8 @@ from typing import Any
 from aiogram import BaseMiddleware
 from aiogram.types import Message, TelegramObject
 
+from bot.i18n import _
+
 logger = logging.getLogger(__name__)
 
 
@@ -23,6 +25,6 @@ class ErrorMiddleware(BaseMiddleware):
             logger.exception("Handler bajarilishida kutilmagan xatolik")
             if isinstance(event, Message):
                 await event.answer(
-                    "⚠️ Kutilmagan xatolik yuz berdi. Birozdan so'ng qayta urinib ko'ring."
+                    _("⚠️ Kutilmagan xatolik yuz berdi. Birozdan so'ng qayta urinib ko'ring.")
                 )
             return None

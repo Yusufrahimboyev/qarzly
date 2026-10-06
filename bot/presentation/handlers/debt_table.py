@@ -18,12 +18,14 @@ from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import DebtStatus
 from bot.domain.entities.payment import PaymentType
 from bot.domain.entities.report import ClientReport
+from bot.i18n import _, all_variants
 from bot.infrastructure.branches import Branch
 from bot.presentation.common.messaging import split_message
 from bot.presentation.keyboards.debt_table_kb import (
     get_client_report_keyboard,
     get_debt_table_keyboard,
 )
+from bot.presentation.keyboards.main_menu_kb import TABLE_BUTTON_TEXT
 
 router = Router()
 
@@ -33,13 +35,18 @@ def _table_header(summaries) -> str:
     debtors_count = sum(1 for s in summaries if s.has_debt)
     total_market_debt = aggregate_remaining(summaries)
     return (
-        f"👥 <b>Jami mijozlar:</b> {len(summaries)} ta\n"
-        f"🔴 <b>Qarzdorlar:</b> {debtors_count} ta\n"
-        f"💳 <b>Jami qoldiq qarz:</b> <b>{format_money_map(total_market_debt)}</b>"
+        _(
+            "👥 <b>Jami mijozlar:</b> {clients} ta\n"
+            "🔴 <b>Qarzdorlar:</b> {debtors} ta\n"
+            "💳 <b>Jami qoldiq qarz:</b> <b>{total}</b>",
+            clients=len(summaries),
+            debtors=debtors_count,
+            total=format_money_map(total_market_debt),
+        )
     )
 
 
-@router.message(F.text == "📋 Qarzlar jadvali")
+@router.message(F.text.in_(all_variants(TABLE_BUTTON_TEXT)))
 async def show_debt_table_msg(
     message: Message,
     client_service: ClientService,
@@ -51,15 +58,16 @@ async def show_debt_table_msg(
     summaries = await client_service.get_all_summaries()
 
     if not summaries:
-        await message.answer(
+        await message.answer(_(
             "📋 <b>Qarzlar jadvali bo'sh.</b>\n\n"
             "Hali hech qanday mijoz yoki qarz kiritilmagan.\n"
             "Yangi qarz qo'shish uchun <b>➕ Yaratish</b> tugmasini bosing."
-        )
+        ))
         return
 
     await message.answer(
-        f"🏢 <b>Filial:</b> {esc_html(branch.title)}\n" + _table_header(summaries),
+        _("🏢 <b>Filial:</b> {branch}", branch=esc_html(branch.title)) + "\n"
+        + _table_header(summaries),
         reply_markup=get_debt_table_keyboard(summaries, page=1),
     )
 
@@ -76,7 +84,7 @@ async def cb_debt_page(
     page = int(callback.data.split(":")[1])
     summaries = await client_service.get_all_summaries()
     if not summaries:
-        await callback.answer("Ro'yxat bo'sh.", show_alert=True)
+        await callback.answer(_("Ro'yxat bo'sh."), show_alert=True)
         return
 
     await callback.message.edit_text(
@@ -105,7 +113,7 @@ async def cb_back_to_debt_table(
 
     summaries = await client_service.get_all_summaries()
     if not summaries:
-        await callback.message.edit_text("📋 Qarzlar jadvali bo'sh.")
+        await callback.message.edit_text(_("📋 Qarzlar jadvali bo'sh."))
         await callback.answer()
         return
 
@@ -129,7 +137,7 @@ async def cb_client_report(
     try:
         report = await debt_service.get_client_report(client_id)
     except ValueError:
-        await callback.answer("Mijoz topilmadi.", show_alert=True)
+        await callback.answer(_("Mijoz topilmadi."), show_alert=True)
         return
 
     text = _render_report(report)
@@ -156,18 +164,18 @@ def _render_report(report: ClientReport) -> str:
     client = report.client
 
     lines: list[str] = [
-        f"👤 <b>MIJOZ HISOBOTI:</b> <b>{esc_html(client.full_name)}</b>",
-        f"📞 <b>Telefon:</b> {esc_html(client.phone)}",
+        _("👤 <b>MIJOZ HISOBOTI:</b> <b>{name}</b>", name=esc_html(client.full_name)),
+        _("📞 <b>Telefon:</b> {phone}", phone=esc_html(client.phone)),
         "━━━━━━━━━━━━━━━━━━━━",
-        "<b>📦 QARZLAR TARIXI:</b>",
+        _("<b>📦 QARZLAR TARIXI:</b>"),
     ]
 
     if not report.debts:
-        lines.append("<i>Qarzlar mavjud emas.</i>")
+        lines.append(_("<i>Qarzlar mavjud emas.</i>"))
     else:
         for idx, d in enumerate(report.debts, start=1):
             status_icon = "🔴" if d.status == DebtStatus.ACTIVE else "🟢"
-            status_text = "Qarzdor" if d.status == DebtStatus.ACTIVE else "Yopilgan"
+            status_text = _("Qarzdor") if d.status == DebtStatus.ACTIVE else _("Yopilgan")
 
             lines.append(
                 f"\n<b>{idx}. {format_date(d.debt_date)} — "
@@ -190,30 +198,41 @@ def _render_report(report: ClientReport) -> str:
                             f"{format_money(p.price_per_unit, p_cur)}"
                         )
             else:
-                lines.append(
-                    f"  • Tovar: <b>{esc_html(d.product_name)}</b> — {d.product_quantity} ta"
-                )
-            lines.append(f"  • Narxi (jami): {format_money(d.product_price, d.currency)}")
+                lines.append(_(
+                    "  • Tovar: <b>{name}</b> — {quantity} ta",
+                    name=esc_html(d.product_name),
+                    quantity=d.product_quantity,
+                ))
+            lines.append(_(
+                "  • Narxi (jami): {amount}", amount=format_money(d.product_price, d.currency)
+            ))
 
             if d.exchange_exists:
-                lines.append(
-                    f"  • Exchange: <i>{esc_html(d.exchange_product_name or 'Tovar')}</i> "
-                    f"({format_money(d.exchange_product_price, d.currency)})"
-                )
+                lines.append(_(
+                    "  • Exchange: <i>{name}</i> ({amount})",
+                    name=esc_html(d.exchange_product_name or _("Tovar")),
+                    amount=format_money(d.exchange_product_price, d.currency),
+                ))
 
             if d.given_money > 0:
-                lines.append(f"  • Berilgan pul: {format_money(d.given_money, d.currency)}")
+                lines.append(_(
+                    "  • Berilgan pul: {amount}", amount=format_money(d.given_money, d.currency)
+                ))
 
-            lines.append(f"  • Asl qarz: {format_money(d.original_debt, d.currency)}")
-            lines.append(f"  • Qoldiq: <b>{format_money(d.remaining_debt, d.currency)}</b>")
+            lines.append(_(
+                "  • Asl qarz: {amount}", amount=format_money(d.original_debt, d.currency)
+            ))
+            lines.append(_(
+                "  • Qoldiq: <b>{amount}</b>", amount=format_money(d.remaining_debt, d.currency)
+            ))
 
     # To'lovlar tarixi
     actual_payments = [p for p in report.payments if p.payment_type != PaymentType.INITIAL]
     if actual_payments:
         lines.append("\n━━━━━━━━━━━━━━━━━━━━")
-        lines.append("<b>💰 TO'LOVLAR TARIXI:</b>")
+        lines.append(_("<b>💰 TO'LOVLAR TARIXI:</b>"))
         for idx, pay in enumerate(actual_payments, start=1):
-            p_type_label = "To'liq" if pay.payment_type == PaymentType.FULL else "Qisman"
+            p_type_label = _("To'liq") if pay.payment_type == PaymentType.FULL else _("Qisman")
             pay_str = format_money(pay.amount, pay.currency)
             lines.append(
                 f"{idx}. {format_date(pay.payment_date)}: +{pay_str} ({p_type_label})"
@@ -221,22 +240,34 @@ def _render_report(report: ClientReport) -> str:
 
     # Yakuniy umumiy hisob — har bir total valyutalar bo'yicha
     lines.append("\n━━━━━━━━━━━━━━━━━━━━")
-    lines.append("<b>📊 UMUMIY HISOB-KITOB:</b>")
-    lines.append(f"• Jami tovarlar: {format_money_map(report.total_product_price)}")
+    lines.append(_("<b>📊 UMUMIY HISOB-KITOB:</b>"))
+    lines.append(_(
+        "• Jami tovarlar: {amount}", amount=format_money_map(report.total_product_price)
+    ))
     if any(v > 0 for v in report.total_exchange_price.values()):
-        lines.append(f"• Jami exchange: -{format_money_map(report.total_exchange_price)}")
+        lines.append(_(
+            "• Jami exchange: -{amount}", amount=format_money_map(report.total_exchange_price)
+        ))
     if any(v > 0 for v in report.total_given_money.values()):
-        lines.append(f"• Dastlabki to'langan: -{format_money_map(report.total_given_money)}")
-    lines.append(f"• Jami asl qarz: {format_money_map(report.total_original_debt)}")
+        lines.append(_(
+            "• Dastlabki to'langan: -{amount}",
+            amount=format_money_map(report.total_given_money),
+        ))
+    lines.append(_(
+        "• Jami asl qarz: {amount}", amount=format_money_map(report.total_original_debt)
+    ))
     if any(v > 0 for v in report.total_paid_after.values()):
-        lines.append(f"• Keyin to'langan: -{format_money_map(report.total_paid_after)}")
+        lines.append(_(
+            "• Keyin to'langan: -{amount}", amount=format_money_map(report.total_paid_after)
+        ))
 
     lines.append("────────────────────")
     if _has_debt(report):
-        lines.append(
-            f"💳 <b>HOZIRGI QARZ:</b> <b>🔴 {format_money_map(report.total_remaining_debt)}</b>"
-        )
+        lines.append(_(
+            "💳 <b>HOZIRGI QARZ:</b> <b>🔴 {amount}</b>",
+            amount=format_money_map(report.total_remaining_debt),
+        ))
     else:
-        lines.append("💳 <b>HOZIRGI QARZ:</b> <b>🟢 0 (Qarz yo'q)</b>")
+        lines.append(_("💳 <b>HOZIRGI QARZ:</b> <b>🟢 0 (Qarz yo'q)</b>"))
 
     return "\n".join(lines)

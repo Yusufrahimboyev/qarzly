@@ -29,6 +29,7 @@ from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
 from bot.domain.entities.period_report import PeriodReport
 from bot.domain.entities.report import ClientReport
+from bot.i18n import N_, _
 from bot.infrastructure.export.excel import (
     build_client_file_name,
     build_client_workbook,
@@ -43,15 +44,15 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
-_START_PROMPT = (
+_START_PROMPT = N_(
     "📊 <b>EXCEL HISOBOT</b>\n\n"
     "📅 <b>Boshlanish sanasini kiriting:</b>\n\n"
     "<i>Masalan: 01.01.2026</i>"
 )
 
-_DATE_HELP = (
-    "\n\n<i>Qo'llab-quvvatlanadigan formatlar: 01.01.2026, 01/01/2026, "
-    "2026-01-01</i>"
+_DATE_ERROR = N_(
+    "❌ <b>Sana formati noto'g'ri.</b>\n\n"
+    "<i>Qo'llab-quvvatlanadigan formatlar: 01.01.2026, 01/01/2026, 2026-01-01</i>"
 )
 
 
@@ -67,7 +68,7 @@ async def cb_export_start(callback: CallbackQuery, state: FSMContext) -> None:
 
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
-            _START_PROMPT,
+            _(_START_PROMPT),
             reply_markup=get_export_date_keyboard(with_today=False),
         )
     await callback.answer()
@@ -82,9 +83,9 @@ async def cb_cancel_export(
     """Hisobot jarayonini bekor qiladi."""
     await state.clear()
     if isinstance(callback.message, Message):
-        await callback.message.edit_text("❌ <b>Hisobot bekor qilindi.</b>")
+        await callback.message.edit_text(_("❌ <b>Hisobot bekor qilindi.</b>"))
         await callback.message.answer(
-            "Asosiy menyu:",
+            _("Asosiy menyu:"),
             reply_markup=get_main_menu_keyboard(settings.web_app_url),
         )
     await callback.answer()
@@ -102,15 +103,18 @@ async def process_start_date(message: Message, state: FSMContext) -> None:
 
     if parsed is None:
         await message.answer(
-            "❌ <b>Sana formati noto'g'ri.</b>" + _DATE_HELP,
+            _(_DATE_ERROR),
             reply_markup=get_export_date_keyboard(with_today=False),
         )
         return
 
     if parsed > today():
         await message.answer(
-            "❌ <b>Boshlanish sanasi bugundan keyin bo'lishi mumkin emas.</b>\n"
-            f"Eng kech sana: <b>{today_str()}</b>",
+            _(
+                "❌ <b>Boshlanish sanasi bugundan keyin bo'lishi mumkin emas.</b>\n"
+                "Eng kech sana: <b>{date}</b>",
+                date=today_str(),
+            ),
             reply_markup=get_export_date_keyboard(with_today=False),
         )
         return
@@ -119,9 +123,13 @@ async def process_start_date(message: Message, state: FSMContext) -> None:
     await state.set_state(ReportExportStates.waiting_end_date)
 
     await message.answer(
-        f"✅ <b>Boshlanish sanasi:</b> {format_date(parsed)}\n\n"
-        "📅 <b>Tugash sanasini kiriting:</b>\n\n"
-        f"<i>Bugundan keyingi sana kiritib bo'lmaydi (eng kech: {today_str()})</i>",
+        _(
+            "✅ <b>Boshlanish sanasi:</b> {start}\n\n"
+            "📅 <b>Tugash sanasini kiriting:</b>\n\n"
+            "<i>Bugundan keyingi sana kiritib bo'lmaydi (eng kech: {today})</i>",
+            start=format_date(parsed),
+            today=today_str(),
+        ),
         reply_markup=get_export_date_keyboard(with_today=True),
     )
 
@@ -183,7 +191,7 @@ async def _finish(
 
     if parsed is None:
         await message.answer(
-            "❌ <b>Sana formati noto'g'ri.</b>" + _DATE_HELP,
+            _(_DATE_ERROR),
             reply_markup=get_export_date_keyboard(with_today=True),
         )
         return
@@ -193,10 +201,10 @@ async def _finish(
     if not raw_from:
         # FSM ma'lumoti yo'qolgan (bot qayta ishga tushgan) — boshidan.
         await state.clear()
-        await message.answer(
+        await message.answer(_(
             "⚠️ <b>Sessiya eskirgan.</b> Hisobotni qaytadan boshlang: "
             "<b>📋 Qarzlar jadvali</b> → <b>📊 Excel hisobot</b>."
-        )
+        ))
         return
 
     date_from = parse_date(raw_from)
@@ -214,14 +222,14 @@ async def _finish(
 
     if edit_source is not None:
         await edit_source.edit_text(
-            f"⏳ <b>Hisobot tayyorlanmoqda...</b>\n\n"
-            f"📅 {format_date(date_from)} — {format_date(parsed)}"
+            _("⏳ <b>Hisobot tayyorlanmoqda...</b>")
+            + f"\n\n📅 {format_date(date_from)} — {format_date(parsed)}"
         )
         status: Message | None = None
     else:
         status = await message.answer(
-            f"⏳ <b>Hisobot tayyorlanmoqda...</b>\n\n"
-            f"📅 {format_date(date_from)} — {format_date(parsed)}"
+            _("⏳ <b>Hisobot tayyorlanmoqda...</b>")
+            + f"\n\n📅 {format_date(date_from)} — {format_date(parsed)}"
         )
 
     try:
@@ -235,10 +243,10 @@ async def _finish(
             date_from.isoformat(),
             parsed.isoformat(),
         )
-        await message.answer(
+        await message.answer(_(
             "❌ <b>Hisobotni tayyorlashda xatolik yuz berdi.</b>\n"
             "Birozdan so'ng qayta urinib ko'ring."
-        )
+        ))
         return
 
     await message.answer_document(
@@ -252,16 +260,21 @@ async def _finish(
 
 def _caption(report: PeriodReport) -> str:
     """Fayl ostidagi qisqacha xulosa."""
-    return (
+    return _(
         "📊 <b>QARZ HISOBOTI</b>\n\n"
-        f"📅 <b>Davr:</b> {format_date(report.date_from)} — "
-        f"{format_date(report.date_to)}\n\n"
-        f"📥 <b>Berilgan qarz:</b> {format_money_map(report.given_total)}\n"
-        f"📤 <b>Qaytarilgan pul:</b> {format_money_map(report.returned_total)}\n"
-        f"💳 <b>Davr oxiridagi qarzdorlik:</b> "
-        f"<b>{format_money_map(report.closing_debt)}</b>\n\n"
-        f"👥 <b>Qarzdorlar:</b> {report.debtors_total} nafar\n"
-        f"🧾 <b>Qarz yozuvlari:</b> {len(report.debts)} ta"
+        "📅 <b>Davr:</b> {start} — {end}\n\n"
+        "📥 <b>Berilgan qarz:</b> {given}\n"
+        "📤 <b>Qaytarilgan pul:</b> {returned}\n"
+        "💳 <b>Davr oxiridagi qarzdorlik:</b> <b>{closing}</b>\n\n"
+        "👥 <b>Qarzdorlar:</b> {debtors} nafar\n"
+        "🧾 <b>Qarz yozuvlari:</b> {debts} ta",
+        start=format_date(report.date_from),
+        end=format_date(report.date_to),
+        given=format_money_map(report.given_total),
+        returned=format_money_map(report.returned_total),
+        closing=format_money_map(report.closing_debt),
+        debtors=report.debtors_total,
+        debts=len(report.debts),
     )
 
 
@@ -285,17 +298,17 @@ async def cb_client_excel(
     try:
         report = await debt_service.get_client_report(client_id)
     except ValueError:
-        await callback.answer("Mijoz topilmadi.", show_alert=True)
+        await callback.answer(_("Mijoz topilmadi."), show_alert=True)
         return
 
-    await callback.answer("⏳ Hisobot tayyorlanmoqda...")
+    await callback.answer(_("⏳ Hisobot tayyorlanmoqda..."))
 
     try:
         content = await asyncio.to_thread(build_client_workbook, report)
     except Exception:
         logger.exception("Mijoz Excel hisoboti tayyorlanmadi: client_id=%s", client_id)
         await callback.message.answer(
-            "❌ <b>Hisobotni tayyorlashda xatolik yuz berdi.</b>"
+            _("❌ <b>Hisobotni tayyorlashda xatolik yuz berdi.</b>")
         )
         return
 
@@ -311,12 +324,18 @@ async def cb_client_excel(
 def _client_caption(report: ClientReport) -> str:
     """Mijoz fayli ostidagi qisqacha xulosa."""
     client = report.client
-    return (
-        f"👤 <b>MIJOZ HISOBOTI</b>\n\n"
-        f"<b>{esc_html(client.full_name)}</b>\n"
-        f"📞 {esc_html(client.phone)}\n\n"
-        f"📦 <b>Qarzlar:</b> {len(report.debts)} ta\n"
-        f"💵 <b>Asl qarz:</b> {format_money_map(report.total_original_debt)}\n"
-        f"✅ <b>To'langan:</b> {format_money_map(report.total_paid_after)}\n"
-        f"💳 <b>Qoldiq:</b> <b>{format_money_map(report.total_remaining_debt)}</b>"
+    return _(
+        "👤 <b>MIJOZ HISOBOTI</b>\n\n"
+        "<b>{name}</b>\n"
+        "📞 {phone}\n\n"
+        "📦 <b>Qarzlar:</b> {debts} ta\n"
+        "💵 <b>Asl qarz:</b> {original}\n"
+        "✅ <b>To'langan:</b> {paid}\n"
+        "💳 <b>Qoldiq:</b> <b>{remaining}</b>",
+        name=esc_html(client.full_name),
+        phone=esc_html(client.phone),
+        debts=len(report.debts),
+        original=format_money_map(report.total_original_debt),
+        paid=format_money_map(report.total_paid_after),
+        remaining=format_money_map(report.total_remaining_debt),
     )

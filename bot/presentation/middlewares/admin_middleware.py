@@ -17,6 +17,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, InlineQuery, Message, TelegramObject
 
 from bot.core.config import Settings
+from bot.i18n import _
 
 logger = logging.getLogger(__name__)
 
@@ -63,11 +64,14 @@ class AdminMiddleware(BaseMiddleware):
         """Foydalanuvchiga ruxsat yo'qligini bildiradi."""
         if isinstance(event, Message):
             await event.answer(
-                "⛔️ <b>Kechirasiz, sizda ushbu botdan foydalanish huquqi mavjud emas.</b>\n\n"
-                f"Sizning Telegram ID: <code>{user_id}</code>\n"
-                "Admin bilan bog'laning.",
+                _(
+                    "⛔️ <b>Kechirasiz, sizda ushbu botdan foydalanish huquqi mavjud emas.</b>\n\n"
+                    "Sizning Telegram ID: <code>{user_id}</code>\n"
+                    "Admin bilan bog'laning.",
+                    user_id=user_id,
+                ),
             )
         elif isinstance(event, CallbackQuery):
-            await event.answer("⛔️ Ruxsat berilmagan.", show_alert=True)
+            await event.answer(_("⛔️ Ruxsat berilmagan."), show_alert=True)
         elif isinstance(event, InlineQuery):
             await event.answer([], cache_time=0, is_personal=True)

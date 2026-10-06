@@ -38,6 +38,7 @@ from bot.domain.repositories.unit_of_work import (
     UnitOfWork,
     UnitOfWorkFactory,
 )
+from bot.i18n import _
 
 logger = logging.getLogger(__name__)
 
@@ -105,49 +106,53 @@ class DebtService:
         avval to'liq tekshirib, keyin bitta tranzaksiyada saqlash mumkin.
         """
         if not isinstance(currency, Currency):
-            raise ValueError("Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak).")
+            raise ValueError(_("Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak)."))
         if not products:
-            raise ValueError("Kamida bitta tovar kiritilishi shart.")
+            raise ValueError(_("Kamida bitta tovar kiritilishi shart."))
         if len(products) > MAX_PRODUCTS_PER_DEBT:
-            raise ValueError(
-                f"Bitta qarzda {MAX_PRODUCTS_PER_DEBT} tadan ko'p tovar bo'lishi mumkin emas."
-            )
+            raise ValueError(_(
+                "Bitta qarzda {count} tadan ko'p tovar bo'lishi mumkin emas.",
+                count=MAX_PRODUCTS_PER_DEBT,
+            ))
 
         for product in products:
             product.validate()
             if product.currency != currency:
-                raise ValueError(
-                    "Tovar valyutasi qarz valyutasiga mos emas "
-                    f"({product.currency.value} != {currency.value})."
-                )
+                raise ValueError(_(
+                    "Tovar valyutasi qarz valyutasiga mos emas ({product} != {debt}).",
+                    product=product.currency.value,
+                    debt=currency.value,
+                ))
 
         total_product_price = sum(p.total_price for p in products)
         total_quantity = sum(p.quantity for p in products)
         summary_name = build_summary_name(products)
 
         if total_product_price <= 0:
-            raise ValueError("Tovarlar jami narxi 0 dan katta bo'lishi shart.")
+            raise ValueError(_("Tovarlar jami narxi 0 dan katta bo'lishi shart."))
         if total_product_price > MAX_MONEY:
-            raise ValueError("Tovarlar jami narxi ruxsat etilgan chegaradan katta.")
+            raise ValueError(_("Tovarlar jami narxi ruxsat etilgan chegaradan katta."))
 
         actual_exchange_price = exchange_product_price if exchange_exists else 0
         actual_exchange_name = exchange_product_name if exchange_exists else None
 
         if actual_exchange_price < 0 or given_money < 0:
             raise ValueError(
-                "Exchange narxi yoki berilgan pul manfiy bo'lishi mumkin emas."
+                _("Exchange narxi yoki berilgan pul manfiy bo'lishi mumkin emas.")
             )
         if actual_exchange_price > MAX_MONEY or given_money > MAX_MONEY:
-            raise ValueError("Summa ruxsat etilgan chegaradan katta.")
+            raise ValueError(_("Summa ruxsat etilgan chegaradan katta."))
 
         total_deductions = actual_exchange_price + given_money
         if total_deductions > total_product_price:
             deductions_str = format_money(total_deductions, currency)
             total_str = format_money(total_product_price, currency)
-            raise ValueError(
-                f"Exchange narxi va berilgan pul yig'indisi ({deductions_str}) "
-                f"tovarlar jami narxidan ({total_str}) katta bo'lishi mumkin emas."
-            )
+            raise ValueError(_(
+                "Exchange narxi va berilgan pul yig'indisi ({deductions}) "
+                "tovarlar jami narxidan ({total}) katta bo'lishi mumkin emas.",
+                deductions=deductions_str,
+                total=total_str,
+            ))
 
         original_debt = total_product_price - total_deductions
         remaining_debt = original_debt
@@ -233,10 +238,10 @@ class DebtService:
             # Single-product rejim (eski bot/API): tovar valyutasi qarz
             # valyutasi bilan bir xil bo'lishi shart.
             if product_price <= 0:
-                raise ValueError("Tovar narxi 0 dan katta bo'lishi shart.")
+                raise ValueError(_("Tovar narxi 0 dan katta bo'lishi shart."))
             if product_quantity < 1:
                 raise ValueError(
-                    "Miqdor (nechta) 1 dan kichik bo'lishi mumkin emas."
+                    _("Miqdor (nechta) 1 dan kichik bo'lishi mumkin emas.")
                 )
             final_products = [
                 DebtProduct(
@@ -307,11 +312,12 @@ class DebtService:
         Qaytaradi: yaratilgan qarzlar ro'yxati (valyutalar bo'yicha).
         """
         if not products:
-            raise ValueError("Kamida bitta tovar kiritilishi shart.")
+            raise ValueError(_("Kamida bitta tovar kiritilishi shart."))
         if len(products) > MAX_PRODUCTS_PER_DEBT:
-            raise ValueError(
-                f"Bir vaqtda {MAX_PRODUCTS_PER_DEBT} tadan ko'p tovar kiritib bo'lmaydi."
-            )
+            raise ValueError(_(
+                "Bir vaqtda {count} tadan ko'p tovar kiritib bo'lmaydi.",
+                count=MAX_PRODUCTS_PER_DEBT,
+            ))
 
         parsed_date = to_date(debt_date)
 
@@ -321,10 +327,10 @@ class DebtService:
             try:
                 cur = Currency(p.currency)
             except ValueError as exc:
-                raise ValueError(
-                    f"Tovar valyutasi noto'g'ri: {p.currency} "
-                    "(UZS yoki USD bo'lishi kerak)."
-                ) from exc
+                raise ValueError(_(
+                    "Tovar valyutasi noto'g'ri: {currency} (UZS yoki USD bo'lishi kerak).",
+                    currency=p.currency,
+                )) from exc
             groups.setdefault(cur, []).append(p)
 
         exchanges_by_cur: dict[Currency, list[DebtProduct]] = {}
@@ -333,23 +339,23 @@ class DebtService:
             exchanges_by_cur.setdefault(item.currency, []).append(item)
         for cur in exchanges_by_cur:
             if cur not in groups:
-                raise ValueError(
-                    f"Exchange {cur.value} valyutasida, ammo shu "
-                    "valyutadagi tovar kiritilmagan."
-                )
+                raise ValueError(_(
+                    "Exchange {currency} valyutasida, ammo shu valyutadagi tovar kiritilmagan.",
+                    currency=cur.value,
+                ))
 
         # Exchange yoki berilgan pul mos valyutadagi tovarsiz qolmasligi kerak —
         # aks holda chegirma jimgina e'tiborsiz qolardi.
         if exchange_exists and exchange_product_price > 0 and exchange_currency not in groups:
-            raise ValueError(
-                f"Exchange {exchange_currency.value} valyutasida, ammo shu "
-                "valyutadagi tovar kiritilmagan."
-            )
+            raise ValueError(_(
+                "Exchange {currency} valyutasida, ammo shu valyutadagi tovar kiritilmagan.",
+                currency=exchange_currency.value,
+            ))
         if given_money > 0 and given_currency not in groups:
-            raise ValueError(
-                f"Berilgan pul {given_currency.value} valyutasida, ammo shu "
-                "valyutadagi tovar kiritilmagan."
-            )
+            raise ValueError(_(
+                "Berilgan pul {currency} valyutasida, ammo shu valyutadagi tovar kiritilmagan.",
+                currency=given_currency.value,
+            ))
 
         plans: list[_DebtPlan] = []
         for cur, group in groups.items():
@@ -409,7 +415,7 @@ class DebtService:
         async with self._unit_of_work() as uow:
             client = await uow.clients.get_by_id(client_id)
             if client is None:
-                raise ValueError("Mijoz topilmadi.")
+                raise ValueError(_("Mijoz topilmadi."))
 
             active_debts = await uow.debts.get_active_by_client_id(
                 client_id, for_update=True
@@ -466,18 +472,18 @@ class DebtService:
         Qaytaradi: (to'langan_summa, shu_valyutadagi_qolgan, summary)
         """
         if amount <= 0:
-            raise ValueError("To'lov summasi 0 dan katta bo'lishi shart.")
+            raise ValueError(_("To'lov summasi 0 dan katta bo'lishi shart."))
         if amount > MAX_MONEY:
-            raise ValueError("To'lov summasi ruxsat etilgan chegaradan katta.")
+            raise ValueError(_("To'lov summasi ruxsat etilgan chegaradan katta."))
         if not isinstance(currency, Currency):
-            raise ValueError("Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak).")
+            raise ValueError(_("Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak)."))
 
         parsed_date = to_date(payment_date)
 
         async with self._unit_of_work() as uow:
             client = await uow.clients.get_by_id(client_id)
             if client is None:
-                raise ValueError("Mijoz topilmadi.")
+                raise ValueError(_("Mijoz topilmadi."))
 
             active_debts = await uow.debts.get_active_by_client_id(
                 client_id, for_update=True
@@ -486,20 +492,17 @@ class DebtService:
             total_remaining = sum(d.remaining_debt for d in currency_debts)
 
             if total_remaining == 0:
-                currency_label = (
-                    "so'mda" if currency == Currency.UZS else "dollarda"
-                )
                 raise ValueError(
-                    f"Ushbu mijozda {currency_label} to'lanishi kerak"
-                    " bo'lgan faol qarz yo'q."
+                    _("Ushbu mijozda so'mda to'lanishi kerak bo'lgan faol qarz yo'q.")
+                    if currency == Currency.UZS
+                    else _("Ushbu mijozda dollarda to'lanishi kerak bo'lgan faol qarz yo'q.")
                 )
 
             if amount > total_remaining:
-                raise ValueError(
-                    f"To'lov summasi mavjud qarzdan "
-                    f"({format_money(total_remaining, currency)}) "
-                    f"katta bo'lishi mumkin emas."
-                )
+                raise ValueError(_(
+                    "To'lov summasi mavjud qarzdan ({debt}) katta bo'lishi mumkin emas.",
+                    debt=format_money(total_remaining, currency),
+                ))
 
             remaining_to_allocate = amount
             for debt in currency_debts:
@@ -568,7 +571,7 @@ class DebtService:
         """Mijozning barcha qarz va to'lovlari bo'yicha to'liq hisoboti."""
         client = await self._clients.get_by_id(client_id)
         if client is None:
-            raise ValueError("Mijoz topilmadi.")
+            raise ValueError(_("Mijoz topilmadi."))
 
         debts = await self._debts.get_all_by_client_id(client_id)
         all_payments = await self._payments.get_by_client_id(client_id)

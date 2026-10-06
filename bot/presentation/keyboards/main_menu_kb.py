@@ -9,7 +9,16 @@ from aiogram.types import (
     WebAppInfo,
 )
 
-BRANCH_BUTTON_TEXT = "🏢 Filial"
+from bot.i18n import N_, _
+
+# Reply-tugma matnlari (lotinda) — handler'lar `all_variants()` bilan
+# barcha tillardagi ko'rinishini taniydi.
+TABLE_BUTTON_TEXT = N_("📋 Qarzlar jadvali")
+CREATE_BUTTON_TEXT = N_("➕ Yaratish")
+PAYMENT_BUTTON_TEXT = N_("💰 Qarz to'lovi")
+BRANCH_BUTTON_TEXT = N_("🏢 Filial")
+SETTINGS_BUTTON_TEXT = N_("⚙️ Sozlamalar")
+HELP_BUTTON_TEXT = N_("ℹ️ Yordam")
 
 
 def get_main_menu_keyboard(web_app_url: str = "") -> ReplyKeyboardMarkup:
@@ -17,19 +26,20 @@ def get_main_menu_keyboard(web_app_url: str = "") -> ReplyKeyboardMarkup:
     1. 📋 Qarzlar jadvali
     2. ➕ Yaratish
     3. 💰 Qarz to'lovi
-    4. 🏢 Filial (almashtirish)
+    4. 🏢 Filial (almashtirish), ⚙️ Sozlamalar
     5. 🚀 Mini App (agar URL sozlangan bo'lsa)
     """
     rows: list[list[KeyboardButton]] = [
         [
-            KeyboardButton(text="📋 Qarzlar jadvali"),
+            KeyboardButton(text=_(TABLE_BUTTON_TEXT)),
         ],
         [
-            KeyboardButton(text="➕ Yaratish"),
-            KeyboardButton(text="💰 Qarz to'lovi"),
+            KeyboardButton(text=_(CREATE_BUTTON_TEXT)),
+            KeyboardButton(text=_(PAYMENT_BUTTON_TEXT)),
         ],
         [
-            KeyboardButton(text=BRANCH_BUTTON_TEXT),
+            KeyboardButton(text=_(BRANCH_BUTTON_TEXT)),
+            KeyboardButton(text=_(SETTINGS_BUTTON_TEXT)),
         ],
     ]
 

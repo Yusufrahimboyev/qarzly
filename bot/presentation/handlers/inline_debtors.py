@@ -12,6 +12,7 @@ from aiogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessag
 from bot.application.common.formatters import esc_html, format_date, format_money_map
 from bot.application.services.client_service import ClientService
 from bot.domain.entities.report import ClientDebtSummary
+from bot.i18n import _
 from bot.infrastructure.branches import Branch
 
 router = Router()
@@ -55,7 +56,7 @@ def _result(summary: ClientDebtSummary, branch: Branch) -> InlineQueryResultArti
     return InlineQueryResultArticle(
         id=str(client.id),
         title=f"🔴 {client.full_name} — {remaining}",
-        description=client.phone or "Telefon yo'q",
+        description=client.phone or _("Telefon yo'q"),
         input_message_content=InputTextMessageContent(message_text=_card(summary, branch)),
     )
 
@@ -65,13 +66,16 @@ def _card(summary: ClientDebtSummary, branch: Branch) -> str:
     client = summary.client
     lines = [
         f"👤 <b>{esc_html(client.full_name)}</b>",
-        f"🏢 <b>Filial:</b> {esc_html(branch.title)}",
+        _("🏢 <b>Filial:</b> {branch}", branch=esc_html(branch.title)),
     ]
     if client.phone:
-        lines.append(f"📞 <b>Telefon:</b> {esc_html(client.phone)}")
-    lines.append(
-        f"💳 <b>Qoldiq qarz:</b> <b>{format_money_map(summary.remaining_by_currency)}</b>"
-    )
+        lines.append(_("📞 <b>Telefon:</b> {phone}", phone=esc_html(client.phone)))
+    lines.append(_(
+        "💳 <b>Qoldiq qarz:</b> <b>{amount}</b>",
+        amount=format_money_map(summary.remaining_by_currency),
+    ))
     if summary.latest_debt_date is not None:
-        lines.append(f"📅 <b>Oxirgi qarz:</b> {format_date(summary.latest_debt_date)}")
+        lines.append(_(
+            "📅 <b>Oxirgi qarz:</b> {date}", date=format_date(summary.latest_debt_date)
+        ))
     return "\n".join(lines)

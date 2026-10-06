@@ -11,6 +11,7 @@ from bot.application.common.formatters import (
     today_str,
 )
 from bot.domain.entities.report import ClientDebtSummary
+from bot.i18n import _
 
 
 def get_debt_table_keyboard(
@@ -43,7 +44,7 @@ def get_debt_table_keyboard(
                 f"{format_money_map(summary.remaining_by_currency)}"
             )
         else:
-            btn_text = f"🟢 {client.full_name} — Qarz yo'q"
+            btn_text = _("🟢 {name} — Qarz yo'q", name=client.full_name)
 
         keyboard.append([
             InlineKeyboardButton(
@@ -57,7 +58,7 @@ def get_debt_table_keyboard(
     if current_page > 1:
         nav_buttons.append(
             InlineKeyboardButton(
-                text="⬅️ Oldingi",
+                text=_("⬅️ Oldingi"),
                 callback_data=f"debt_page:{current_page - 1}",
             )
         )
@@ -72,7 +73,7 @@ def get_debt_table_keyboard(
     if current_page < total_pages:
         nav_buttons.append(
             InlineKeyboardButton(
-                text="Keyingi ➡️",
+                text=_("Keyingi ➡️"),
                 callback_data=f"debt_page:{current_page + 1}",
             )
         )
@@ -83,7 +84,7 @@ def get_debt_table_keyboard(
     # sahifalash tugmalaridan keyin, alohida qatorda turadi.
     keyboard.append([
         InlineKeyboardButton(
-            text="📊 UMUMIY hisobot (Excel)",
+            text=_("📊 UMUMIY hisobot (Excel)"),
             callback_data="export_start",
         )
     ])
@@ -98,14 +99,14 @@ def get_export_date_keyboard(*, with_today: bool) -> InlineKeyboardMarkup:
     if with_today:
         keyboard.append([
             InlineKeyboardButton(
-                text=f"📅 Bugun ({today_str()})",
+                text=_("📅 Bugun ({date})", date=today_str()),
                 callback_data="export_date_today",
             )
         ])
 
     keyboard.append([
-        InlineKeyboardButton(text="🔙 Ortga", callback_data="back_to_debt_table"),
-        InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_export"),
+        InlineKeyboardButton(text=_("🔙 Ortga"), callback_data="back_to_debt_table"),
+        InlineKeyboardButton(text=_("❌ Bekor qilish"), callback_data="cancel_export"),
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -117,7 +118,7 @@ def get_client_report_keyboard(client_id: int, has_debt: bool) -> InlineKeyboard
 
     buttons.append([
         InlineKeyboardButton(
-            text="➕ Yana qarz qo'shish",
+            text=_("➕ Yana qarz qo'shish"),
             callback_data=f"add_debt_for_client:{client_id}",
         )
     ])
@@ -125,7 +126,7 @@ def get_client_report_keyboard(client_id: int, has_debt: bool) -> InlineKeyboard
     if has_debt:
         buttons.append([
             InlineKeyboardButton(
-                text="💰 Qarzni to'lash",
+                text=_("💰 Qarzni to'lash"),
                 callback_data=f"select_pay_client:{client_id}",
             )
         ])
@@ -135,14 +136,14 @@ def get_client_report_keyboard(client_id: int, has_debt: bool) -> InlineKeyboard
     # beradi deb chalkashadi.
     buttons.append([
         InlineKeyboardButton(
-            text="📊 SHU MIJOZ hisoboti (Excel)",
+            text=_("📊 SHU MIJOZ hisoboti (Excel)"),
             callback_data=f"client_excel:{client_id}",
         )
     ])
 
     buttons.append([
         InlineKeyboardButton(
-            text="🔙 Ro'yxatga qaytish",
+            text=_("🔙 Ro'yxatga qaytish"),
             callback_data="back_to_debt_table",
         )
     ])

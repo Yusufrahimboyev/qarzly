@@ -17,8 +17,9 @@ from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.core.config import Settings
 from bot.domain.entities.currency import Currency
+from bot.i18n import _, all_variants
 from bot.infrastructure.branches import Branch
-from bot.presentation.keyboards.main_menu_kb import get_main_menu_keyboard
+from bot.presentation.keyboards.main_menu_kb import PAYMENT_BUTTON_TEXT, get_main_menu_keyboard
 from bot.presentation.keyboards.payment_kb import (
     get_debtors_list_keyboard,
     get_payment_back_cancel_keyboard,
@@ -32,11 +33,13 @@ router = Router()
 
 def _debtors_header(debtors) -> str:
     total_debt = aggregate_remaining(debtors)
-    return (
+    return _(
         "💰 <b>QARZ TO'LOVI (Qarzdorlar ro'yxati):</b>\n\n"
-        f"🔴 <b>Qarzdorlar soni:</b> {len(debtors)} nafar\n"
-        f"💳 <b>Jami olinishi kerak:</b> <b>{format_money_map(total_debt)}</b>\n\n"
-        "<i>To'lov qilayotgan mijozni tanlang:</i>"
+        "🔴 <b>Qarzdorlar soni:</b> {count} nafar\n"
+        "💳 <b>Jami olinishi kerak:</b> <b>{total}</b>\n\n"
+        "<i>To'lov qilayotgan mijozni tanlang:</i>",
+        count=len(debtors),
+        total=format_money_map(total_debt),
     )
 
 
@@ -54,9 +57,9 @@ async def cb_cancel_payment(
     """To'lov jarayonini bekor qiladi."""
     await state.clear()
     if isinstance(callback.message, Message):
-        await callback.message.edit_text("❌ <b>To'lov jarayoni bekor qilindi.</b>")
+        await callback.message.edit_text(_("❌ <b>To'lov jarayoni bekor qilindi.</b>"))
         await callback.message.answer(
-            "Asosiy menyu:",
+            _("Asosiy menyu:"),
             reply_markup=get_main_menu_keyboard(settings.web_app_url),
         )
     await callback.answer()
@@ -78,7 +81,7 @@ async def cb_back_to_pay_debtors(
 
     if not debtors:
         await callback.message.edit_text(
-            "🎉 <b>Hozirda hech kimda qarz yo'q! Barcha qarzlar yopilgan.</b>"
+            _("🎉 <b>Hozirda hech kimda qarz yo'q! Barcha qarzlar yopilgan.</b>")
         )
         await callback.answer()
         return
@@ -95,7 +98,7 @@ async def cb_back_to_pay_debtors(
 # ==========================================
 
 
-@router.message(F.text == "💰 Qarz to'lovi")
+@router.message(F.text.in_(all_variants(PAYMENT_BUTTON_TEXT)))
 async def show_debtors_payment_list(
     message: Message,
     client_service: ClientService,
@@ -107,14 +110,15 @@ async def show_debtors_payment_list(
     debtors = await client_service.get_debtor_summaries()
 
     if not debtors:
-        await message.answer(
+        await message.answer(_(
             "🎉 <b>Hozirda hech kimda qarz yo'q! Barcha qarzlar to'liq yopilgan.</b>\n\n"
             "Yangi qarz kiritish uchun <b>➕ Yaratish</b> tugmasini bosing."
-        )
+        ))
         return
 
     await message.answer(
-        f"🏢 <b>Filial:</b> {esc_html(branch.title)}\n" + _debtors_header(debtors),
+        _("🏢 <b>Filial:</b> {branch}", branch=esc_html(branch.title)) + "\n"
+        + _debtors_header(debtors),
         reply_markup=get_debtors_list_keyboard(debtors, page=1),
     )
 
@@ -131,7 +135,7 @@ async def cb_pay_page(
     page = int(callback.data.split(":")[1])
     debtors = await client_service.get_debtor_summaries()
     if not debtors:
-        await callback.answer("Qarzdorlar mavjud emas.", show_alert=True)
+        await callback.answer(_("Qarzdorlar mavjud emas."), show_alert=True)
         return
 
     await callback.message.edit_text(
@@ -159,7 +163,7 @@ async def cb_select_pay_client(
     client_id = int(callback.data.split(":")[1])
     client = await client_service.get_by_id(client_id)
     if client is None:
-        await callback.answer("Mijoz topilmadi.", show_alert=True)
+        await callback.answer(_("Mijoz topilmadi."), show_alert=True)
         return
 
     # Mijozning valyutalar bo'yicha qoldiq qarzini olish
@@ -168,18 +172,21 @@ async def cb_select_pay_client(
     remaining_map = client_summary.remaining_by_currency if client_summary else {}
 
     if not any(amount > 0 for amount in remaining_map.values()):
-        await callback.message.edit_text(
-            f"👤 <b>{esc_html(client.full_name)}</b> ning hozirda qarzi yo'q (0)."
-        )
+        await callback.message.edit_text(_(
+            "👤 <b>{name}</b> ning hozirda qarzi yo'q (0).", name=esc_html(client.full_name)
+        ))
         await callback.answer()
         return
 
     await state.clear()
-    text = (
-        f"👤 <b>QARZ TO'LOVI:</b> <b>{esc_html(client.full_name)}</b>\n"
-        f"📞 <b>Telefon:</b> {esc_html(client.phone)}\n"
-        f"💳 <b>Joriy qarzi:</b> <b>🔴 {format_money_map(remaining_map)}</b>\n\n"
-        "<i>To'lov turini tanlang:</i>"
+    text = _(
+        "👤 <b>QARZ TO'LOVI:</b> <b>{name}</b>\n"
+        "📞 <b>Telefon:</b> {phone}\n"
+        "💳 <b>Joriy qarzi:</b> <b>🔴 {debt}</b>\n\n"
+        "<i>To'lov turini tanlang:</i>",
+        name=esc_html(client.full_name),
+        phone=esc_html(client.phone),
+        debt=format_money_map(remaining_map),
     )
     await callback.message.edit_text(
         text,
@@ -214,25 +221,27 @@ async def cb_pay_mode_full(
             payment_date=today,
         )
 
-        success_text = (
+        success_text = _(
             "✅ <b>TO'LOV MUVAFFAQIYATLI QABUL QILINDI!</b>\n\n"
-            f"👤 <b>Mijoz:</b> {esc_html(summary.client.full_name)}\n"
-            f"💰 <b>To'langan summa:</b> {format_money_map(paid_map)}\n"
-            "💳 <b>Joriy qarzi:</b> <b>🟢 0 (Qarzi to'liq yopildi)</b>"
+            "👤 <b>Mijoz:</b> {name}\n"
+            "💰 <b>To'langan summa:</b> {paid}\n"
+            "💳 <b>Joriy qarzi:</b> <b>🟢 0 (Qarzi to'liq yopildi)</b>",
+            name=esc_html(summary.client.full_name),
+            paid=format_money_map(paid_map),
         )
         await callback.message.edit_text(success_text)
         await callback.message.answer(
-            "Asosiy menyu:",
+            _("Asosiy menyu:"),
             reply_markup=get_main_menu_keyboard(settings.web_app_url),
         )
-        await callback.answer("Qarz to'liq yopildi!", show_alert=False)
+        await callback.answer(_("Qarz to'liq yopildi!"), show_alert=False)
 
     except Exception as exc:
         if isinstance(callback.message, Message):
             await callback.message.edit_text(
-                f"❌ <b>Xatolik yuz berdi:</b> {esc_html(str(exc))}"
+                _("❌ <b>Xatolik yuz berdi:</b> {error}", error=esc_html(str(exc)))
             )
-        await callback.answer("Xatolik yuz berdi.", show_alert=True)
+        await callback.answer(_("Xatolik yuz berdi."), show_alert=True)
 
 
 # ==========================================
@@ -253,7 +262,7 @@ async def cb_pay_mode_partial(
     client_id = int(callback.data.split(":")[1])
     client = await client_service.get_by_id(client_id)
     if client is None:
-        await callback.answer("Mijoz topilmadi.", show_alert=True)
+        await callback.answer(_("Mijoz topilmadi."), show_alert=True)
         return
 
     summaries = await client_service.get_debtor_summaries()
@@ -268,19 +277,23 @@ async def cb_pay_mode_partial(
     if len(owed) > 1:
         # Ikki valyutada ham qarzi bor — avval qaysi valyutada to'layotganini so'raymiz
         await callback.message.edit_text(
-            "🟡 <b>QISMAN QARZ TO'LOVI</b>\n\n"
-            f"👤 <b>Mijoz:</b> {esc_html(client.full_name)}\n"
-            f"💳 <b>Joriy qarzi:</b> <b>{format_money_map(remaining_map)}</b>\n\n"
-            "<i>Qaysi valyutada to'lov qilmoqchisiz?</i>",
+            _(
+                "🟡 <b>QISMAN QARZ TO'LOVI</b>\n\n"
+                "👤 <b>Mijoz:</b> {name}\n"
+                "💳 <b>Joriy qarzi:</b> <b>{debt}</b>\n\n"
+                "<i>Qaysi valyutada to'lov qilmoqchisiz?</i>",
+                name=esc_html(client.full_name),
+                debt=format_money_map(remaining_map),
+            ),
             reply_markup=get_payment_currency_keyboard(client_id, owed),
         )
         await callback.answer()
         return
 
     if not owed:
-        await callback.message.edit_text(
-            f"👤 <b>{esc_html(client.full_name)}</b> ning hozirda qarzi yo'q."
-        )
+        await callback.message.edit_text(_(
+            "👤 <b>{name}</b> ning hozirda qarzi yo'q.", name=esc_html(client.full_name)
+        ))
         await callback.answer()
         return
 
@@ -312,7 +325,7 @@ async def cb_pay_currency(
 
     client = await client_service.get_by_id(client_id)
     if client is None:
-        await callback.answer("Mijoz topilmadi.", show_alert=True)
+        await callback.answer(_("Mijoz topilmadi."), show_alert=True)
         return
 
     summaries = await client_service.get_debtor_summaries()
@@ -348,14 +361,22 @@ async def _ask_partial_amount(
         currency=currency.value,
         total_remaining=total_in_currency,
     )
-    currency_label = "So'mda" if currency == Currency.UZS else "Dollarda"
+    question = (
+        _("💰 <b>So'mda qancha summa to'ladi?</b>")
+        if currency == Currency.UZS
+        else _("💰 <b>Dollarda qancha summa to'ladi?</b>")
+    )
     example = "500 000" if currency == Currency.UZS else "200"
-    text = (
-        f"🟡 <b>QISMAN QARZ TO'LOVI</b>\n\n"
-        f"👤 <b>Mijoz:</b> {esc_html(client_name)}\n"
-        f"💳 <b>Joriy qarzi:</b> <b>{format_money_map(remaining_map)}</b>\n\n"
-        f"💰 <b>{currency_label} qancha summa to'ladi?</b>\n"
-        f"<i>Masalan: {example}</i>"
+    text = _(
+        "🟡 <b>QISMAN QARZ TO'LOVI</b>\n\n"
+        "👤 <b>Mijoz:</b> {name}\n"
+        "💳 <b>Joriy qarzi:</b> <b>{debt}</b>\n\n"
+        "{question}\n"
+        "<i>Masalan: {example}</i>",
+        name=esc_html(client_name),
+        debt=format_money_map(remaining_map),
+        question=question,
+        example=example,
     )
     await message.edit_text(
         text,
@@ -380,17 +401,23 @@ async def process_partial_amount(
 
     if amount is None or amount <= 0:
         await message.answer(
-            "⚠️ <b>Noto'g'ri summa!</b>\n\n"
-            "Iltimos, musbat son kiriting (masalan: <code>500 000</code>):",
+            _(
+                "⚠️ <b>Noto'g'ri summa!</b>\n\n"
+                "Iltimos, musbat son kiriting (masalan: <code>500 000</code>):"
+            ),
             reply_markup=get_payment_back_cancel_keyboard(client_id),
         )
         return
 
     if amount > total_remaining:
         await message.answer(
-            f"⚠️ <b>To'lov summasi ({format_money(amount, currency)}) mavjud qarzdan "
-            f"({format_money(total_remaining, currency)}) katta bo'lishi mumkin emas!</b>\n\n"
-            "Iltimos, qayta kiriting:",
+            _(
+                "⚠️ <b>To'lov summasi ({amount}) mavjud qarzdan ({debt}) "
+                "katta bo'lishi mumkin emas!</b>\n\n"
+                "Iltimos, qayta kiriting:",
+                amount=format_money(amount, currency),
+                debt=format_money(total_remaining, currency),
+            ),
             reply_markup=get_payment_back_cancel_keyboard(client_id),
         )
         return
@@ -407,26 +434,29 @@ async def process_partial_amount(
         )
 
         if not summary.has_debt:
-            result_text = (
+            result_text = _(
                 "✅ <b>TO'LOV MUVAFFAQIYATLI QABUL QILINDI!</b>\n\n"
-                f"👤 <b>{esc_html(client_name)}</b> "
-                f"{format_money(paid_amount, currency)} to'ladi.\n"
-                "💳 <b>Mijoz qarzini to'liq yopdi! Qoldiq qarz: 🟢 0.</b>"
+                "👤 <b>{name}</b> {paid} to'ladi.\n"
+                "💳 <b>Mijoz qarzini to'liq yopdi! Qoldiq qarz: 🟢 0.</b>",
+                name=esc_html(client_name),
+                paid=format_money(paid_amount, currency),
             )
         else:
-            result_text = (
+            result_text = _(
                 "✅ <b>TO'LOV MUVAFFAQIYATLI QABUL QILINDI!</b>\n\n"
-                f"👤 <b>Mijoz:</b> {esc_html(client_name)}\n"
-                f"💰 <b>To'langan summa:</b> {format_money(paid_amount, currency)}\n"
-                "💳 <b>Qolgan qarz:</b> <b>🔴 "
-                f"{format_money_map(summary.remaining_by_currency)}</b>"
+                "👤 <b>Mijoz:</b> {name}\n"
+                "💰 <b>To'langan summa:</b> {paid}\n"
+                "💳 <b>Qolgan qarz:</b> <b>🔴 {debt}</b>",
+                name=esc_html(client_name),
+                paid=format_money(paid_amount, currency),
+                debt=format_money_map(summary.remaining_by_currency),
             )
 
         await message.answer(result_text)
         await message.answer(
-            "Asosiy menyu:",
+            _("Asosiy menyu:"),
             reply_markup=get_main_menu_keyboard(settings.web_app_url),
         )
 
     except Exception as exc:
-        await message.answer(f"❌ <b>Xatolik yuz berdi:</b> {esc_html(str(exc))}")
+        await message.answer(_("❌ <b>Xatolik yuz berdi:</b> {error}", error=esc_html(str(exc))))

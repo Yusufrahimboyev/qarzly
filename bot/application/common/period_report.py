@@ -27,6 +27,7 @@ from bot.domain.entities.period_report import (
     TopDebtorRow,
 )
 from bot.domain.entities.report import MoneyMap
+from bot.i18n import _
 
 TOP_DEBTORS_LIMIT = 10
 
@@ -81,14 +82,16 @@ def validate_period_bounds(
     Boshlanish sanasi tugash sanasidan keyin bo'lishi ham mumkin emas.
     """
     if date_to > today:
-        return (
+        return _(
             "Tugash sanasi bugundan keyin bo'lishi mumkin emas.\n"
-            f"Eng kech sana: <b>{today:%d.%m.%Y}</b>"
+            "Eng kech sana: <b>{date}</b>",
+            date=f"{today:%d.%m.%Y}",
         )
     if date_from > date_to:
-        return (
+        return _(
             "Boshlanish sanasi tugash sanasidan keyin bo'lishi mumkin emas.\n"
-            f"Boshlanish sanasi: <b>{date_from:%d.%m.%Y}</b>"
+            "Boshlanish sanasi: <b>{date}</b>",
+            date=f"{date_from:%d.%m.%Y}",
         )
     return None
 
@@ -217,7 +220,7 @@ def _count_debtors(active_totals: dict[int, dict[str, tuple[int, int]]]) -> int:
     return sum(
         1
         for totals in active_totals.values()
-        if any(remaining > 0 for remaining, _ in totals.values())
+        if any(remaining > 0 for remaining, _count in totals.values())
     )
 
 

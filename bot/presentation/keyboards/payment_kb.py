@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.application.common.formatters import clip_button_text, format_money_map
 from bot.domain.entities.currency import Currency
 from bot.domain.entities.report import ClientDebtSummary
+from bot.i18n import _
 
 
 def get_debtors_list_keyboard(
@@ -48,7 +49,7 @@ def get_debtors_list_keyboard(
     if current_page > 1:
         nav_buttons.append(
             InlineKeyboardButton(
-                text="⬅️ Oldingi",
+                text=_("⬅️ Oldingi"),
                 callback_data=f"pay_page:{current_page - 1}",
             )
         )
@@ -63,7 +64,7 @@ def get_debtors_list_keyboard(
     if current_page < total_pages:
         nav_buttons.append(
             InlineKeyboardButton(
-                text="Keyingi ➡️",
+                text=_("Keyingi ➡️"),
                 callback_data=f"pay_page:{current_page + 1}",
             )
         )
@@ -82,24 +83,27 @@ def get_payment_type_keyboard(
             [
                 InlineKeyboardButton(
                     text=clip_button_text(
-                        f"🟢 Qarzini to'liq yopish ({format_money_map(remaining_by_currency)})"
+                        _(
+                            "🟢 Qarzini to'liq yopish ({amount})",
+                            amount=format_money_map(remaining_by_currency),
+                        )
                     ),
                     callback_data=f"pay_mode_full:{client_id}",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="🟡 Ma'lum miqdorini to'lash",
+                    text=_("🟡 Ma'lum miqdorini to'lash"),
                     callback_data=f"pay_mode_partial:{client_id}",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 Ortga",
+                    text=_("🔙 Ortga"),
                     callback_data="back_to_pay_debtors",
                 ),
                 InlineKeyboardButton(
-                    text="❌ Bekor qilish",
+                    text=_("❌ Bekor qilish"),
                     callback_data="cancel_payment",
                 ),
             ],
@@ -114,7 +118,7 @@ def get_payment_currency_keyboard(
     """Qisman to'lov uchun valyuta tanlash (faqat qarzi bor valyutalar)."""
     buttons = [
         InlineKeyboardButton(
-            text="💵 So'mda" if currency == Currency.UZS else "$ Dollarda",
+            text=_("💵 So'mda") if currency == Currency.UZS else _("$ Dollarda"),
             callback_data=f"pay_currency:{client_id}:{currency.value}",
         )
         for currency in currencies
@@ -125,11 +129,11 @@ def get_payment_currency_keyboard(
             buttons,
             [
                 InlineKeyboardButton(
-                    text="🔙 Ortga",
+                    text=_("🔙 Ortga"),
                     callback_data=f"select_pay_client:{client_id}",
                 ),
                 InlineKeyboardButton(
-                    text="❌ Bekor qilish",
+                    text=_("❌ Bekor qilish"),
                     callback_data="cancel_payment",
                 ),
             ],
@@ -143,11 +147,11 @@ def get_payment_back_cancel_keyboard(client_id: int) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔙 Ortga",
+                    text=_("🔙 Ortga"),
                     callback_data=f"select_pay_client:{client_id}",
                 ),
                 InlineKeyboardButton(
-                    text="❌ Bekor qilish",
+                    text=_("❌ Bekor qilish"),
                     callback_data="cancel_payment",
                 ),
             ]

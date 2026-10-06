@@ -9,6 +9,7 @@ from bot.domain.entities.client import Client
 from bot.domain.entities.report import ClientDebtSummary
 from bot.domain.repositories.client_repository import ClientRepository
 from bot.domain.repositories.debt_repository import DebtRepository
+from bot.i18n import _
 
 
 class ClientService:
@@ -40,7 +41,7 @@ class ClientService:
         """
         clean_name = full_name.strip()
         if not clean_name:
-            raise ValueError("Mijoz ismi bo'sh bo'lishi mumkin emas.")
+            raise ValueError(_("Mijoz ismi bo'sh bo'lishi mumkin emas."))
         clean_phone = normalize_phone(phone)
 
         if clean_phone:

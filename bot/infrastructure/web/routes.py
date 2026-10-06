@@ -37,10 +37,12 @@ from bot.domain.entities.debt import (
     MAX_QUANTITY,
     DebtProduct,
 )
+from bot.i18n import DEFAULT_LANGUAGE, LANGUAGES, _, set_language
 from bot.infrastructure.branches import Branch, BranchRegistry
 from bot.infrastructure.database.repositories.idempotency_repository import (
     IdempotencyStore,
 )
+from bot.infrastructure.database.repositories.language_repository import LanguageStore
 from bot.infrastructure.web.telegram_auth import TG_USER_KEY
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,7 @@ BRANCH_REGISTRY_KEY: web.AppKey[BranchRegistry] = web.AppKey(
     "branch_registry", BranchRegistry
 )
 BRANCH_KEY: web.RequestKey[Branch] = web.RequestKey("branch", Branch)
+LANGUAGE_STORE_KEY: web.AppKey[LanguageStore] = web.AppKey("language_store", LanguageStore)
 
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 BRANCH_HEADER = "X-Branch"
@@ -154,7 +157,7 @@ async def branch_middleware(request: web.Request, handler):
         code = request.headers.get(BRANCH_HEADER, "").strip().lower()
         branch = registry.get(code) if code else registry.default
         if branch is None:
-            return web.json_response({"error": "Noma'lum filial."}, status=400)
+            return web.json_response({"error": _("Noma'lum filial.")}, status=400)
         request[BRANCH_KEY] = branch
     return await handler(request)
 
@@ -190,7 +193,9 @@ def _validation_error_response(val_err: ValidationError) -> web.Response:
     first_err = val_err.errors()[0]
     field_name = " -> ".join(str(loc) for loc in first_err["loc"])
     return web.json_response(
-        {"error": f"Noto'g'ri ma'lumot ({field_name}): {first_err['msg']}"},
+        {"error": _(
+            "Noto'g'ri ma'lumot ({field}): {message}", field=field_name, message=first_err["msg"]
+        )},
         status=400,
     )
 
@@ -249,7 +254,7 @@ class _IdempotencyGuard:
             return web.json_response(text=stored, content_type="application/json")
 
         return web.json_response(
-            {"error": "Bir xil so'rov hozir bajarilmoqda. Biroz kuting."},
+            {"error": _("Bir xil so'rov hozir bajarilmoqda. Biroz kuting.")},
             status=409,
         )
 
@@ -390,6 +395,43 @@ def _debt_row_to_dict(debt, client_names: dict[int, str]) -> dict:
     }
 
 
+@web.middleware
+async def language_middleware(request: web.Request, handler):
+    """API javoblaridagi xabarlar foydalanuvchi tanlagan tilda bo'lishi uchun."""
+    store = request.app.get(LANGUAGE_STORE_KEY)
+    actor = _actor_id(request)
+    set_language(await store.get(actor) if store is not None and actor is not None else None)
+    return await handler(request)
+
+
+async def api_get_settings(request: web.Request) -> web.Response:
+    """Foydalanuvchi sozlamalari (bot bilan umumiy til)."""
+    store = request.app.get(LANGUAGE_STORE_KEY)
+    actor = _actor_id(request)
+    language = await store.get(actor) if store is not None and actor is not None else None
+    return web.json_response({
+        "language": language if language in LANGUAGES else DEFAULT_LANGUAGE,
+        "languages": LANGUAGES,
+    })
+
+
+async def api_put_settings(request: web.Request) -> web.Response:
+    """Interfeys tilini saqlaydi (bot ham shu tilga o'tadi)."""
+    store = request.app.get(LANGUAGE_STORE_KEY)
+    actor = _actor_id(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    language = body.get("language") if isinstance(body, dict) else None
+    if language not in LANGUAGES:
+        return web.json_response({"error": _("Noma'lum til")}, status=400)
+    if store is None or actor is None:
+        return web.json_response({"error": _("Sozlamani saqlab bo'lmadi")}, status=400)
+    await store.set(actor, language)
+    return web.json_response({"ok": True, "language": language})
+
+
 async def api_get_branches(request: web.Request) -> web.Response:
     """Mini App filial tanlagichi uchun filiallar ro'yxati."""
     registry = request.app.get(BRANCH_REGISTRY_KEY)
@@ -447,7 +489,7 @@ async def api_get_client_report(request: web.Request) -> web.Response:
     client_id_str = request.match_info.get("id")
 
     if not client_id_str or not client_id_str.isdigit():
-        return web.json_response({"error": "Noto'g'ri client ID"}, status=400)
+        return web.json_response({"error": _("Noto'g'ri client ID")}, status=400)
 
     client_id = int(client_id_str)
     try:
@@ -511,7 +553,7 @@ async def api_create_debt(request: web.Request) -> web.Response:
     try:
         raw_body = await request.json()
     except Exception:
-        return web.json_response({"error": "Yaroqsiz JSON format"}, status=400)
+        return web.json_response({"error": _("Yaroqsiz JSON format")}, status=400)
 
     try:
         dto = CreateDebtDTO.model_validate(raw_body)
@@ -523,7 +565,7 @@ async def api_create_debt(request: web.Request) -> web.Response:
 
     if client_phone and not is_valid_phone(client_phone):
         return web.json_response(
-            {"error": "Telefon raqami noto'g'ri (masalan: +998901234567)"},
+            {"error": _("Telefon raqami noto'g'ri (masalan: +998901234567)")},
             status=400,
         )
 
@@ -531,7 +573,7 @@ async def api_create_debt(request: web.Request) -> web.Response:
         debt_date = parse_date(dto.debt_date)
         if debt_date is None:
             return web.json_response(
-                {"error": "Sana formati noto'g'ri (DD.MM.YYYY, masalan: 17.08.2026)"},
+                {"error": _("Sana formati noto'g'ri (DD.MM.YYYY, masalan: 17.08.2026)")},
                 status=400,
             )
     else:
@@ -542,7 +584,7 @@ async def api_create_debt(request: web.Request) -> web.Response:
         given_currency = Currency(dto.given_currency.upper())
     except ValueError:
         return web.json_response(
-            {"error": "Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak)"},
+            {"error": _("Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak)")},
             status=400,
         )
 
@@ -555,7 +597,7 @@ async def api_create_debt(request: web.Request) -> web.Response:
                 p_cur = Currency(p.currency.upper())
             except ValueError:
                 return web.json_response(
-                    {"error": f"{idx + 1}-tovar valyutasi noto'g'ri (UZS yoki USD)"},
+                    {"error": _("{num}-tovar valyutasi noto'g'ri (UZS yoki USD)", num=idx + 1)},
                     status=400,
                 )
             products.append(
@@ -568,10 +610,10 @@ async def api_create_debt(request: web.Request) -> web.Response:
             )
     else:
         if not dto.product_name:
-            return web.json_response({"error": "Tovar nomi kiritilmadi"}, status=400)
+            return web.json_response({"error": _("Tovar nomi kiritilmadi")}, status=400)
         if dto.product_price <= 0:
             return web.json_response(
-                {"error": "Tovar narxi 0 dan katta bo'lishi kerak"}, status=400
+                {"error": _("Tovar narxi 0 dan katta bo'lishi kerak")}, status=400
             )
 
     exchanges: list[DebtProduct] = []
@@ -580,7 +622,7 @@ async def api_create_debt(request: web.Request) -> web.Response:
             e_cur = Currency(e.currency.upper())
         except ValueError:
             return web.json_response(
-                {"error": f"{idx + 1}-exchange valyutasi noto'g'ri (UZS yoki USD)"},
+                {"error": _("{num}-exchange valyutasi noto'g'ri (UZS yoki USD)", num=idx + 1)},
                 status=400,
             )
         exchanges.append(
@@ -598,13 +640,13 @@ async def api_create_debt(request: web.Request) -> web.Response:
         return early
 
     try:
-        client, _ = await client_service.get_or_create(
+        client, _created = await client_service.get_or_create(
             full_name=client_name,
             phone=client_phone,
         )
         if client.id is None:
             await guard.release()
-            return web.json_response({"error": "Mijoz yaratishda xatolik"}, status=500)
+            return web.json_response({"error": _("Mijoz yaratishda xatolik")}, status=500)
 
         ex_name = dto.exchange_product_name or None
         if products:
@@ -674,7 +716,7 @@ async def api_create_debt(request: web.Request) -> web.Response:
             "Qarz yaratishda kutilmagan xatolik (actor_id=%s)", _actor_id(request)
         )
         return web.json_response(
-            {"error": "Serverda kutilmagan xatolik yuz berdi. Keyinroq urinib ko'ring."},
+            {"error": _("Serverda kutilmagan xatolik yuz berdi. Keyinroq urinib ko'ring.")},
             status=500,
         )
 
@@ -686,7 +728,7 @@ async def api_make_payment(request: web.Request) -> web.Response:
     try:
         raw_body = await request.json()
     except Exception:
-        return web.json_response({"error": "Yaroqsiz JSON format"}, status=400)
+        return web.json_response({"error": _("Yaroqsiz JSON format")}, status=400)
 
     try:
         dto = MakePaymentDTO.model_validate(raw_body)
@@ -697,7 +739,7 @@ async def api_make_payment(request: web.Request) -> web.Response:
         currency = Currency(dto.currency.upper())
     except ValueError:
         return web.json_response(
-            {"error": "Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak)"}, status=400
+            {"error": _("Valyuta noto'g'ri (UZS yoki USD bo'lishi kerak)")}, status=400
         )
 
     payment_type = dto.payment_type.lower()
@@ -705,7 +747,7 @@ async def api_make_payment(request: web.Request) -> web.Response:
         payment_date = parse_date(dto.payment_date)
         if payment_date is None:
             return web.json_response(
-                {"error": "To'lov sanasi noto'g'ri (DD.MM.YYYY)"},
+                {"error": _("To'lov sanasi noto'g'ri (DD.MM.YYYY)")},
                 status=400,
             )
     else:
@@ -713,11 +755,11 @@ async def api_make_payment(request: web.Request) -> web.Response:
 
     if payment_type not in ("full", "partial"):
         return web.json_response(
-            {"error": "To'lov turi noto'g'ri (full yoki partial)"}, status=400
+            {"error": _("To'lov turi noto'g'ri (full yoki partial)")}, status=400
         )
     if payment_type == "partial" and dto.amount <= 0:
         return web.json_response(
-            {"error": "To'lov summasi 0 dan katta bo'lishi kerak"}, status=400
+            {"error": _("To'lov summasi 0 dan katta bo'lishi kerak")}, status=400
         )
 
     guard = _IdempotencyGuard(request, "make_payment")
@@ -765,7 +807,7 @@ async def api_make_payment(request: web.Request) -> web.Response:
             "To'lov qilishda kutilmagan xatolik (actor_id=%s)", _actor_id(request)
         )
         return web.json_response(
-            {"error": "Serverda kutilmagan xatolik yuz berdi. Keyinroq urinib ko'ring."},
+            {"error": _("Serverda kutilmagan xatolik yuz berdi. Keyinroq urinib ko'ring.")},
             status=500,
         )
 
@@ -801,7 +843,7 @@ async def _read_debt_ids(request: web.Request) -> tuple[list[int] | None, web.Re
     try:
         body = await request.json()
     except Exception:
-        return None, web.json_response({"error": "Yaroqsiz JSON format"}, status=400)
+        return None, web.json_response({"error": _("Yaroqsiz JSON format")}, status=400)
 
     try:
         dto = DebtIdsDTO.model_validate(body)
@@ -810,7 +852,7 @@ async def _read_debt_ids(request: web.Request) -> tuple[list[int] | None, web.Re
 
     if not all(i > 0 for i in dto.debt_ids):
         return None, web.json_response(
-            {"error": "Barcha debt_ids musbat butun son bo'lishi kerak"}, status=400
+            {"error": _("Barcha debt_ids musbat butun son bo'lishi kerak")}, status=400
         )
     return dto.debt_ids, None
 
@@ -832,7 +874,7 @@ async def api_trash_move(request: web.Request) -> web.Response:
     except Exception:
         logger.exception("Korzinaga ko'chirishda xatolik")
         return web.json_response(
-            {"error": "Serverda kutilmagan xatolik"}, status=500
+            {"error": _("Serverda kutilmagan xatolik")}, status=500
         )
 
 
@@ -869,7 +911,7 @@ async def api_trash_restore(request: web.Request) -> web.Response:
     except Exception:
         logger.exception("Korzinadan qaytarishda xatolik")
         return web.json_response(
-            {"error": "Serverda kutilmagan xatolik"}, status=500
+            {"error": _("Serverda kutilmagan xatolik")}, status=500
         )
 
 
@@ -887,7 +929,7 @@ async def api_trash_purge(request: web.Request) -> web.Response:
     except Exception:
         logger.exception("Korzinani tozalashda xatolik")
         return web.json_response(
-            {"error": "Serverda kutilmagan xatolik"}, status=500
+            {"error": _("Serverda kutilmagan xatolik")}, status=500
         )
 
 
@@ -899,6 +941,8 @@ def setup_routes(app: web.Application) -> None:
 
     # REST APIs — asosiy
     app.router.add_get("/api/branches", api_get_branches)
+    app.router.add_get("/api/settings", api_get_settings)
+    app.router.add_put("/api/settings", api_put_settings)
     app.router.add_get("/api/stats", api_get_stats)
     app.router.add_get("/api/summaries", api_get_summaries)
     app.router.add_get("/api/debtors", api_get_debtors)

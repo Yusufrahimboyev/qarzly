@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import MAX_MONEY
+from bot.i18n import _
 
 
 def esc_html(text: object) -> str:
@@ -80,9 +81,7 @@ def to_date(value: date | datetime | str) -> date:
         return value
     parsed = parse_date(str(value))
     if parsed is None:
-        raise ValueError(
-            "Sana formati noto'g'ri (DD.MM.YYYY, masalan: 17.08.2026)."
-        )
+        raise ValueError(_("Sana formati noto'g'ri (DD.MM.YYYY, masalan: 17.08.2026)."))
     return parsed
 
 
@@ -96,7 +95,7 @@ def format_money(amount: int | float, currency: str | Currency = Currency.UZS) -
     cur = str(currency)
     if cur == Currency.USD.value:
         return f"{formatted} $"
-    return f"{formatted} so'm"
+    return formatted + " " + _("so'm")
 
 
 def format_money_map(amounts: dict[str, int]) -> str:

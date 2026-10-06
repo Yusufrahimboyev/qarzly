@@ -24,6 +24,7 @@ from bot.application.common.voice_parser import VoiceParseError
 from bot.application.services.client_service import ClientService
 from bot.application.services.voice_debt_service import VoiceDebtService, client_label
 from bot.domain.entities.debt import DebtProduct
+from bot.i18n import N_, _
 from bot.presentation.keyboards.creation_kb import (
     get_more_products_keyboard,
     get_product_currency_keyboard,
@@ -37,7 +38,7 @@ router = Router()
 MAX_VOICE_SECONDS = 60
 _MAX_SWITCH_BUTTONS = 3
 
-_USAGE_HINT = (
+_USAGE_HINT = N_(
     "<i>Masalan: «Anvarga ikkita shina besh yuz ming so'mdan» yoki "
     "«Alisherga akkumulyator 120 dollar»</i>"
 )
@@ -52,17 +53,17 @@ async def process_voice_debt(
 ) -> None:
     """Ovozli xabardan qarz qoralamasini tayyorlab, ustaga uzatadi."""
     if voice_debt_service is None:
-        await message.answer("🎙 Ovozli xabar orqali qarz qo'shish sozlanmagan.")
+        await message.answer(_("🎙 Ovozli xabar orqali qarz qo'shish sozlanmagan."))
         return
     if message.voice is None:
         return
     if message.voice.duration > MAX_VOICE_SECONDS:
-        await message.answer(
-            f"⚠️ Ovozli xabar {MAX_VOICE_SECONDS} soniyadan oshmasligi kerak."
-        )
+        await message.answer(_(
+            "⚠️ Ovozli xabar {seconds} soniyadan oshmasligi kerak.", seconds=MAX_VOICE_SECONDS
+        ))
         return
 
-    status = await message.answer("🎙 Ovozli xabar tahlil qilinmoqda...")
+    status = await message.answer(_("🎙 Ovozli xabar tahlil qilinmoqda..."))
 
     try:
         audio = await bot.download(message.voice)
@@ -71,29 +72,32 @@ async def process_voice_debt(
         transcript = await voice_debt_service.transcribe(audio.read())
     except Exception:
         logger.exception("Ovozli xabarni matnga o'girishda xatolik")
-        await status.edit_text(
+        await status.edit_text(_(
             "❌ <b>Ovozni matnga o'girib bo'lmadi.</b>\n\n"
             "Keyinroq urinib ko'ring yoki '➕ Yaratish' orqali qo'lda kiriting."
-        )
+        ))
         return
 
-    heard = f"🎙 <b>Eshitildi:</b> «{esc_html(transcript)}»\n\n"
+    heard = _("🎙 <b>Eshitildi:</b> «{text}»", text=esc_html(transcript)) + "\n\n"
     try:
         voice_debt = await voice_debt_service.prepare(transcript)
     except VoiceParseError as exc:
-        await status.edit_text(f"{heard}⚠️ <b>{esc_html(exc)}</b>\n\n{_USAGE_HINT}")
+        await status.edit_text(f"{heard}⚠️ <b>{esc_html(exc)}</b>\n\n{_(_USAGE_HINT)}")
         return
 
     draft = voice_debt.draft
     client_line = (
-        f"👤 <b>Mijoz:</b> {esc_html(voice_debt.client_name)}"
+        _("👤 <b>Mijoz:</b> {name}", name=esc_html(voice_debt.client_name))
         + (f" ({esc_html(voice_debt.client_phone)})" if voice_debt.client_phone else "")
-        + (" — <i>mavjud mijoz</i>" if voice_debt.is_existing_client else " — <i>yangi mijoz</i>")
+        + (_(" — <i>mavjud mijoz</i>") if voice_debt.is_existing_client
+           else _(" — <i>yangi mijoz</i>"))
         + "\n"
     )
     similar = voice_debt.similar_clients[:_MAX_SWITCH_BUTTONS]
     if similar:
-        client_line += "⚠️ <i>O'xshash mijozlar ham bor — to'g'risi boshqa bo'lsa, tanlang.</i>\n"
+        client_line += _(
+            "⚠️ <i>O'xshash mijozlar ham bor — to'g'risi boshqa bo'lsa, tanlang.</i>"
+        ) + "\n"
     switch_rows = [
         [
             InlineKeyboardButton(
@@ -120,9 +124,13 @@ async def process_voice_debt(
         await state.set_state(DebtCreationStates.waiting_product_currency)
         await status.edit_text(
             f"{heard}{client_line}"
-            f"📦 <b>Tovar:</b> {esc_html(draft.product_name)} — "
-            f"{draft.quantity} × {price}\n\n"
-            "💱 <b>Narx qaysi valyutada?</b>",
+            + _(
+                "📦 <b>Tovar:</b> {name} — {quantity} × {price}\n\n"
+                "💱 <b>Narx qaysi valyutada?</b>",
+                name=esc_html(draft.product_name),
+                quantity=draft.quantity,
+                price=price,
+            ),
             reply_markup=_with_rows(switch_rows, get_product_currency_keyboard()),
         )
         return
@@ -137,10 +145,14 @@ async def process_voice_debt(
     await state.set_state(DebtCreationStates.waiting_more_products)
     await status.edit_text(
         f"{heard}{client_line}"
-        f"✅ <b>Qo'shildi:</b> {esc_html(product.name)} — {product.quantity} × "
-        f"{format_money(product.price_per_unit, product.currency)} = "
-        f"{format_money(product.total_price, product.currency)}\n\n"
-        "➕ <b>Yana tovar qo'shasizmi?</b>",
+        + _(
+            "✅ <b>Qo'shildi:</b> {name} — {quantity} × {price} = {total}\n\n"
+            "➕ <b>Yana tovar qo'shasizmi?</b>",
+            name=esc_html(product.name),
+            quantity=product.quantity,
+            price=format_money(product.price_per_unit, product.currency),
+            total=format_money(product.total_price, product.currency),
+        ),
         reply_markup=_with_rows(switch_rows, get_more_products_keyboard()),
     )
 
@@ -165,7 +177,7 @@ async def cb_voice_switch_client(
         else None
     )
     if client is None:
-        await callback.answer("Mijoz topilmadi.", show_alert=True)
+        await callback.answer(_("Mijoz topilmadi."), show_alert=True)
         return
 
     await state.update_data(client_name=client.full_name, client_phone=client.phone)
@@ -178,9 +190,9 @@ async def cb_voice_switch_client(
             if waiting_currency
             else get_more_products_keyboard()
         )
-        await callback.message.answer(
-            f"👤 <b>Mijoz o'zgartirildi:</b> {esc_html(client_label(client))}"
-        )
+        await callback.message.answer(_(
+            "👤 <b>Mijoz o'zgartirildi:</b> {name}", name=esc_html(client_label(client))
+        ))
     await callback.answer()
 
 

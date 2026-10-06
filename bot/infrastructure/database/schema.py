@@ -28,6 +28,15 @@ CREATE TABLE IF NOT EXISTS user_branch (
 );
 """
 
+# Foydalanuvchi interfeys tili — bot va Mini App uchun umumiy (asosiy bazada).
+CREATE_USER_SETTINGS_TABLE = """
+CREATE TABLE IF NOT EXISTS user_settings (
+    telegram_id BIGINT PRIMARY KEY,
+    language    TEXT NOT NULL,
+    updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+"""
+
 CREATE_CLIENTS_TABLE = """
 CREATE TABLE IF NOT EXISTS clients (
     id          BIGSERIAL PRIMARY KEY,
@@ -194,6 +203,7 @@ CREATE_INDEX_IDEMPOTENCY_CREATED = (
 SCHEMA: tuple[str, ...] = (
     CREATE_USERS_TABLE,
     CREATE_USER_BRANCH_TABLE,
+    CREATE_USER_SETTINGS_TABLE,
     CREATE_CLIENTS_TABLE,
     CREATE_DEBTS_TABLE,
     CREATE_PAYMENTS_TABLE,

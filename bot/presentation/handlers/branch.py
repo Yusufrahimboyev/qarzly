@@ -8,6 +8,7 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.application.common.formatters import esc_html
 from bot.core.config import Settings
+from bot.i18n import _, all_variants
 from bot.infrastructure.branches import Branch, BranchRegistry
 from bot.infrastructure.database.repositories.branch_preference_repository import (
     BranchPreferenceStore,
@@ -22,7 +23,7 @@ router = Router()
 
 
 @router.message(Command("branch"))
-@router.message(F.text == BRANCH_BUTTON_TEXT)
+@router.message(F.text.in_(all_variants(BRANCH_BUTTON_TEXT)))
 async def show_branches(
     message: Message,
     state: FSMContext,
@@ -32,9 +33,12 @@ async def show_branches(
     """Filiallar ro'yxatini ko'rsatadi (joriysi belgilangan)."""
     await state.clear()
     await message.answer(
-        f"🏢 <b>Joriy filial:</b> {esc_html(branch.title)}\n\n"
-        "Almashtirish uchun filialni tanlang. Har filialning ma'lumotlari "
-        "alohida saqlanadi:",
+        _(
+            "🏢 <b>Joriy filial:</b> {branch}\n\n"
+            "Almashtirish uchun filialni tanlang. Har filialning ma'lumotlari "
+            "alohida saqlanadi:",
+            branch=esc_html(branch.title),
+        ),
         reply_markup=get_branch_keyboard(
             [(b.code, b.title) for b in branch_registry], branch.code
         ),
@@ -52,7 +56,7 @@ async def cb_select_branch(
     """Tanlangan filialni saqlaydi va jarayonlarni (FSM) tozalaydi."""
     selected = branch_registry.get((callback.data or "").split(":", 1)[1])
     if selected is None:
-        await callback.answer("Noma'lum filial.", show_alert=True)
+        await callback.answer(_("Noma'lum filial."), show_alert=True)
         return
 
     # Yarim qolgan qarz/to'lov jarayoni boshqa filialga o'tib ketmasligi uchun.
@@ -61,10 +65,10 @@ async def cb_select_branch(
 
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
-            f"✅ <b>Filial almashtirildi:</b> {esc_html(selected.title)}"
+            _("✅ <b>Filial almashtirildi:</b> {branch}", branch=esc_html(selected.title))
         )
         await callback.message.answer(
-            f"🏢 Endi <b>{esc_html(selected.title)}</b> filiali bilan ishlaysiz.",
+            _("🏢 Endi <b>{branch}</b> filiali bilan ishlaysiz.", branch=esc_html(selected.title)),
             reply_markup=get_main_menu_keyboard(settings.web_app_url),
         )
     await callback.answer()

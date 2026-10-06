@@ -12,9 +12,12 @@ from aiohttp import web
 
 from bot.core.config import Settings
 from bot.infrastructure.branches import BranchRegistry
+from bot.infrastructure.database.repositories.language_repository import LanguageStore
 from bot.infrastructure.web.routes import (
     BRANCH_REGISTRY_KEY,
+    LANGUAGE_STORE_KEY,
     branch_middleware,
+    language_middleware,
     setup_routes,
     static_cache_middleware,
 )
@@ -33,10 +36,12 @@ class WebServer:
         self,
         registry: BranchRegistry,
         settings: Settings,
+        language_store: LanguageStore,
         host: str = "0.0.0.0",
         port: int = 8080,
     ) -> None:
         self._registry = registry
+        self._language_store = language_store
         self._settings = settings
         self._host = host
         self._port = port
@@ -56,9 +61,11 @@ class WebServer:
                     max_age_seconds=self._settings.init_data_max_age_seconds,
                 ),
                 branch_middleware,
+                language_middleware,
             ]
         )
         app[BRANCH_REGISTRY_KEY] = self._registry
+        app[LANGUAGE_STORE_KEY] = self._language_store
 
         setup_routes(app)
 

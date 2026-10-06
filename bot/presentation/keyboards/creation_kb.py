@@ -4,12 +4,15 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.application.common.formatters import clip_button_text, today_str
+from bot.i18n import _
 from bot.presentation.common.product_catalog import MONTHS, PRODUCT_TYPES
 
-_BACK_CANCEL_ROW = [
-    InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
-    InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
-]
+
+def _back_cancel_row() -> list[InlineKeyboardButton]:
+    return [
+        InlineKeyboardButton(text=_("🔙 Ortga"), callback_data="create_back"),
+        InlineKeyboardButton(text=_("❌ Bekor qilish"), callback_data="cancel_creation"),
+    ]
 
 
 def get_date_picker_keyboard() -> InlineKeyboardMarkup:
@@ -23,14 +26,14 @@ def get_date_picker_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"📅 Bugun ({today})",
+                    text=_("📅 Bugun ({date})", date=today),
                     callback_data="create_date_today",
                 )
             ],
             *[days[i:i + 7] for i in range(0, len(days), 7)],
             [
                 InlineKeyboardButton(
-                    text="❌ Bekor qilish",
+                    text=_("❌ Bekor qilish"),
                     callback_data="cancel_creation",
                 )
             ],
@@ -41,11 +44,11 @@ def get_date_picker_keyboard() -> InlineKeyboardMarkup:
 def get_month_keyboard() -> InlineKeyboardMarkup:
     """Oy tanlash: 'Yanvar (01)' ... 'Dekabr (12)'."""
     months = [
-        InlineKeyboardButton(text=f"{name} ({i:02d})", callback_data=f"dmon:{i}")
+        InlineKeyboardButton(text=f"{_(name)} ({i:02d})", callback_data=f"dmon:{i}")
         for i, name in enumerate(MONTHS, start=1)
     ]
     return InlineKeyboardMarkup(
-        inline_keyboard=[*[months[i:i + 3] for i in range(0, 12, 3)], _BACK_CANCEL_ROW]
+        inline_keyboard=[*[months[i:i + 3] for i in range(0, 12, 3)], _back_cancel_row()]
     )
 
 
@@ -54,7 +57,7 @@ def get_year_keyboard(years: list[int]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=str(y), callback_data=f"dyear:{y}") for y in years],
-            _BACK_CANCEL_ROW,
+            _back_cancel_row(),
         ]
     )
 
@@ -65,12 +68,12 @@ def get_numpad_keyboard(with_thousands: bool = False) -> InlineKeyboardMarkup:
         return InlineKeyboardButton(text=text, callback_data=f"np:{value}")
 
     rows = [[key(str(n), str(n)) for n in range(r, r + 3)] for r in (1, 4, 7)]
-    rows.append([key("⬅️ O'chirish", "del"), key("0", "0"), key("🗑 Tozalash", "clr")])
-    last = [key("✅ Tayyor", "ok")]
+    rows.append([key(_("⬅️ O'chirish"), "del"), key("0", "0"), key(_("🗑 Tozalash"), "clr")])
+    last = [key(_("✅ Tayyor"), "ok")]
     if with_thousands:
         last.insert(0, key("000", "000"))
     rows.append(last)
-    rows.append(_BACK_CANCEL_ROW)
+    rows.append(_back_cancel_row())
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -79,10 +82,10 @@ def get_product_type_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text=label, callback_data=f"ptype:{key}")
+                InlineKeyboardButton(text=_(label), callback_data=f"ptype:{key}")
                 for key, label in PRODUCT_TYPES.items()
             ],
-            _BACK_CANCEL_ROW,
+            _back_cancel_row(),
         ]
     )
 
@@ -96,8 +99,10 @@ def get_brand_keyboard(brands: list[str]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             *[buttons[i:i + 3] for i in range(0, len(buttons), 3)],
-            [InlineKeyboardButton(text="✍️ Boshqa (qo'lda yozish)", callback_data="pbrand:other")],
-            _BACK_CANCEL_ROW,
+            [InlineKeyboardButton(
+                text=_("✍️ Boshqa (qo'lda yozish)"), callback_data="pbrand:other",
+            )],
+            _back_cancel_row(),
         ]
     )
 
@@ -109,7 +114,7 @@ def get_akkum_size_keyboard(sizes: list[str]) -> InlineKeyboardMarkup:
         for i, size in enumerate(sizes)
     ]
     return InlineKeyboardMarkup(
-        inline_keyboard=[*[buttons[i:i + 3] for i in range(0, len(buttons), 3)], _BACK_CANCEL_ROW]
+        inline_keyboard=[*[buttons[i:i + 3] for i in range(0, len(buttons), 3)], _back_cancel_row()]
     )
 
 
@@ -124,7 +129,7 @@ def get_edit_products_keyboard(names: list[str], prefix: str = "edit") -> Inline
                 )]
                 for i, name in enumerate(names, start=1)
             ],
-            [InlineKeyboardButton(text="🔙 Ortga", callback_data=f"{prefix}_back")],
+            [InlineKeyboardButton(text=_("🔙 Ortga"), callback_data=f"{prefix}_back")],
         ]
     )
 
@@ -134,12 +139,12 @@ def get_edit_product_actions_keyboard(index: int, prefix: str = "edit") -> Inlin
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"{prefix}_del:{index}"),
+                InlineKeyboardButton(text=_("🗑 O'chirish"), callback_data=f"{prefix}_del:{index}"),
                 InlineKeyboardButton(
-                    text="🔄 Qayta kiritish", callback_data=f"{prefix}_redo:{index}"
+                    text=_("🔄 Qayta kiritish"), callback_data=f"{prefix}_redo:{index}"
                 ),
             ],
-            [InlineKeyboardButton(text="🔙 Ortga", callback_data=f"{prefix}_products")],
+            [InlineKeyboardButton(text=_("🔙 Ortga"), callback_data=f"{prefix}_products")],
         ]
     )
 
@@ -149,11 +154,11 @@ def get_exchange_more_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(
-                text="➕ Yana exchange qo'shish", callback_data="exchange_more_yes",
+                text=_("➕ Yana exchange qo'shish"), callback_data="exchange_more_yes",
             )],
-            [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="exedit_products")],
-            [InlineKeyboardButton(text="✅ Tayyor", callback_data="exchange_done")],
-            [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation")],
+            [InlineKeyboardButton(text=_("✏️ Tahrirlash"), callback_data="exedit_products")],
+            [InlineKeyboardButton(text=_("✅ Tayyor"), callback_data="exchange_done")],
+            [InlineKeyboardButton(text=_("❌ Bekor qilish"), callback_data="cancel_creation")],
         ]
     )
 
@@ -164,13 +169,13 @@ def get_back_cancel_keyboard(show_back: bool = True) -> InlineKeyboardMarkup:
     if show_back:
         buttons.append(
             InlineKeyboardButton(
-                text="🔙 Ortga",
+                text=_("🔙 Ortga"),
                 callback_data="create_back",
             )
         )
     buttons.append(
         InlineKeyboardButton(
-            text="❌ Bekor qilish",
+            text=_("❌ Bekor qilish"),
             callback_data="cancel_creation",
         )
     )
@@ -183,13 +188,13 @@ def get_phone_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="⏭ O'tkazib yuborish (Telefon yo'q)",
+                    text=_("⏭ O'tkazib yuborish (Telefon yo'q)"),
                     callback_data="skip_client_phone",
                 )
             ],
             [
-                InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
-                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+                InlineKeyboardButton(text=_("🔙 Ortga"), callback_data="create_back"),
+                InlineKeyboardButton(text=_("❌ Bekor qilish"), callback_data="cancel_creation"),
             ],
         ]
     )
@@ -200,12 +205,12 @@ def get_product_currency_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="💵 So'm", callback_data="prodcur_uzs"),
-                InlineKeyboardButton(text="$ Dollar", callback_data="prodcur_usd"),
+                InlineKeyboardButton(text=_("💵 So'm"), callback_data="prodcur_uzs"),
+                InlineKeyboardButton(text=_("$ Dollar"), callback_data="prodcur_usd"),
             ],
             [
-                InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
-                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+                InlineKeyboardButton(text=_("🔙 Ortga"), callback_data="create_back"),
+                InlineKeyboardButton(text=_("❌ Bekor qilish"), callback_data="cancel_creation"),
             ],
         ]
     )
@@ -216,12 +221,12 @@ def get_exchange_currency_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="💵 So'm", callback_data="excur_uzs"),
-                InlineKeyboardButton(text="$ Dollar", callback_data="excur_usd"),
+                InlineKeyboardButton(text=_("💵 So'm"), callback_data="excur_uzs"),
+                InlineKeyboardButton(text=_("$ Dollar"), callback_data="excur_usd"),
             ],
             [
-                InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
-                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+                InlineKeyboardButton(text=_("🔙 Ortga"), callback_data="create_back"),
+                InlineKeyboardButton(text=_("❌ Bekor qilish"), callback_data="cancel_creation"),
             ],
         ]
     )
@@ -232,12 +237,12 @@ def get_given_currency_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="💵 So'm", callback_data="gcur_uzs"),
-                InlineKeyboardButton(text="$ Dollar", callback_data="gcur_usd"),
+                InlineKeyboardButton(text=_("💵 So'm"), callback_data="gcur_uzs"),
+                InlineKeyboardButton(text=_("$ Dollar"), callback_data="gcur_usd"),
             ],
             [
-                InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
-                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+                InlineKeyboardButton(text=_("🔙 Ortga"), callback_data="create_back"),
+                InlineKeyboardButton(text=_("❌ Bekor qilish"), callback_data="cancel_creation"),
             ],
         ]
     )
@@ -248,12 +253,12 @@ def get_exchange_choice_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Ha", callback_data="exchange_yes"),
-                InlineKeyboardButton(text="❌ Yo'q", callback_data="exchange_no"),
+                InlineKeyboardButton(text=_("✅ Ha"), callback_data="exchange_yes"),
+                InlineKeyboardButton(text=_("❌ Yo'q"), callback_data="exchange_no"),
             ],
             [
-                InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
-                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+                InlineKeyboardButton(text=_("🔙 Ortga"), callback_data="create_back"),
+                InlineKeyboardButton(text=_("❌ Bekor qilish"), callback_data="cancel_creation"),
             ],
         ]
     )
@@ -264,12 +269,12 @@ def get_given_money_choice_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="💵 Pul berdi", callback_data="given_money_yes"),
-                InlineKeyboardButton(text="❌ Pul bermadi", callback_data="given_money_no"),
+                InlineKeyboardButton(text=_("💵 Pul berdi"), callback_data="given_money_yes"),
+                InlineKeyboardButton(text=_("❌ Pul bermadi"), callback_data="given_money_no"),
             ],
             [
-                InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
-                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+                InlineKeyboardButton(text=_("🔙 Ortga"), callback_data="create_back"),
+                InlineKeyboardButton(text=_("❌ Bekor qilish"), callback_data="cancel_creation"),
             ],
         ]
     )
@@ -281,21 +286,21 @@ def get_more_products_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="➕ Yana tovar qo'shish",
+                    text=_("➕ Yana tovar qo'shish"),
                     callback_data="more_products_yes",
                 ),
             ],
             [
-                InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="edit_products"),
+                InlineKeyboardButton(text=_("✏️ Tahrirlash"), callback_data="edit_products"),
             ],
             [
                 InlineKeyboardButton(
-                    text="✅ Tasdiqlash",
+                    text=_("✅ Tasdiqlash"),
                     callback_data="more_products_no",
                 ),
             ],
             [
-                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+                InlineKeyboardButton(text=_("❌ Bekor qilish"), callback_data="cancel_creation"),
             ],
         ]
     )
@@ -307,13 +312,13 @@ def get_creation_confirm_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="✅ Tasdiqlash / Yaratish",
+                    text=_("✅ Tasdiqlash / Yaratish"),
                     callback_data="confirm_create_debt",
                 )
             ],
             [
-                InlineKeyboardButton(text="🔙 Ortga", callback_data="create_back"),
-                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_creation"),
+                InlineKeyboardButton(text=_("🔙 Ortga"), callback_data="create_back"),
+                InlineKeyboardButton(text=_("❌ Bekor qilish"), callback_data="cancel_creation"),
             ],
         ]
     )

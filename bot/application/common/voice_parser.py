@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from bot.domain.entities.currency import Currency
+from bot.i18n import _
 
 _UNITS = {
     "nol": 0, "bir": 1, "ikki": 2, "uch": 3, "to'rt": 4, "tort": 4, "besh": 5,
@@ -80,7 +81,7 @@ def parse_voice_debt(text: str) -> VoiceDebtDraft:
             break
 
     quantity_idx = None
-    for i, (kind, _) in enumerate(tokens[:-1]):
+    for i, (kind, _value) in enumerate(tokens[:-1]):
         nxt = tokens[i + 1]
         if kind == "num" and (nxt[0] == "ta" or nxt == ("word", "dona")):
             quantity_idx = i
@@ -88,7 +89,7 @@ def parse_voice_debt(text: str) -> VoiceDebtDraft:
     quantity = int(tokens[quantity_idx][1]) if quantity_idx is not None else 1
 
     price_candidates = [
-        i for i, (kind, _) in enumerate(tokens) if kind == "num" and i != quantity_idx
+        i for i, (kind, _value) in enumerate(tokens) if kind == "num" and i != quantity_idx
     ]
     price_idx = next(
         (
@@ -120,13 +121,13 @@ def parse_voice_debt(text: str) -> VoiceDebtDraft:
 
     missing = []
     if not name_parts:
-        missing.append("mijoz ismi (masalan: «Anvarga»)")
+        missing.append(_("mijoz ismi (masalan: «Anvarga»)"))
     if not product_words:
-        missing.append("tovar nomi")
+        missing.append(_("tovar nomi"))
     if price <= 0:
-        missing.append("narx")
+        missing.append(_("narx"))
     if missing:
-        raise VoiceParseError("Aniqlanmadi: " + ", ".join(missing))
+        raise VoiceParseError(_("Aniqlanmadi: {fields}", fields=", ".join(missing)))
 
     return VoiceDebtDraft(
         client_name=" ".join(w.capitalize() for w in name_parts),

@@ -5,10 +5,13 @@ Tovar nomi shu tanlovlardan bitta matn qilib yig'iladi
 """
 from __future__ import annotations
 
+from bot.i18n import N_
+
+# Tur nomlari tugmada tarjima qilinadi (`_()`), tovar nomida esa lotinda qoladi.
 PRODUCT_TYPES: dict[str, str] = {
-    "shina": "Shina",
-    "diska": "Diska",
-    "akkum": "Akkumulyator",
+    "shina": N_("Shina"),
+    "diska": N_("Diska"),
+    "akkum": N_("Akkumulyator"),
 }
 
 BRANDS: dict[str, list[str]] = {
@@ -53,8 +56,8 @@ def akkum_sizes(brand: str) -> list[str]:
 
 
 MONTHS: list[str] = [
-    "Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun",
-    "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr",
+    N_("Yanvar"), N_("Fevral"), N_("Mart"), N_("Aprel"), N_("May"), N_("Iyun"),
+    N_("Iyul"), N_("Avgust"), N_("Sentabr"), N_("Oktabr"), N_("Noyabr"), N_("Dekabr"),
 ]
 
 

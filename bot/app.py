@@ -41,6 +41,7 @@ from bot.infrastructure.database.repositories.debt_repository import (
 from bot.infrastructure.database.repositories.idempotency_repository import (
     IdempotencyStore,
 )
+from bot.infrastructure.database.repositories.language_repository import LanguageStore
 from bot.infrastructure.database.repositories.payment_repository import (
     PgPaymentRepository,
 )
@@ -148,6 +149,7 @@ async def run() -> None:
             "Filiallar ulandi: %s", ", ".join(branch.code for branch in registry)
         )
         preferences = BranchPreferenceStore(registry.default.database.pool)
+        language_store = LanguageStore(registry.default.database.pool)
 
         # --- Aiogram: Bot va Dispatcher ---
         bot = Bot(
@@ -165,6 +167,7 @@ async def run() -> None:
             registry=registry,
             preferences=preferences,
             settings=settings,
+            language_store=language_store,
         )
         register_handlers(dp)
 
@@ -197,6 +200,7 @@ async def run() -> None:
         web_server = WebServer(
             registry=registry,
             settings=settings,
+            language_store=language_store,
             host="0.0.0.0",
             port=settings.port,
         )
