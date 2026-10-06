@@ -13,3 +13,6 @@ data/*.db
 
 # Supabase CLI lokal metadata (repositoryda saqlanmaydi)
 supabase/.temp/
+
+# Skrinshotlar (mijozlar ma'lumoti bor — repoga chiqmasin)
+rasmlar/
