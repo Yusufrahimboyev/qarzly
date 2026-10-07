@@ -123,7 +123,6 @@ RU: dict[str, str] = {
     '💰 <b>1 dona tovar narxini kiriting:</b>': '💰 <b>Введите цену за 1 шт:</b>',
     '👤 <b>Qarz oluvchi:</b> {name}': '👤 <b>Заёмщик:</b> {name}',
     '📅 <b>Sana:</b> {date}': '📅 <b>Дата:</b> {date}',
-    '━━━━━━━━ <b>TOVARLAR:</b> ━━━━━━━━': '━━━━━━━━ <b>ТОВАРЫ:</b> ━━━━━━━━',
     '💰 <b>Jami:</b> {total}': '💰 <b>Итого:</b> {total}',
     '🔄 <b>Ayirboshlash (Exchange) tovari bormi?</b>\n\n<i>Mijoz berilgan tovar evaziga boshqa tovar berdimi?</i>': '🔄 <b>Есть товар на обмен?</b>\n\n<i>Клиент отдал другой товар взамен?</i>',
     '🔄 <b>Ayirboshlash tovari nomini kiriting:</b>': '🔄 <b>Введите название товара на обмен:</b>',

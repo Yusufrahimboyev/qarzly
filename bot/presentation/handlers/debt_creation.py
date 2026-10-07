@@ -228,7 +228,6 @@ def _summary_lines(data: dict[str, Any]) -> list[str]:
     if data.get("client_phone"):
         lines.append(_("📞 <b>Telefon:</b> {phone}", phone=esc_html(data["client_phone"])))
     lines.append(_("📅 <b>Sana:</b> {date}", date=data.get("debt_date", "-")))
-    lines.append(_("━━━━━━━━ <b>TOVARLAR:</b> ━━━━━━━━"))
     lines.extend(f"{i}. {_product_line(p)}" for i, p in enumerate(products, start=1))
     lines.append("\n" + _("💰 <b>Jami:</b> {total}", total=format_money_map(_totals(products))))
     return lines
@@ -1539,7 +1538,6 @@ def _render_preview(data: dict[str, Any]) -> str:
         _("📅 <b>Sana:</b> {date}", date=debt_date),
         _("👤 <b>Qarz oluvchi:</b> {name}", name=esc_html(client_name)),
         _("📞 <b>Telefon:</b> {phone}", phone=esc_html(client_phone)),
-        _("━━━━━━━━ <b>TOVARLAR:</b> ━━━━━━━━"),
     ]
 
     for idx, p in enumerate(products, start=1):

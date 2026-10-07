@@ -68,7 +68,7 @@ async def type_number(message, state, digits: str) -> None:
 
 
 async def fill_until_summary(state: FSMContext) -> VoiceStubMessage:
-    """Sana → ism → telefonsiz → Akkumulyator Jazz 60L но × 2 × 120 $."""
+    """Sana → ism → telefonsiz → Аккумулятор JAZ 60L но × 2 × 120 $."""
     start = msg()
     await start_debt_creation(start, state, SimpleNamespace(title="Mangit"))
     assert "Filial:</b> Mangit" in start.last_answer
@@ -89,7 +89,7 @@ async def fill_until_summary(state: FSMContext) -> VoiceStubMessage:
     await press(m, cb_product_type, state, "ptype:akkum")
     assert m.button_data[:4] == ["pbrand:0", "pbrand:1", "pbrand:2", "pbrand:3"]
     await press(m, cb_product_brand, state, "pbrand:0")
-    assert m.button_data[5] == "psize:5"  # Jazz: 6-razmer = "60L но"
+    assert m.button_data[5] == "psize:5"  # JAZ: 6-razmer = "60L но"
     await press(m, cb_akkum_size, state, "psize:5")
     await type_number(m, state, "2")
     await press(m, cb_prodcur_usd, state, "prodcur_usd")
@@ -104,7 +104,8 @@ async def test_full_flow_saves_debt(state, client_repo, debt_repo, payment_repo)
     summary = m.last_answer
     assert "Filial:</b> Mangit" in summary
     assert "Qarz oluvchi:</b> Anvar" in summary
-    assert "Akkumulyator Jazz 60L но" in summary
+    assert "Аккумулятор JAZ 60L но" in summary
+    assert "TOVARLAR" not in summary
     assert "2 × 120 $ = 240 $" in summary
     assert m.button_data == [
         "more_products_yes", "edit_products", "more_products_no", "cancel_creation",
@@ -116,6 +117,7 @@ async def test_full_flow_saves_debt(state, client_repo, debt_repo, payment_repo)
     await press(m, cb_more_products_no, state, "more_products_no")
     await press(m, cb_exchange_no, state, "exchange_no")
     await press(m, cb_given_money_no, state, "given_money_no")
+    assert "TOVARLAR" not in m.last_answer
     await cb_confirm_create_debt(StubCallback(m), state, clients, debts, settings)
 
     [client] = await clients.get_all_clients()
@@ -172,7 +174,7 @@ async def test_edit_redo_replaces_in_place_and_delete(state) -> None:
     await type_number(m, state, "50")
 
     [product] = (await state.get_data())["_products"]
-    assert (product.name, product.quantity, product.price_per_unit) == ("Shina Kumho R16", 4, 50)
+    assert (product.name, product.quantity, product.price_per_unit) == ("Шина Kumho R16", 4, 50)
 
     await press(m, cb_edit_delete, state, "edit_del:0")
     assert (await state.get_data())["_products"] == []
@@ -180,10 +182,11 @@ async def test_edit_redo_replaces_in_place_and_delete(state) -> None:
 
 
 def test_build_product_name() -> None:
-    assert build_product_name("shina", "Kumho", "R16") == "Shina Kumho R16"
+    assert build_product_name("shina", "Kumho", "R16") == "Шина Kumho R16"
+    assert build_product_name("diska", "Zitto", "R15") == "Диска Zitto R15"
     assert build_product_name("diska", "Qo'qon diska", "R15") == "Qo'qon diska R15"
     assert build_product_name("diska", "Литий диска", "R17") == "Литий диска R17"
-    assert build_product_name("akkum", "Jazz", "60L но") == "Akkumulyator Jazz 60L но"
+    assert build_product_name("akkum", "JAZ", "60L но") == "Аккумулятор JAZ 60L но"
 
 
 def test_akkum_sizes_per_brand() -> None:
@@ -191,7 +194,7 @@ def test_akkum_sizes_per_brand() -> None:
         "60/45L сз", "60/45R сз", "90/77L сз", "132/105 ач", "190/150 ач",
     ]
     assert akkum_sizes("Wolter") == ["60R ач"]
-    assert akkum_sizes("Qaynar") == akkum_sizes("Jazz")  # vaqtincha
+    assert akkum_sizes("Qaynar") == akkum_sizes("JAZ")  # vaqtincha
     assert akkum_sizes("Boshqa brend")[0] == "35Ah"  # qo'lda yozilgan — umumiy
 
 
