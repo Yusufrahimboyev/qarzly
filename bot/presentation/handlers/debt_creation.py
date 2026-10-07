@@ -7,6 +7,7 @@ Keyin: exchange → berilgan pul → tasdiqlash.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 from typing import Any
 
@@ -75,14 +76,40 @@ Prompt = tuple[str, InlineKeyboardMarkup]
 # ==========================================
 
 
-def _date_prompt(data: dict[str, Any]) -> Prompt:
-    header = (
-        _("🏢 <b>Filial:</b> {branch}", branch=esc_html(data["branch_title"])) + "\n\n"
-        if data.get("branch_title")
-        else ""
+def _context(data: dict[str, Any]) -> str:
+    """Oldingi bosqichlarda kiritilgan hamma ma'lumot — har bosqich boshida ko'rinadi."""
+    lines = []
+    if data.get("branch_title"):
+        lines.append(_("🏢 <b>Filial:</b> {branch}", branch=esc_html(data["branch_title"])))
+    if data.get("debt_date"):
+        lines.append(_("📅 <b>Sana:</b> {date}", date=data["debt_date"]))
+    if data.get("client_name"):
+        lines.append(_("👤 <b>Qarz oluvchi:</b> {name}", name=esc_html(data["client_name"])))
+    if "client_phone" in data:
+        phone = esc_html(data["client_phone"]) if data["client_phone"] else _("<i>Kiritilmadi</i>")
+        lines.append(_("📞 <b>Telefon:</b> {phone}", phone=phone))
+    lines.extend(f"{i}. {_product_line(p)}" for i, p in enumerate(_get_products(data), start=1))
+    lines.extend(
+        f"{i}. {_product_line(e, icon='🔄')}"
+        for i, e in enumerate(_get_exchanges(data), start=1)
     )
+    if data.get("_no_exchange"):
+        lines.append(_("🔄 <b>Exchange:</b> Yo'q"))
+    return "\n".join(lines) + "\n\n" if lines else ""
+
+
+def _with_context(prompt: Callable[[dict[str, Any]], Prompt]) -> Callable[[dict[str, Any]], Prompt]:
+    """Bosqich xabari oldiga kiritilgan ma'lumotlarni qo'shadi."""
+    def wrapper(data: dict[str, Any]) -> Prompt:
+        text, markup = prompt(data)
+        return _context(data) + text, markup
+    return wrapper
+
+
+@_with_context
+def _date_prompt(data: dict[str, Any]) -> Prompt:
     return (
-        header + _(
+        _(
             "📅 <b>Qarzga olingan kunni tanlang:</b>\n\n"
             "<i>Keyin oy va yil so'raladi. Bugun bo'lsa 'Bugun' tugmasini bosing</i>"
         ),
@@ -90,6 +117,7 @@ def _date_prompt(data: dict[str, Any]) -> Prompt:
     )
 
 
+@_with_context
 def _month_prompt(data: dict[str, Any]) -> Prompt:
     return (
         _("📅 <b>Kun:</b> {day}\n\n🗓 <b>Oyni tanlang:</b>", day=data["_date_day"]),
@@ -97,6 +125,7 @@ def _month_prompt(data: dict[str, Any]) -> Prompt:
     )
 
 
+@_with_context
 def _year_prompt(data: dict[str, Any]) -> Prompt:
     year = today().year
     return (
@@ -108,6 +137,7 @@ def _year_prompt(data: dict[str, Any]) -> Prompt:
     )
 
 
+@_with_context
 def _name_prompt(_data: dict[str, Any]) -> Prompt:
     return (
         _("👤 <b>Qarz oluvchining ismini kiriting:</b>\n\n<i>Masalan: Aliyev Anvar</i>"),
@@ -115,6 +145,7 @@ def _name_prompt(_data: dict[str, Any]) -> Prompt:
     )
 
 
+@_with_context
 def _phone_prompt(_data: dict[str, Any]) -> Prompt:
     return (
         _(
@@ -126,15 +157,17 @@ def _phone_prompt(_data: dict[str, Any]) -> Prompt:
     )
 
 
+@_with_context
 def _type_prompt(data: dict[str, Any]) -> Prompt:
     num = len(data.get("_products", [])) + 1
     text = (
-        _("📦 <b>Tovar turini tanlang:</b>") if num == 1
+        _("📦 <b>Tovar turini tanlang:</b>") if num == 1 or data.get("_replace_index") is not None
         else _("📦 <b>{num}-tovar turini tanlang:</b>", num=num)
     )
     return text, get_product_type_keyboard()
 
 
+@_with_context
 def _brand_prompt(data: dict[str, Any]) -> Prompt:
     type_key = data["product_type"]
     header = _("📦 <b>Tovar:</b> {name}", name=_(PRODUCT_TYPES[type_key])) + "\n\n"
@@ -146,6 +179,7 @@ def _brand_prompt(data: dict[str, Any]) -> Prompt:
     return header + _("🏷 <b>Brendini tanlang:</b>"), get_brand_keyboard(BRANDS[type_key])
 
 
+@_with_context
 def _size_prompt(data: dict[str, Any]) -> Prompt:
     type_key = data["product_type"]
     header = _(
@@ -168,6 +202,7 @@ def _entered(value: str) -> str:
     return _("Kiritildi: <b>{value}</b>", value=value)
 
 
+@_with_context
 def _quantity_prompt(data: dict[str, Any]) -> Prompt:
     return (
         _("📦 <b>Tovar:</b> {name}", name=esc_html(data["product_name"])) + "\n\n"
@@ -181,6 +216,7 @@ def _item_header(icon_text: str, name: str, quantity: int) -> str:
     return _(icon_text, name=esc_html(name)) + " — " + _("{count} ta", count=quantity) + "\n\n"
 
 
+@_with_context
 def _currency_prompt(data: dict[str, Any]) -> Prompt:
     return (
         _item_header("📦 <b>Tovar:</b> {name}", data["product_name"], data["product_quantity"])
@@ -189,6 +225,7 @@ def _currency_prompt(data: dict[str, Any]) -> Prompt:
     )
 
 
+@_with_context
 def _price_prompt(data: dict[str, Any]) -> Prompt:
     currency = Currency(data["product_currency"])
     raw = data.get("_np")
@@ -238,6 +275,7 @@ def _summary_prompt(data: dict[str, Any]) -> Prompt:
     return "\n".join(_summary_lines(data)), get_more_products_keyboard()
 
 
+@_with_context
 def _exchange_choice_prompt(_data: dict[str, Any]) -> Prompt:
     return (
         _(
@@ -248,10 +286,12 @@ def _exchange_choice_prompt(_data: dict[str, Any]) -> Prompt:
     )
 
 
+@_with_context
 def _ex_name_prompt(data: dict[str, Any]) -> Prompt:
     num = len(data.get("_exchanges", [])) + 1
     title = (
-        _("🔄 <b>Ayirboshlash tovari nomini kiriting:</b>") if num == 1
+        _("🔄 <b>Ayirboshlash tovari nomini kiriting:</b>")
+        if num == 1 or data.get("_ex_replace_index") is not None
         else _("🔄 <b>{num}-ayirboshlash tovari nomini kiriting:</b>", num=num)
     )
     return (
@@ -260,6 +300,7 @@ def _ex_name_prompt(data: dict[str, Any]) -> Prompt:
     )
 
 
+@_with_context
 def _ex_quantity_prompt(data: dict[str, Any]) -> Prompt:
     return (
         _("🔄 <b>Exchange:</b> {name}", name=esc_html(data["ex_name"])) + "\n\n"
@@ -269,6 +310,7 @@ def _ex_quantity_prompt(data: dict[str, Any]) -> Prompt:
     )
 
 
+@_with_context
 def _ex_currency_prompt(data: dict[str, Any]) -> Prompt:
     return (
         _item_header("🔄 <b>Exchange:</b> {name}", data["ex_name"], data["ex_quantity"])
@@ -280,6 +322,7 @@ def _ex_currency_prompt(data: dict[str, Any]) -> Prompt:
     )
 
 
+@_with_context
 def _ex_price_prompt(data: dict[str, Any]) -> Prompt:
     currency = Currency(data["ex_currency"])
     raw = data.get("_np")
@@ -305,6 +348,7 @@ def _ex_summary_prompt(data: dict[str, Any]) -> Prompt:
     return "\n".join(lines), get_exchange_more_keyboard()
 
 
+@_with_context
 def _given_choice_prompt(_data: dict[str, Any]) -> Prompt:
     return (
         _(
@@ -422,15 +466,9 @@ async def cb_add_debt_for_client(
     )
     await state.set_state(S.waiting_date)
 
-    text, markup = _date_prompt({})
+    text, markup = _date_prompt(await state.get_data())
     await callback.message.edit_text(
-        _(
-            "📝 <b>YANGI QARZ YARATISH</b>\n\n"
-            "👤 <b>Mijoz:</b> {name}\n"
-            "📞 <b>Telefon:</b> {phone}",
-            name=esc_html(client.full_name),
-            phone=esc_html(client.phone),
-        ) + "\n\n" + text,
+        _("📝 <b>YANGI QARZ YARATISH</b>") + "\n\n" + text,
         reply_markup=markup,
     )
     await callback.answer()
@@ -484,7 +522,7 @@ async def cb_create_back(callback: CallbackQuery, state: FSMContext) -> None:
     elif current_state == DebtCreationStates.waiting_given_money_amount:
         await state.set_state(DebtCreationStates.waiting_given_currency)
         await callback.message.edit_text(
-            _(_GIVEN_CURRENCY_TEXT),
+            _context(data) + _(_GIVEN_CURRENCY_TEXT),
             reply_markup=get_given_currency_keyboard(),
         )
 
@@ -573,26 +611,13 @@ async def _proceed_after_date(message: Message, state: FSMContext, date_str: str
     data = await state.get_data()
 
     if data.get("client_name") and data.get("client_phone"):
-        client_name = data["client_name"]
-        client_phone = data["client_phone"]
         await state.update_data(_products=[])
         await _start_product(state)
-        text, markup = _type_prompt({})
-        await message.answer(
-            _("📅 <b>Sana:</b> {date}", date=date_str) + "\n"
-            + _(
-                "👤 <b>Mijoz:</b> {name}",
-                name=f"{esc_html(client_name)} ({esc_html(client_phone)})",
-            )
-            + "\n\n" + text,
-            reply_markup=markup,
-        )
+        text, markup = _type_prompt(await state.get_data())
     else:
         await state.set_state(S.waiting_client_name)
         text, markup = _name_prompt(data)
-        await message.answer(
-            _("📅 <b>Sana:</b> {date}", date=date_str) + "\n\n" + text, reply_markup=markup
-        )
+    await message.answer(text, reply_markup=markup)
 
 
 @router.message(S.waiting_date)
@@ -646,11 +671,8 @@ async def process_client_name(message: Message, state: FSMContext) -> None:
 
     await state.update_data(client_name=name)
     await state.set_state(S.waiting_client_phone)
-    text, markup = _phone_prompt({})
-    await message.answer(
-        _("👤 <b>Qarz oluvchi:</b> {name}", name=esc_html(name)) + "\n\n" + text,
-        reply_markup=markup,
-    )
+    text, markup = _phone_prompt(await state.get_data())
+    await message.answer(text, reply_markup=markup)
 
 
 @router.callback_query(F.data == "skip_client_phone")
@@ -662,11 +684,8 @@ async def cb_skip_client_phone(callback: CallbackQuery, state: FSMContext) -> No
 
     await state.update_data(client_phone="", _products=[])
     await _start_product(state)
-    text, markup = _type_prompt({})
-    await callback.message.edit_text(
-        _("📞 <b>Telefon:</b> {phone}", phone=_("<i>Kiritilmadi</i>")) + "\n\n" + text,
-        reply_markup=markup,
-    )
+    text, markup = _type_prompt(await state.get_data())
+    await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
 
 
@@ -696,12 +715,8 @@ async def process_client_phone(message: Message, state: FSMContext) -> None:
     # Tovarlar ro'yxatini bo'sh boshlaymiz
     await state.update_data(client_phone=clean_phone, _products=[])
     await _start_product(state)
-    phone_display = clean_phone if clean_phone else _("<i>Kiritilmadi</i>")
-    text, markup = _type_prompt({})
-    await message.answer(
-        _("📞 <b>Telefon:</b> {phone}", phone=phone_display) + "\n\n" + text,
-        reply_markup=markup,
-    )
+    text, markup = _type_prompt(await state.get_data())
+    await message.answer(text, reply_markup=markup)
 
 
 # ==========================================
@@ -1024,7 +1039,7 @@ async def cb_more_products_no(
     await state.set_state(S.waiting_exchange_choice)
 
     if isinstance(callback.message, Message):
-        text, markup = _exchange_choice_prompt({})
+        text, markup = _exchange_choice_prompt(await state.get_data())
         await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
 
@@ -1124,7 +1139,7 @@ async def cb_edit_delete(callback: CallbackQuery, state: FSMContext) -> None:
         text, markup = _type_prompt(await state.get_data())
     else:
         await state.set_state(S.waiting_exchange_choice)
-        text, markup = _exchange_choice_prompt({})
+        text, markup = _exchange_choice_prompt(await state.get_data())
     if isinstance(callback.message, Message):
         await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer(_("O'chirildi"))
@@ -1139,11 +1154,11 @@ async def cb_edit_redo(callback: CallbackQuery, state: FSMContext) -> None:
     prefix = _edit_prefix(callback)
     if prefix == "edit":
         await _start_product(state)
-        text, markup = _type_prompt({})
     else:
         await _start_exchange(state)
-        text, markup = _ex_name_prompt({})
     await state.update_data({_EDIT_TARGETS[prefix][1]: index})
+    prompt = _type_prompt if prefix == "edit" else _ex_name_prompt
+    text, markup = prompt(await state.get_data())
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
             _("🔄 <b>{num}-qator qayta kiritilmoqda</b>", num=index + 1) + "\n\n" + text,
@@ -1160,25 +1175,23 @@ async def cb_edit_redo(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(S.waiting_exchange_choice, F.data == "exchange_no")
 async def cb_exchange_no(callback: CallbackQuery, state: FSMContext) -> None:
     """Exchange yo'q bo'lsa to'g'ridan-to'g'ri berilgan pul bosqichiga o'tadi."""
-    await state.update_data(_exchanges=[])
+    await state.update_data(_exchanges=[], _no_exchange=True)
     await state.set_state(S.waiting_given_money_choice)
 
     if isinstance(callback.message, Message):
-        text, markup = _given_choice_prompt({})
-        await callback.message.edit_text(
-            _("🔄 <b>Exchange:</b> Yo'q") + "\n\n" + text, reply_markup=markup
-        )
+        text, markup = _given_choice_prompt(await state.get_data())
+        await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
 
 
 @router.callback_query(S.waiting_exchange_choice, F.data == "exchange_yes")
 async def cb_exchange_yes(callback: CallbackQuery, state: FSMContext) -> None:
     """Exchange bor — birinchi exchange tovari nomini so'raydi."""
-    await state.update_data(_exchanges=[])
+    await state.update_data(_exchanges=[], _no_exchange=False)
     await _start_exchange(state)
 
     if isinstance(callback.message, Message):
-        text, markup = _ex_name_prompt({})
+        text, markup = _ex_name_prompt(await state.get_data())
         await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
 
@@ -1234,7 +1247,7 @@ async def cb_exchange_done(callback: CallbackQuery, state: FSMContext) -> None:
     """Exchange'lar tayyor — berilgan pul bosqichiga o'tadi."""
     await state.set_state(S.waiting_given_money_choice)
     if isinstance(callback.message, Message):
-        text, markup = _given_choice_prompt({})
+        text, markup = _given_choice_prompt(await state.get_data())
         await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
 
@@ -1268,7 +1281,8 @@ async def cb_given_money_yes(callback: CallbackQuery, state: FSMContext) -> None
 
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
-            _("💵 <b>Pul berdi</b> tanlandi.") + "\n\n" + _(_GIVEN_CURRENCY_TEXT),
+            _context(await state.get_data())
+            + _("💵 <b>Pul berdi</b> tanlandi.") + "\n\n" + _(_GIVEN_CURRENCY_TEXT),
             reply_markup=get_given_currency_keyboard(),
         )
     await callback.answer()
@@ -1298,7 +1312,7 @@ async def _apply_given_currency(
     label = _("So'm 💵") if currency == Currency.UZS else _("Dollar $")
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
-            _(
+            _context(await state.get_data()) + _(
                 "💱 <b>Valyuta:</b> {label}\n\n"
                 "💰 <b>Qarzdan qancha pul berildi?</b>\n\n"
                 "<i>Masalan: 200 000</i>",

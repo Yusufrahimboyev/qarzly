@@ -30,13 +30,16 @@ from bot.presentation.handlers.debt_creation import (
     cb_exchange_no,
     cb_exchange_yes,
     cb_given_money_no,
+    cb_given_money_yes,
     cb_more_products_no,
+    cb_more_products_yes,
     cb_numpad,
     cb_prodcur_usd,
     cb_product_brand,
     cb_product_type,
     cb_skip_client_phone,
     process_client_name,
+    process_client_phone,
     process_exchange_name,
     process_product_size,
     start_debt_creation,
@@ -123,6 +126,53 @@ async def test_full_flow_saves_debt(state, client_repo, debt_repo, payment_repo)
     [client] = await clients.get_all_clients()
     [debt] = await debt_repo.get_all_by_client_id(client.id)
     assert (debt.remaining_debt, debt.currency) == (240, Currency.USD)
+
+
+async def test_each_step_shows_everything_entered_so_far(state) -> None:
+    await start_debt_creation(msg(), state, SimpleNamespace(title="Mangit"))
+    m = msg()
+    year = today().year
+    await press(m, cb_date_day, state, "dday:5")
+    await press(m, cb_date_month, state, "dmon:3")
+    await press(m, cb_date_year, state, f"dyear:{year}")
+    branch, date = "Filial:</b> Mangit", f"Sana:</b> 05.03.{year}"
+    assert branch in m.last_answer and "ismini kiriting" in m.last_answer
+
+    name_msg = msg("Anvar")
+    await process_client_name(name_msg, state)
+    client = "Qarz oluvchi:</b> Anvar"
+    phone_step = name_msg.last_answer
+    assert all(x in phone_step for x in (branch, date, client))
+    assert "Telefon raqamini kiriting" in phone_step
+
+    phone_msg = msg("+998901234567")
+    await process_client_phone(phone_msg, state)
+    phone = "Telefon:</b> +998901234567"
+    assert all(x in phone_msg.last_answer for x in (branch, date, client, phone))
+
+    await press(m, cb_product_type, state, "ptype:akkum")
+    assert all(x in m.last_answer for x in (branch, date, client, phone))
+    await press(m, cb_product_brand, state, "pbrand:0")
+    await press(m, cb_akkum_size, state, "psize:5")
+    assert phone in m.last_answer and "Tovar sonini kiriting" in m.last_answer
+    await type_number(m, state, "2")
+    await press(m, cb_prodcur_usd, state, "prodcur_usd")
+    await type_number(m, state, "120")
+
+    first = "1. 📦 <b>Аккумулятор JAZ 60L но</b>"
+    await press(m, cb_more_products_yes, state, "more_products_yes")
+    assert first in m.last_answer and phone in m.last_answer
+    await press(m, cb_product_type, state, "ptype:shina")
+    assert first in m.last_answer and "Brendini tanlang" in m.last_answer
+
+    await press(m, cb_create_back, state, "create_back")
+    await press(m, cb_create_back, state, "create_back")
+    await press(m, cb_more_products_no, state, "more_products_no")
+    assert first in m.last_answer and "Exchange) tovari bormi" in m.last_answer
+    await press(m, cb_exchange_no, state, "exchange_no")
+    assert first in m.last_answer and "Exchange:</b> Yo'q" in m.last_answer
+    await press(m, cb_given_money_yes, state, "given_money_yes")
+    assert first in m.last_answer and "qaysi valyutada" in m.last_answer
 
 
 async def test_numpad_edits_and_rejects_zero(state) -> None:

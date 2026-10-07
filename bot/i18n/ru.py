@@ -137,7 +137,7 @@ RU: dict[str, str] = {
     "💵 <b>Qarzdan oldindan pul berildimi?</b>\n\n<i>Mijoz tovar olingan paytda ma'lum bir summa to'ladimi?</i>": '💵 <b>Внесены ли деньги в счёт долга?</b>\n\n<i>Клиент оплатил какую-то сумму при получении товара?</i>',
     '💱 <b>Berilgan pul qaysi valyutada?</b>\n\n<i>Shu valyutadagi tovarlar qarzidan chegiriladi</i>': '💱 <b>В какой валюте внесены деньги?</b>\n\n<i>Вычитается из долга за товары в этой валюте</i>',
     "Noto'g'ri so'rov.": 'Неверный запрос.',
-    '📝 <b>YANGI QARZ YARATISH</b>\n\n👤 <b>Mijoz:</b> {name}\n📞 <b>Telefon:</b> {phone}': '📝 <b>НОВЫЙ ДОЛГ</b>\n\n👤 <b>Клиент:</b> {name}\n📞 <b>Телефон:</b> {phone}',
+    '📝 <b>YANGI QARZ YARATISH</b>': '📝 <b>НОВЫЙ ДОЛГ</b>',
     '❌ <b>Qarz yaratish bekor qilindi.</b>': '❌ <b>Создание долга отменено.</b>',
     "⚠️ Bunday sana yo'q. Kunni qayta tanlang.": '⚠️ Такой даты нет. Выберите день заново.',
     "Iltimos, sanani matn ko'rinishida kiriting.": 'Пожалуйста, введите дату текстом.',
