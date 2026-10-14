@@ -44,3 +44,20 @@ def test_secrets_are_not_exposed_in_repr() -> None:
 def test_empty_database_url_rejected() -> None:
     with pytest.raises(ValidationError):
         Settings(bot_token=TOKEN, admin_ids=[1], database_url=SecretStr("  "))
+
+
+def test_branch_defaults_to_mangit() -> None:
+    settings = Settings(
+        bot_token=TOKEN, admin_ids=[1], database_url=DSN, _env_file=None  # type: ignore[call-arg]
+    )
+    assert settings.branch == "mangit"
+
+
+def test_branch_normalized() -> None:
+    settings = Settings(bot_token=TOKEN, admin_ids=[1], database_url=DSN, branch=" Nukus ")
+    assert settings.branch == "nukus"
+
+
+def test_unknown_branch_rejected() -> None:
+    with pytest.raises(ValidationError, match="BRANCH noma'lum"):
+        Settings(bot_token=TOKEN, admin_ids=[1], database_url=DSN, branch="samarqand")

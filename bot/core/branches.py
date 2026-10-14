@@ -2,7 +2,8 @@
 
 Hamma filial bitta PostgreSQL (Supabase) bazasida, lekin har biri o'z sxemasida
 (ya'ni jadvallari alohida). Mangit — mavjud ma'lumotlar turgan `public` sxemasi:
-unga tegilmaydi. Yangi filial qo'shish: shu yerga yozuv qo'shing.
+unga tegilmaydi. Har filialning o'z boti bor: bot qaysi filialga xizmat qilishi
+`.env` dagi `BRANCH` bilan tanlanadi. Yangi filial qo'shish: shu yerga yozuv qo'shing.
 """
 from __future__ import annotations
 

@@ -98,6 +98,7 @@ cp .env.example .env
 |---|---|---|---|
 | `BOT_TOKEN` | ✅ | — | BotFather'dan olingan token |
 | `ADMIN_IDS` | ✅ | — | Admin Telegram ID lari (vergul bilan ajratilgan) |
+| `BRANCH` | — | `mangit` | Bot xizmat qiladigan filial: `mangit`, `nukus` yoki `lassa` (har filialning o'z boti) |
 | `ALLOW_OPEN_ACCESS` | — | `false` | Faqat development: bo'sh `ADMIN_IDS` bilan ochiq kirish |
 | `DATABASE_URL` | ✅ | — | PostgreSQL DSN (Supabase). Filiallar (Mangit/Nukus/Lassa) shu bazada alohida sxemalarda |
 | `PORT` | — | `8080` | Web server porti |

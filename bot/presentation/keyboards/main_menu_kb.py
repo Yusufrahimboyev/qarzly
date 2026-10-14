@@ -16,7 +16,6 @@ from bot.i18n import N_, _
 TABLE_BUTTON_TEXT = N_("📋 Qarzlar jadvali")
 CREATE_BUTTON_TEXT = N_("➕ Yaratish")
 PAYMENT_BUTTON_TEXT = N_("💰 Qarz to'lovi")
-BRANCH_BUTTON_TEXT = N_("🏢 Filial")
 SETTINGS_BUTTON_TEXT = N_("⚙️ Sozlamalar")
 HELP_BUTTON_TEXT = N_("ℹ️ Yordam")
 
@@ -26,7 +25,7 @@ def get_main_menu_keyboard(web_app_url: str = "") -> ReplyKeyboardMarkup:
     1. 📋 Qarzlar jadvali
     2. ➕ Yaratish
     3. 💰 Qarz to'lovi
-    4. 🏢 Filial (almashtirish), ⚙️ Sozlamalar
+    4. ⚙️ Sozlamalar
     5. 🚀 Mini App (agar URL sozlangan bo'lsa)
     """
     rows: list[list[KeyboardButton]] = [
@@ -38,7 +37,6 @@ def get_main_menu_keyboard(web_app_url: str = "") -> ReplyKeyboardMarkup:
             KeyboardButton(text=_(PAYMENT_BUTTON_TEXT)),
         ],
         [
-            KeyboardButton(text=_(BRANCH_BUTTON_TEXT)),
             KeyboardButton(text=_(SETTINGS_BUTTON_TEXT)),
         ],
     ]
@@ -71,19 +69,3 @@ def get_web_app_inline_keyboard(web_app_url: str) -> InlineKeyboardMarkup:
         ]
     )
 
-
-def get_branch_keyboard(
-    branches: list[tuple[str, str]], current: str
-) -> InlineKeyboardMarkup:
-    """Filial tanlash inline klaviaturasi: [(kod, nom)], joriysi ✅ bilan."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=f"✅ {title}" if code == current else title,
-                    callback_data=f"branch:{code}",
-                )
-                for code, title in branches
-            ]
-        ]
-    )

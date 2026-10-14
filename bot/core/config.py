@@ -40,6 +40,12 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Filial ---
+    branch: str = Field(
+        default="mangit",
+        description="Shu bot xizmat qiladigan filial kodi (mangit, nukus yoki lassa).",
+    )
+
     # --- Kunlik hisobot (kanalga avtomatik yuborish) ---
     report_channel_id: int = Field(
         default=0,
@@ -120,6 +126,18 @@ class Settings(BaseSettings):
         if not value.get_secret_value().strip():
             raise ValueError("DATABASE_URL bo'sh. PostgreSQL DSN ni ko'rsating.")
         return value
+
+    @field_validator("branch")
+    @classmethod
+    def _branch_known(cls, value: str) -> str:
+        from bot.core.branches import BRANCH_TITLES
+
+        code = value.strip().lower()
+        if code not in BRANCH_TITLES:
+            raise ValueError(
+                f"BRANCH noma'lum: {value!r}. Mumkin: {', '.join(BRANCH_TITLES)}."
+            )
+        return code
 
     @field_validator("admin_ids", mode="before")
     @classmethod

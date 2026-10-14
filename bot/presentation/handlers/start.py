@@ -12,7 +12,6 @@ from bot.core.config import Settings
 from bot.i18n import _, all_variants
 from bot.infrastructure.branches import Branch
 from bot.presentation.keyboards.main_menu_kb import (
-    BRANCH_BUTTON_TEXT,
     HELP_BUTTON_TEXT,
     SETTINGS_BUTTON_TEXT,
     get_main_menu_keyboard,
@@ -44,11 +43,10 @@ async def cmd_start(
         _(
             "👋 <b>Assalomu alaykum, {name}!</b>\n\n"
             "📖 <b>Qarz Daftar</b> botiga xush kelibsiz.\n"
-            "🏢 <b>Filial:</b> {branch} (almashtirish: <b>{branch_button}</b>)\n"
+            "🏢 <b>Filial:</b> {branch}\n"
             "Kerakli bo'limni tanlang:",
             name=esc_html(first_name),
             branch=esc_html(branch.title),
-            branch_button=_(BRANCH_BUTTON_TEXT),
         ),
         reply_markup=get_main_menu_keyboard(settings.web_app_url),
     )
@@ -66,11 +64,8 @@ async def cmd_help(message: Message) -> None:
             "• <b>➕ Yaratish</b> — Yangi qarz yozuvi kiritish (tovar, "
             "exchange/ayirboshlash, berilgan pul va hisob-kitob).\n"
             "• <b>💰 Qarz to'lovi</b> — Mijozlarning qarzini to'liq yoki qisman yopish.\n\n"
-            "• <b>{branch_button}</b> — Filialni almashtirish (har filialning "
-            "ma'lumotlari alohida).\n"
             "• <b>{settings_button}</b> — Interfeys tili.\n"
             "• /start — Asosiy menyuni qayta ochish",
-            branch_button=_(BRANCH_BUTTON_TEXT),
             settings_button=_(SETTINGS_BUTTON_TEXT),
         )
     )

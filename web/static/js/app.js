@@ -329,26 +329,22 @@ function statusErrorMessage(status) {
     return t("So'rovni bajarib bo'lmadi (kod {status}).", { status });
 }
 
-// Filial: har filialning ma'lumotlar bazasi alohida. Tanlov serverga `X-Branch`
-// header'i bilan boradi; oxirgi tanlov faqat qulaylik uchun eslab qolinadi.
-const BRANCH_STORAGE_KEY = 'qarz-branch';
-let currentBranch = 'mangit';
-try {
-    currentBranch = localStorage.getItem(BRANCH_STORAGE_KEY) || currentBranch;
-} catch (e) {}
+// Filial: har bot o'z filialiga xizmat qiladi. Filial serverdan (/api/branches)
+// olinmaguncha `X-Branch` yuborilmaydi — server botning o'z filialini ishlatadi.
+let currentBranch = '';
 
 function setCurrentBranch(code) {
     currentBranch = code;
-    try {
-        localStorage.setItem(BRANCH_STORAGE_KEY, code);
-    } catch (e) {}
 }
 
 // Barcha API so'rovlarini Telegram initData imzosi bilan yuboradi.
 // Server imzoni tekshiradi — begona shaxs URLni bilsa ham ma'lumot ololmaydi.
 async function apiFetch(url, options = {}) {
     const requestBranch = currentBranch;
-    const headers = { ...(options.headers || {}), 'X-Branch': requestBranch };
+    const headers = { ...(options.headers || {}) };
+    if (requestBranch) {
+        headers['X-Branch'] = requestBranch;
+    }
     if (tg && tg.initData) {
         headers['X-Telegram-Init-Data'] = tg.initData;
     }

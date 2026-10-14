@@ -129,47 +129,23 @@ async def test_branch_endpoint_requires_auth(client: TestClient) -> None:
     assert resp.status == 401
 
 
-class StubPreferences:
-    def __init__(self, stored: dict[int, str]) -> None:
-        self._stored = stored
-
-    async def get(self, telegram_id: int) -> str | None:
-        return self._stored.get(telegram_id)
-
-
-async def _injected(registry: BranchRegistry, stored: dict[int, str], user_id: int):
-    from aiogram.types import CallbackQuery, Message
+async def test_bot_uses_own_branch_services(registry: BranchRegistry) -> None:
+    from aiogram.types import Message
 
     middleware = DependencyMiddleware(
         registry=registry,
-        preferences=StubPreferences(stored),  # type: ignore[arg-type]
         settings=SimpleNamespace(),  # type: ignore[arg-type]
     )
-    event = Message.model_construct(from_user=SimpleNamespace(id=user_id))
-    assert isinstance(event, (Message, CallbackQuery))
-    seen: dict = {}
+    event = Message.model_construct(from_user=SimpleNamespace(id=7))
+    data: dict = {}
 
-    async def handler(_event, data):
-        seen.update(data)
+    async def handler(_event, injected):
+        data.update(injected)
 
     await middleware(handler, event, {})
-    return seen
-
-
-async def test_bot_uses_selected_branch_services(registry: BranchRegistry) -> None:
-    data = await _injected(registry, {7: "lassa"}, user_id=7)
-    lassa = registry.get("lassa")
-    assert data["branch"] is lassa
-    assert data["client_service"] is lassa.client_service
-    assert data["debt_service"] is lassa.debt_service
-
-
-@pytest.mark.parametrize("stored", [{}, {7: "removed-branch"}])
-async def test_bot_falls_back_to_default_branch(
-    registry: BranchRegistry, stored: dict[int, str]
-) -> None:
-    data = await _injected(registry, stored, user_id=7)
     assert data["branch"] is registry.default
+    assert data["client_service"] is registry.default.client_service
+    assert data["debt_service"] is registry.default.debt_service
 
 
 def test_every_branch_has_title_and_schema() -> None:

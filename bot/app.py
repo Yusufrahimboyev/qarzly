@@ -24,14 +24,11 @@ from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
 from bot.application.services.user_service import UserService
 from bot.application.services.voice_debt_service import VoiceDebtService
-from bot.core.branches import BRANCH_SCHEMAS, BRANCH_TITLES, DEFAULT_BRANCH
+from bot.core.branches import BRANCH_SCHEMAS, BRANCH_TITLES
 from bot.core.config import Settings, get_settings
 from bot.core.logging import setup_logging
 from bot.infrastructure.branches import Branch, BranchRegistry
 from bot.infrastructure.database.connection import Database
-from bot.infrastructure.database.repositories.branch_preference_repository import (
-    BranchPreferenceStore,
-)
 from bot.infrastructure.database.repositories.client_repository import (
     PgClientRepository,
 )
@@ -132,7 +129,7 @@ async def run() -> None:
         )
 
     async with AsyncExitStack() as stack:
-        # --- Infrastructure: har filial uchun alohida baza va servislar ---
+        # --- Infrastructure: shu bot filialining bazasi va servislari ---
         laya = None
         if settings.voice_enabled:
             laya = LayaKitClient(
@@ -141,14 +138,9 @@ async def run() -> None:
                 timeout_seconds=settings.layakit_timeout_seconds,
             )
 
-        branches: list[Branch] = []
-        for code in BRANCH_TITLES:
-            branches.append(await _open_branch(stack, settings, code, laya))
-        registry = BranchRegistry(branches, DEFAULT_BRANCH)
-        logger.info(
-            "Filiallar ulandi: %s", ", ".join(branch.code for branch in registry)
-        )
-        preferences = BranchPreferenceStore(registry.default.database.pool)
+        branch = await _open_branch(stack, settings, settings.branch, laya)
+        registry = BranchRegistry([branch], settings.branch)
+        logger.info("Filial ulandi: %s", branch.code)
         language_store = LanguageStore(registry.default.database.pool)
 
         # --- Aiogram: Bot va Dispatcher ---
@@ -165,7 +157,6 @@ async def run() -> None:
         register_middlewares(
             dp=dp,
             registry=registry,
-            preferences=preferences,
             settings=settings,
             language_store=language_store,
         )
@@ -175,17 +166,14 @@ async def run() -> None:
         daily_report_job = None
         if settings.report_channel_id:
             async def daily_report_job() -> None:  # noqa: E306
-                # Bir filialdagi xato boshqasining hisobotini to'xtatmaydi
-                # (send_daily_report xatoni o'zi log'ga yozadi).
-                for branch in registry:
-                    await send_daily_report(
-                        bot=bot,
-                        debt_service=branch.debt_service,
-                        channel_id=settings.report_channel_id,
-                        start_date=settings.report_start_date,
-                        branch_code=branch.code,
-                        branch_title=branch.title,
-                    )
+                await send_daily_report(
+                    bot=bot,
+                    debt_service=branch.debt_service,
+                    channel_id=settings.report_channel_id,
+                    start_date=settings.report_start_date,
+                    branch_code=branch.code,
+                    branch_title=branch.title,
+                )
 
         scheduler = create_scheduler(
             settings.render_external_url,
