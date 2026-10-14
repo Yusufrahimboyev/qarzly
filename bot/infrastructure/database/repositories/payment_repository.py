@@ -51,6 +51,14 @@ class PgPaymentRepository(PaymentRepository):
             raise RuntimeError("To'lov yozuvi saqlanmadi.")
         return self._map_row(row)
 
+    async def update_initial_payment_date(self, debt_id: int, payment_date: date) -> None:
+        await self._db.execute(
+            "UPDATE payments SET payment_date = $1"
+            " WHERE debt_id = $2 AND payment_type = 'initial'",
+            payment_date,
+            debt_id,
+        )
+
     async def get_by_client_id(self, client_id: int) -> list[Payment]:
         rows = await self._db.fetch(
             f"""

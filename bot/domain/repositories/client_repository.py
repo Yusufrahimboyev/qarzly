@@ -46,6 +46,11 @@ class ClientRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def update(self, client_id: int, full_name: str, phone: str) -> Client | None:
+        """Mijoz ismi va telefonini yangilaydi; topilmasa None."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_all_alphabetical(self) -> list[Client]:
         """Barcha mijozlarni alfavit tartibida qaytaradi."""
         raise NotImplementedError

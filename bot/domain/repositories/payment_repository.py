@@ -21,6 +21,11 @@ class PaymentRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def update_initial_payment_date(self, debt_id: int, payment_date: date) -> None:
+        """Qarzning boshlang'ich to'lovi sanasini qarz sanasiga moslaydi."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_by_debt_id(self, debt_id: int) -> list[Payment]:
         """Muayyan qarz bo'yicha to'lovlarni qaytaradi."""
         raise NotImplementedError

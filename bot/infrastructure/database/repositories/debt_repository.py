@@ -221,6 +221,37 @@ class PgDebtRepository(DebtRepository):
             debt_id,
         )
 
+    async def update_details(self, current: Debt, updated: Debt) -> Debt | None:
+        status_val = (
+            updated.status.value
+            if isinstance(updated.status, DebtStatus)
+            else str(updated.status)
+        )
+        row = await self._db.fetchrow(
+            f"""
+            UPDATE debts
+            SET debt_date = $1, product_name = $2, product_quantity = $3,
+                product_price = $4, original_debt = $5, remaining_debt = $6,
+                products_json = $7, status = $8, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $9 AND original_debt = $10 AND remaining_debt = $11
+                AND status = $12
+            RETURNING {_SELECT_COLS}
+            """,
+            updated.debt_date,
+            updated.product_name,
+            updated.product_quantity,
+            updated.product_price,
+            updated.original_debt,
+            updated.remaining_debt,
+            serialize_products_json(updated.products),
+            status_val,
+            current.id,
+            current.original_debt,
+            current.remaining_debt,
+            current.status.value,
+        )
+        return self._map_row(row) if row is not None else None
+
     # ------------------------------------------------------------------
     # Korzina (Trash) operatsiyalari
     # ------------------------------------------------------------------

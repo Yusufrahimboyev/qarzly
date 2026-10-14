@@ -20,8 +20,10 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
+from bot.application.services.admin_service import AdminService
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
+from bot.application.services.edit_service import EditService
 from bot.application.services.user_service import UserService
 from bot.application.services.voice_debt_service import VoiceDebtService
 from bot.core.branches import BRANCH_SCHEMAS, BRANCH_TITLES
@@ -29,11 +31,15 @@ from bot.core.config import Settings, get_settings
 from bot.core.logging import setup_logging
 from bot.infrastructure.branches import Branch, BranchRegistry
 from bot.infrastructure.database.connection import Database
+from bot.infrastructure.database.repositories.admin_repository import PgAdminRepository
 from bot.infrastructure.database.repositories.client_repository import (
     PgClientRepository,
 )
 from bot.infrastructure.database.repositories.debt_repository import (
     PgDebtRepository,
+)
+from bot.infrastructure.database.repositories.edit_log_repository import (
+    PgEditLogRepository,
 )
 from bot.infrastructure.database.repositories.idempotency_repository import (
     IdempotencyStore,
@@ -92,12 +98,14 @@ async def _open_branch(
     pool = database.pool
     client_repository = PgClientRepository(pool)
     debt_repository = PgDebtRepository(pool)
+    payment_repository = PgPaymentRepository(pool)
+    uow_factory = create_unit_of_work_factory(pool)
     client_service = ClientService(clients=client_repository, debts=debt_repository)
     debt_service = DebtService(
         clients=client_repository,
         debts=debt_repository,
-        payments=PgPaymentRepository(pool),
-        uow_factory=create_unit_of_work_factory(pool),
+        payments=payment_repository,
+        uow_factory=uow_factory,
     )
     return Branch(
         code=code,
@@ -111,6 +119,13 @@ async def _open_branch(
             VoiceDebtService(laya=laya, client_service=client_service)
             if laya is not None
             else None
+        ),
+        edit_service=EditService(
+            clients=client_repository,
+            debts=debt_repository,
+            payments=payment_repository,
+            edits=PgEditLogRepository(pool),
+            uow_factory=uow_factory,
         ),
     )
 
@@ -142,6 +157,9 @@ async def run() -> None:
         registry = BranchRegistry([branch], settings.branch)
         logger.info("Filial ulandi: %s", branch.code)
         language_store = LanguageStore(registry.default.database.pool)
+        admin_service = AdminService(
+            PgAdminRepository(registry.default.database.pool), settings.admin_id_list
+        )
 
         # --- Aiogram: Bot va Dispatcher ---
         bot = Bot(
@@ -159,6 +177,7 @@ async def run() -> None:
             registry=registry,
             settings=settings,
             language_store=language_store,
+            admin_service=admin_service,
         )
         register_handlers(dp)
 
@@ -189,6 +208,7 @@ async def run() -> None:
             registry=registry,
             settings=settings,
             language_store=language_store,
+            admin_service=admin_service,
             host="0.0.0.0",
             port=settings.port,
         )

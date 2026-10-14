@@ -2240,3 +2240,95 @@ select { scroll-margin: calc(var(--header-h) + var(--space-6)) 0 calc(var(--nav-
         transition-duration: 1ms !important;
     }
 }
+
+/* ==========================================
+   Tahrirlash: "tahrirlangan" belgisi, tahrir oynasi
+   ========================================== */
+.modal-header-actions {
+    display: flex;
+    gap: var(--space-1);
+    flex-shrink: 0;
+}
+
+.edited-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: var(--text-xs);
+    font-style: italic;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+}
+
+.edited-mark .icon { width: 12px; height: 12px; }
+
+.edit-details {
+    margin-top: var(--space-1);
+    padding: var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+}
+
+.edit-details-meta { color: var(--color-text-tertiary); margin-bottom: 2px; }
+
+.edit-change { display: flex; gap: var(--space-2); padding: 2px 0; }
+.edit-change-field { flex-shrink: 0; font-weight: var(--weight-semibold); }
+.edit-change-values { min-width: 0; overflow-wrap: anywhere; }
+.edit-change-values s { color: var(--color-text-tertiary); }
+
+.history-card-actions {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
+}
+
+.history-card-actions { flex-wrap: wrap; }
+.history-card-edited { min-width: 0; }
+/* Ochilgan tafsilot tor ustunga siqilmasin — tugma ostiga to'liq kenglikda tushadi */
+.history-card-edited:has(.edit-details:not([hidden])) { flex-basis: 100%; order: 2; }
+.history-card-actions .btn { flex-shrink: 0; margin-left: auto; }
+
+.edit-product .product-group-header { justify-content: space-between; }
+
+.edit-summary {
+    display: flex;
+    justify-content: space-between;
+    margin: var(--space-3) 0 var(--space-2);
+    font-size: var(--text-md);
+}
+
+.settings-hint {
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--color-text-tertiary);
+}
+
+/* Sozlamalar → Adminlar */
+.admins-list {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.admin-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.admin-row:last-child { border-bottom: 0; }
+.admin-info { display: flex; flex-direction: column; min-width: 0; }
+.admin-name { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.admin-name .badge { margin-left: 4px; }
+.admin-id { font-size: var(--text-xs); color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; }

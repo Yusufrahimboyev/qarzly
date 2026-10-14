@@ -98,6 +98,19 @@ class PgClientRepository(ClientRepository):
             return None
         return self._map_row(row)
 
+    async def update(self, client_id: int, full_name: str, phone: str) -> Client | None:
+        row = await self._db.fetchrow(
+            f"""
+            UPDATE clients SET full_name = $1, phone = $2, updated_at = NOW()
+            WHERE id = $3
+            RETURNING {_SELECT_CLIENT_COLS}
+            """,
+            full_name,
+            phone,
+            client_id,
+        )
+        return self._map_row(row) if row is not None else None
+
     async def find_by_phone(self, phone: str) -> Client | None:
         row = await self._db.fetchrow(
             f"""

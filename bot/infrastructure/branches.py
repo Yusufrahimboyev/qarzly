@@ -12,6 +12,7 @@ from typing import Any
 
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
+from bot.application.services.edit_service import EditService
 from bot.application.services.user_service import UserService
 from bot.application.services.voice_debt_service import VoiceDebtService
 from bot.infrastructure.database.repositories.idempotency_repository import (
@@ -31,6 +32,7 @@ class Branch:
     database: Any = None
     idempotency_store: IdempotencyStore | None = None
     voice_debt_service: VoiceDebtService | None = None
+    edit_service: EditService | None = None
 
 
 class BranchRegistry:

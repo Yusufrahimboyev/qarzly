@@ -10,10 +10,12 @@ import logging
 
 from aiohttp import web
 
+from bot.application.services.admin_service import AdminService
 from bot.core.config import Settings
 from bot.infrastructure.branches import BranchRegistry
 from bot.infrastructure.database.repositories.language_repository import LanguageStore
 from bot.infrastructure.web.routes import (
+    ADMIN_SERVICE_KEY,
     BRANCH_REGISTRY_KEY,
     LANGUAGE_STORE_KEY,
     branch_middleware,
@@ -37,11 +39,13 @@ class WebServer:
         registry: BranchRegistry,
         settings: Settings,
         language_store: LanguageStore,
+        admin_service: AdminService | None = None,
         host: str = "0.0.0.0",
         port: int = 8080,
     ) -> None:
         self._registry = registry
         self._language_store = language_store
+        self._admin_service = admin_service
         self._settings = settings
         self._host = host
         self._port = port
@@ -59,6 +63,9 @@ class WebServer:
                     allow_open_access=self._settings.allow_open_access,
                     rate_limit_per_minute=self._settings.api_rate_limit_per_minute,
                     max_age_seconds=self._settings.init_data_max_age_seconds,
+                    is_admin=(
+                        self._admin_service.is_admin if self._admin_service else None
+                    ),
                 ),
                 branch_middleware,
                 language_middleware,
@@ -66,6 +73,8 @@ class WebServer:
         )
         app[BRANCH_REGISTRY_KEY] = self._registry
         app[LANGUAGE_STORE_KEY] = self._language_store
+        if self._admin_service is not None:
+            app[ADMIN_SERVICE_KEY] = self._admin_service
 
         setup_routes(app)
 

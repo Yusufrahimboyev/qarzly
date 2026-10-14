@@ -4,16 +4,21 @@ Tashqi bazaga bog'lanmasdan tezkor va mustaqil unit testlarni ta'minlaydi.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime
 
 import pytest
 
+from bot.domain.entities.admin import Admin
 from bot.domain.entities.client import Client
 from bot.domain.entities.debt import Debt, DebtStatus
+from bot.domain.entities.edit import EditRecord
 from bot.domain.entities.payment import Payment, PaymentType
 from bot.domain.entities.user import User
+from bot.domain.repositories.admin_repository import AdminRepository
 from bot.domain.repositories.client_repository import ClientRepository
 from bot.domain.repositories.debt_repository import DebtRepository
+from bot.domain.repositories.edit_log_repository import EditLogRepository
 from bot.domain.repositories.payment_repository import PaymentRepository
 from bot.domain.repositories.user_repository import UserRepository
 
@@ -69,6 +74,14 @@ class FakeClientRepository(ClientRepository):
 
     async def get_by_id(self, client_id: int) -> Client | None:
         return self._store.get(client_id)
+
+    async def update(self, client_id: int, full_name: str, phone: str) -> Client | None:
+        client = self._store.get(client_id)
+        if client is None:
+            return None
+        updated = replace(client, full_name=full_name, phone=phone, updated_at=datetime.now())
+        self._store[client_id] = updated
+        return updated
 
     async def find_by_phone(self, phone: str) -> Client | None:
         clean = phone.strip()
@@ -135,6 +148,24 @@ class FakeDebtRepository(DebtRepository):
 
     async def get_by_id(self, debt_id: int) -> Debt | None:
         return self._store.get(debt_id)
+
+    async def update_details(self, current: Debt, updated: Debt) -> Debt | None:
+        stored = self._store.get(current.id or 0)
+        if stored is None or (
+            stored.original_debt,
+            stored.remaining_debt,
+            stored.status,
+        ) != (current.original_debt, current.remaining_debt, current.status):
+            return None
+        saved = replace(
+            updated,
+            id=stored.id,
+            client_id=stored.client_id,
+            created_at=stored.created_at,
+            updated_at=datetime.now(),
+        )
+        self._store[stored.id] = saved  # type: ignore[index]
+        return saved
 
     async def get_all_by_client_id(self, client_id: int) -> list[Debt]:
         visible = [
@@ -336,6 +367,11 @@ class FakePaymentRepository(PaymentRepository):
         self._store[pay_id] = saved
         return saved
 
+    async def update_initial_payment_date(self, debt_id: int, payment_date: date) -> None:
+        for pay_id, p in self._store.items():
+            if p.debt_id == debt_id and p.payment_type == PaymentType.INITIAL:
+                self._store[pay_id] = replace(p, payment_date=payment_date)
+
     async def get_by_client_id(self, client_id: int) -> list[Payment]:
         return [
             p for p in self._store.values()
@@ -377,6 +413,39 @@ class FakePaymentRepository(PaymentRepository):
                 cur = p.currency.value
                 totals[cur] = totals.get(cur, 0) + p.amount
         return totals
+
+
+class FakeEditLogRepository(EditLogRepository):
+    """In-memory EditLogRepository."""
+
+    def __init__(self) -> None:
+        self.records: list[EditRecord] = []
+
+    async def add(self, record: EditRecord) -> EditRecord:
+        saved = replace(record, id=len(self.records) + 1, edited_at=datetime.now())
+        self.records.append(saved)
+        return saved
+
+    async def get_by_client_id(self, client_id: int) -> list[EditRecord]:
+        return [r for r in reversed(self.records) if r.client_id == client_id]
+
+
+class FakeAdminRepository(AdminRepository):
+    """In-memory AdminRepository (uchala bot bitta instansiyani bo'lishadi)."""
+
+    def __init__(self) -> None:
+        self.store: dict[int, Admin] = {}
+        self.list_calls = 0
+
+    async def list(self) -> list[Admin]:
+        self.list_calls += 1
+        return list(self.store.values())
+
+    async def add(self, admin: Admin) -> None:
+        self.store[admin.telegram_id] = admin
+
+    async def remove(self, telegram_id: int) -> bool:
+        return self.store.pop(telegram_id, None) is not None
 
 
 # ==========================================

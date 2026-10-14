@@ -23,13 +23,16 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, Validation
 from bot.application.common.formatters import (
     aggregate_remaining,
     format_date,
+    format_datetime_local,
     is_valid_phone,
     normalize_phone,
     parse_date,
     today,
 )
+from bot.application.services.admin_service import AdminService
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
+from bot.application.services.edit_service import EditService
 from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import (
     MAX_MONEY,
@@ -64,6 +67,8 @@ BRANCH_REGISTRY_KEY: web.AppKey[BranchRegistry] = web.AppKey(
 )
 BRANCH_KEY: web.RequestKey[Branch] = web.RequestKey("branch", Branch)
 LANGUAGE_STORE_KEY: web.AppKey[LanguageStore] = web.AppKey("language_store", LanguageStore)
+ADMIN_SERVICE_KEY: web.AppKey[AdminService] = web.AppKey("admin_service", AdminService)
+EDIT_SERVICE_KEY: web.AppKey[EditService] = web.AppKey("edit_service", EditService)
 
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 BRANCH_HEADER = "X-Branch"
@@ -133,6 +138,27 @@ class MakePaymentDTO(BaseModel):
     payment_date: OptionalName = ""
 
 
+class UpdateClientDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: NonBlankName
+    phone: OptionalName = ""
+
+
+class UpdateDebtDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    debt_date: NonBlankName
+    products: list[ProductItemDTO] = Field(..., min_length=1, max_length=MAX_PRODUCTS_PER_DEBT)
+
+
+class AddAdminDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    telegram_id: int = Field(..., gt=0)
+    full_name: OptionalName = ""
+
+
 class DebtIdsDTO(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -187,6 +213,32 @@ def _actor_id(request: web.Request) -> int | None:
         if isinstance(raw_id, int):
             return raw_id
     return None
+
+
+def _actor_name(request: web.Request) -> str:
+    """Tahrir tarixida ko'rsatiladigan foydalanuvchi ismi (Telegram profilidan)."""
+    user = request.get(TG_USER_KEY)
+    if not isinstance(user, dict):
+        return ""
+    name = " ".join(
+        str(user.get(key) or "").strip() for key in ("first_name", "last_name")
+    ).strip()
+    if not name and user.get("username"):
+        name = f"@{user['username']}"
+    return name[:80]
+
+
+def _edit_service(request: web.Request) -> EditService | None:
+    branch = request.get(BRANCH_KEY)
+    return branch.edit_service if branch else request.app.get(EDIT_SERVICE_KEY)
+
+
+def _edit_to_dict(record) -> dict:
+    return {
+        "edited_at": format_datetime_local(record.edited_at),
+        "edited_by_name": record.edited_by_name,
+        "changes": [c.to_dict() for c in record.changes],
+    }
 
 
 def _validation_error_response(val_err: ValidationError) -> web.Response:
@@ -497,11 +549,18 @@ async def api_get_client_report(request: web.Request) -> web.Response:
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=404)
 
+    # Har bir yozuvning faqat oxirgi tahriri (ro'yxat eng yangisidan boshlanadi).
+    edit_service = _edit_service(request)
+    last_edits: dict[int | None, dict] = {}
+    for record in await edit_service.get_edits(client_id) if edit_service else []:
+        last_edits.setdefault(record.debt_id, _edit_to_dict(record))
+
     return web.json_response({
         "client": {
             "id": report.client.id,
             "full_name": report.client.full_name,
             "phone": report.client.phone,
+            "last_edit": last_edits.get(None),
         },
         "debts": [
             {
@@ -519,6 +578,7 @@ async def api_get_client_report(request: web.Request) -> web.Response:
                 "remaining_debt": d.remaining_debt,
                 "status": d.status.value,
                 "products": [p.to_dict() for p in d.products],
+                "last_edit": last_edits.get(d.id),
             }
             for d in report.debts
         ],
@@ -933,6 +993,129 @@ async def api_trash_purge(request: web.Request) -> web.Response:
         )
 
 
+def _path_id(request: web.Request) -> int | None:
+    raw = request.match_info.get("id", "")
+    return int(raw) if raw.isdigit() else None
+
+
+async def _read_dto(request: web.Request, dto_cls):
+    """Body'ni DTO ga o'qiydi: (dto, None) yoki (None, xato javobi)."""
+    try:
+        body = await request.json()
+    except Exception:
+        return None, web.json_response({"error": _("Yaroqsiz JSON format")}, status=400)
+    try:
+        return dto_cls.model_validate(body), None
+    except ValidationError as val_err:
+        return None, _validation_error_response(val_err)
+
+
+async def api_update_client(request: web.Request) -> web.Response:
+    """Mijoz ismi va telefonini tahrirlaydi."""
+    edit_service = _edit_service(request)
+    client_id = _path_id(request)
+    if edit_service is None or client_id is None:
+        return web.json_response({"error": _("Noto'g'ri client ID")}, status=400)
+    dto, error = await _read_dto(request, UpdateClientDTO)
+    if error is not None:
+        return error
+    try:
+        client = await edit_service.update_client(
+            client_id,
+            dto.full_name,
+            dto.phone,
+            actor_id=_actor_id(request),
+            actor_name=_actor_name(request),
+        )
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response({
+        "ok": True,
+        "client": {"id": client.id, "full_name": client.full_name, "phone": client.phone},
+    })
+
+
+async def api_update_debt(request: web.Request) -> web.Response:
+    """Qarz sanasi va tovarlarini tahrirlaydi (qoldiq qayta hisoblanadi)."""
+    edit_service = _edit_service(request)
+    debt_id = _path_id(request)
+    if edit_service is None or debt_id is None:
+        return web.json_response({"error": _("Noto'g'ri qarz ID")}, status=400)
+    dto, error = await _read_dto(request, UpdateDebtDTO)
+    if error is not None:
+        return error
+    debt_date = parse_date(dto.debt_date)
+    if debt_date is None:
+        return web.json_response(
+            {"error": _("Sana formati noto'g'ri (DD.MM.YYYY, masalan: 17.08.2026)")},
+            status=400,
+        )
+    products = [
+        DebtProduct(name=p.name, quantity=p.quantity, price_per_unit=p.price_per_unit)
+        for p in dto.products
+    ]
+    try:
+        debt = await edit_service.update_debt(
+            debt_id,
+            debt_date,
+            products,
+            actor_id=_actor_id(request),
+            actor_name=_actor_name(request),
+        )
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response(
+        {"ok": True, "debt_id": debt.id, "remaining_debt": debt.remaining_debt}
+    )
+
+
+def _admin_service(request: web.Request) -> AdminService | None:
+    return request.app.get(ADMIN_SERVICE_KEY)
+
+
+async def api_get_admins(request: web.Request) -> web.Response:
+    """Adminlar ro'yxati: asosiylari (o'chirib bo'lmaydi) va qo'shilganlar."""
+    service = _admin_service(request)
+    if service is None:
+        return web.json_response({"admins": [], "me": _actor_id(request)})
+    admins = await service.list_admins()
+    return web.json_response({
+        "admins": [
+            {"telegram_id": a.telegram_id, "full_name": a.full_name, "is_root": a.is_root}
+            for a in admins
+        ],
+        "me": _actor_id(request),
+    })
+
+
+async def api_add_admin(request: web.Request) -> web.Response:
+    """Yangi admin qo'shadi (uchala filial botiga birdaniga)."""
+    service = _admin_service(request)
+    if service is None:
+        return web.json_response({"error": _("Admin boshqaruvi sozlanmagan")}, status=400)
+    dto, error = await _read_dto(request, AddAdminDTO)
+    if error is not None:
+        return error
+    try:
+        await service.add(dto.telegram_id, dto.full_name, added_by=_actor_id(request))
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response({"ok": True})
+
+
+async def api_remove_admin(request: web.Request) -> web.Response:
+    """Qo'shilgan adminni o'chiradi (asosiy adminlarni emas)."""
+    service = _admin_service(request)
+    telegram_id = _path_id(request)
+    if service is None or telegram_id is None:
+        return web.json_response({"error": _("Telegram ID noto'g'ri.")}, status=400)
+    try:
+        await service.remove(telegram_id, actor_id=_actor_id(request))
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response({"ok": True})
+
+
 def setup_routes(app: web.Application) -> None:
     """Route'larni aiohttp ilovasiga ro'yxatga oladi."""
     # Web UI & Health
@@ -949,6 +1132,11 @@ def setup_routes(app: web.Application) -> None:
     app.router.add_get("/api/clients/{id}/report", api_get_client_report)
     app.router.add_post("/api/debts", api_create_debt)
     app.router.add_post("/api/payments", api_make_payment)
+    app.router.add_patch("/api/clients/{id}", api_update_client)
+    app.router.add_patch("/api/debts/{id}", api_update_debt)
+    app.router.add_get("/api/admins", api_get_admins)
+    app.router.add_post("/api/admins", api_add_admin)
+    app.router.add_delete("/api/admins/{id}", api_remove_admin)
 
     # REST APIs — Korzina (Trash)
     app.router.add_get("/api/paid-debts", api_get_paid_debts)

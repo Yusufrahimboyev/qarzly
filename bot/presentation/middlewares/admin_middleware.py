@@ -1,6 +1,7 @@
 """Presentation qatlami: Admin autentifikatsiya va ruxsat tekshiruvi middleware'i.
 
-Faqat ADMIN_IDS ro'yxatidagi Telegram ID egalari botdan foydalana oladi.
+Faqat ADMIN_IDS ro'yxatidagi (asosiy) va bazaga qo'shilgan adminlar botdan
+foydalana oladi (qo'shilganlar — AdminService orqali, uchala bot uchun umumiy).
 
 Ro'yxat bo'sh bo'lsa, kirish ochiq emas — taqiqlanadi. Yagona istisno:
 `ALLOW_OPEN_ACCESS=true` bilan ongli ravishda yoqilgan development rejimi.
@@ -16,6 +17,7 @@ from typing import Any
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, InlineQuery, Message, TelegramObject
 
+from bot.application.services.admin_service import AdminService
 from bot.core.config import Settings
 from bot.i18n import _
 
@@ -25,8 +27,9 @@ logger = logging.getLogger(__name__)
 class AdminMiddleware(BaseMiddleware):
     """Foydalanuvchi admin ekanligini tekshiruvchi middleware."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, admin_service: AdminService | None = None) -> None:
         self._settings = settings
+        self._admin_service = admin_service
 
     async def __call__(
         self,
@@ -52,7 +55,10 @@ class AdminMiddleware(BaseMiddleware):
             await self._deny(event, user_id)
             return None
 
-        if user_id is None or user_id not in allowed_ids:
+        if user_id is None or not (
+            user_id in allowed_ids
+            or (self._admin_service is not None and await self._admin_service.is_admin(user_id))
+        ):
             logger.warning("Ruxsatsiz kirishga urinish: user_id=%s", user_id)
             await self._deny(event, user_id)
             return None

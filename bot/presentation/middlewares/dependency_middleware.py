@@ -11,6 +11,7 @@ from typing import Any
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 
+from bot.application.services.admin_service import AdminService
 from bot.core.config import Settings
 from bot.infrastructure.branches import BranchRegistry
 
@@ -22,9 +23,11 @@ class DependencyMiddleware(BaseMiddleware):
         self,
         registry: BranchRegistry,
         settings: Settings,
+        admin_service: AdminService | None = None,
     ) -> None:
         self._registry = registry
         self._settings = settings
+        self._admin_service = admin_service
 
     async def __call__(
         self,
@@ -40,4 +43,6 @@ class DependencyMiddleware(BaseMiddleware):
         data["debt_service"] = branch.debt_service
         data["settings"] = self._settings
         data["voice_debt_service"] = branch.voice_debt_service
+        data["edit_service"] = branch.edit_service
+        data["admin_service"] = self._admin_service
         return await handler(event, data)

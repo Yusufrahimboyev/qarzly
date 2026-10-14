@@ -1,4 +1,4 @@
-"""Presentation qatlami: sozlamalar (interfeys tili).
+"""Presentation qatlami: sozlamalar (interfeys tili, adminlar bo'limiga kirish).
 
 Til bot va Mini App uchun umumiy — `user_settings` jadvalida saqlanadi.
 """
@@ -25,7 +25,7 @@ def _language_keyboard(current: str) -> InlineKeyboardMarkup:
                 callback_data=f"lang:{code}",
             )]
             for code, title in LANGUAGES.items()
-        ]
+        ] + [[InlineKeyboardButton(text=_("👥 Adminlar"), callback_data="admins:list")]]
     )
 
 

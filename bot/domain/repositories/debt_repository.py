@@ -53,6 +53,15 @@ class DebtRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def update_details(self, current: Debt, updated: Debt) -> Debt | None:
+        """Qarz sanasi, tovarlari va summalarini yangilaydi.
+
+        Faqat qarz `current` holatida turgan bo'lsa (shu orada to'lov
+        tushmagan bo'lsa) yangilanadi; aks holda None qaytadi.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_all_active(self) -> list[Debt]:
         """Barcha yopilmagan faol qarzlarni qaytaradi."""
         raise NotImplementedError

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from aiogram import Dispatcher
 
+from bot.application.services.admin_service import AdminService
 from bot.core.config import Settings
 from bot.infrastructure.branches import BranchRegistry
 from bot.infrastructure.database.repositories.language_repository import LanguageStore
@@ -17,14 +18,16 @@ def register_middlewares(
     registry: BranchRegistry,
     settings: Settings,
     language_store: LanguageStore,
+    admin_service: AdminService,
 ) -> None:
     """Barcha middleware'larni ro'yxatga oladi."""
     language_mw = LanguageMiddleware(language_store)
     error_mw = ErrorMiddleware()
-    admin_mw = AdminMiddleware(settings)
+    admin_mw = AdminMiddleware(settings, admin_service)
     dependency_mw = DependencyMiddleware(
         registry=registry,
         settings=settings,
+        admin_service=admin_service,
     )
 
     for observer in (dp.message, dp.callback_query, dp.inline_query):

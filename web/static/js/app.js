@@ -1040,6 +1040,10 @@ function renderDebtHistoryCard(d) {
                 <span>${t("Boshlang'ich to'lov")}</span>
                 <span>−${formatMoney(d.given_money, d.currency)}</span>
             </div>` : ''}
+            <div class="history-card-actions">
+                <div class="history-card-edited">${editedMarkHTML(d.last_edit)}</div>
+                <button type="button" class="btn btn-ghost btn-sm" data-edit-debt="${d.id}">${icon('edit')}${t('Tahrirlash')}</button>
+            </div>
         </div>
     `;
 }
@@ -1073,8 +1077,12 @@ async function openClientReportModal(clientId) {
     // Hisobot yuklanmaguncha amallar o'chiq turadi
     const payBtn = document.getElementById('modal-pay-now-btn');
     const addBtn = document.getElementById('modal-add-debt-btn');
+    const editClientBtn = document.getElementById('modal-edit-client-btn');
+    const clientEdited = document.getElementById('modal-client-edited');
     if (payBtn) payBtn.disabled = true;
     if (addBtn) addBtn.disabled = true;
+    if (editClientBtn) editClientBtn.disabled = true;
+    if (clientEdited) clientEdited.innerHTML = '';
 
     const wasOpen = modal.style.display !== 'none';
     modal.style.display = 'flex';
@@ -1104,6 +1112,7 @@ async function openClientReportModal(clientId) {
 
     document.getElementById('modal-client-name').textContent = data.client.full_name;
     document.getElementById('modal-client-phone').textContent = data.client.phone || t('Telefon kiritilmagan');
+    if (clientEdited) clientEdited.innerHTML = editedMarkHTML(data.client.last_edit);
     document.getElementById('modal-total-products').innerHTML = formatMoneyLinesHTML(data.total_product_price);
     document.getElementById('modal-total-paid').innerHTML = formatMoneyLinesHTML(sumMaps(data.total_paid_after, data.total_given_money));
 
@@ -1136,6 +1145,7 @@ async function openClientReportModal(clientId) {
         `).join('');
 
     if (addBtn) addBtn.disabled = false;
+    if (editClientBtn) editClientBtn.disabled = false;
     if (payBtn) {
         payBtn.disabled = false;
         payBtn.style.display = hasAnyDebt ? '' : 'none';
@@ -1160,6 +1170,340 @@ function closeClientReportModal() {
         } catch (e) {}
     }
     modalReturnFocus = null;
+}
+
+// ==========================================
+// TAHRIRLASH: mijoz (ism, telefon) va qarz (sana, tovarlar)
+// Tahrirlangan yozuv ostida Telegram'dagidek kichik "tahrirlangan" belgisi;
+// bosilsa oxirgi tahrirda nima o'zgargani ochiladi.
+// ==========================================
+
+const EDIT_FIELD_LABELS = {
+    full_name: N_('Ism'),
+    phone: N_('Telefon'),
+    debt_date: N_('Sana'),
+    products: N_('Tovarlar'),
+    original_debt: N_('Qarz summasi'),
+};
+
+function editedMarkHTML(lastEdit) {
+    if (!lastEdit) return '';
+    const changes = (lastEdit.changes || []).map(c => `
+        <div class="edit-change">
+            <span class="edit-change-field">${escapeHtml(t(EDIT_FIELD_LABELS[c.field] || c.field))}</span>
+            <span class="edit-change-values"><s>${escapeHtml(c.old || '—')}</s> → ${escapeHtml(c.new || '—')}</span>
+        </div>`).join('');
+    const who = lastEdit.edited_by_name ? ` · ${escapeHtml(lastEdit.edited_by_name)}` : '';
+    return `
+        <button type="button" class="edited-mark" aria-expanded="false">${icon('edit')}${t('tahrirlangan')}</button>
+        <div class="edit-details" hidden>
+            <div class="edit-details-meta">${t('Oxirgi tahrir: {when}', { when: escapeHtml(lastEdit.edited_at) })}${who}</div>
+            ${changes}
+        </div>`;
+}
+
+// "tahrirlangan" belgisi — har qanday joyda bosilganda tafsilot ochiladi/yopiladi
+document.addEventListener('click', (e) => {
+    const mark = e.target.closest('.edited-mark');
+    if (!mark) return;
+    const details = mark.nextElementSibling;
+    if (!details || !details.classList.contains('edit-details')) return;
+    details.hidden = !details.hidden;
+    mark.setAttribute('aria-expanded', String(!details.hidden));
+    hapticImpact();
+});
+
+let editContext = null;  // { kind: 'client'|'debt', clientId, debt? }
+
+function editProductRowHTML(p = {}, currency = 'UZS') {
+    return `
+        <div class="product-group edit-product">
+            <div class="product-group-header">
+                <span class="product-group-title">${t('Tovar')}</span>
+                <button type="button" class="icon-btn edit-remove-product" aria-label="${t("Tovarni o'chirish")}">${icon('trash')}</button>
+            </div>
+            <div class="form-group">
+                <label>${t('Tovar nomi')}</label>
+                <input type="text" class="edit-p-name" value="${escapeHtml(p.name || '')}" maxlength="80" autocomplete="off" required>
+            </div>
+            <div class="product-row">
+                <div class="form-group">
+                    <label>${t('Soni')}</label>
+                    <input type="number" class="edit-p-qty" value="${Number(p.quantity) || 1}" min="1" step="1" inputmode="numeric" required>
+                </div>
+                <div class="form-group">
+                    <label>${t('Narxi (1 dona, {currency})', { currency: currency === 'USD' ? '$' : t("so'm") })}</label>
+                    <input type="number" class="edit-p-price" value="${Number(p.price_per_unit) || ''}" min="1" step="1" inputmode="numeric" required>
+                </div>
+            </div>
+        </div>`;
+}
+
+function readEditProducts() {
+    return [...document.querySelectorAll('#edit-modal-body .edit-product')].map(row => ({
+        name: row.querySelector('.edit-p-name').value.trim(),
+        quantity: Number(row.querySelector('.edit-p-qty').value) || 0,
+        price_per_unit: Number(row.querySelector('.edit-p-price').value) || 0,
+    }));
+}
+
+function updateEditTotal() {
+    const totalEl = document.getElementById('edit-total');
+    if (!totalEl || !editContext?.debt) return;
+    const total = readEditProducts().reduce((sum, p) => sum + p.quantity * p.price_per_unit, 0);
+    totalEl.textContent = formatMoney(total, editContext.debt.currency);
+    const rows = document.querySelectorAll('#edit-modal-body .edit-product');
+    rows.forEach(row => { row.querySelector('.edit-remove-product').hidden = rows.length < 2; });
+}
+
+function openEditModal(context) {
+    editContext = context;
+    const body = document.getElementById('edit-modal-body');
+    const title = document.getElementById('edit-modal-title');
+    const subtitle = document.getElementById('edit-modal-subtitle');
+    const report = state.selectedClientReport;
+    if (!body || !report) return;
+
+    if (context.kind === 'client') {
+        title.textContent = t('Mijozni tahrirlash');
+        subtitle.textContent = '';
+        body.innerHTML = `
+            <div class="form-group">
+                <label for="edit-client-name">${t('Ism-familiya')}</label>
+                <input type="text" id="edit-client-name" value="${escapeHtml(report.client.full_name)}" maxlength="80" autocomplete="off" required>
+            </div>
+            <div class="form-group">
+                <label for="edit-client-phone">${t('Telefon raqami')}</label>
+                <input type="tel" id="edit-client-phone" value="${escapeHtml(report.client.phone || '')}" inputmode="tel" autocomplete="off">
+            </div>`;
+    } else {
+        const d = context.debt;
+        const products = (d.products && d.products.length)
+            ? d.products
+            : [{ name: d.product_name, quantity: d.product_quantity, price_per_unit: Math.round(d.product_price / (d.product_quantity || 1)) }];
+        title.textContent = t('Qarzni tahrirlash');
+        subtitle.textContent = report.client.full_name;
+        body.innerHTML = `
+            <div class="form-group">
+                <label for="edit-debt-date">${t('Qarz sanasi')}</label>
+                <input type="text" id="edit-debt-date" class="date-input" value="${escapeHtml(d.debt_date)}" placeholder="KK.OO.YYYY" inputmode="numeric" maxlength="10" autocomplete="off" required>
+            </div>
+            <div id="edit-products">${products.map(p => editProductRowHTML(p, d.currency)).join('')}</div>
+            <button type="button" id="edit-add-product" class="btn btn-dashed btn-block">${icon('plus')} ${t("Yana tovar qo'shish")}</button>
+            <div class="edit-summary">
+                <span>${t('Tovarlar jami')}</span><strong id="edit-total"></strong>
+            </div>
+            <p class="settings-hint">${t("Valyuta, exchange va boshlang'ich to'lov o'zgarmaydi. Qoldiq qarz to'langan pulni hisobga olib qayta hisoblanadi.")}</p>`;
+        attachDateMask(document.getElementById('edit-debt-date'));
+        updateEditTotal();
+    }
+
+    closeClientReportModal();
+    const modal = document.getElementById('edit-modal');
+    modal.style.display = 'flex';
+    document.body.classList.add('modal-open');
+    try {
+        tg?.BackButton?.onClick(closeEditModal);
+        tg?.BackButton?.show();
+    } catch (e) {}
+}
+
+function closeEditModal({ reopenReport = true } = {}) {
+    const modal = document.getElementById('edit-modal');
+    if (!modal || modal.style.display === 'none') return;
+    modal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+    try {
+        tg?.BackButton?.offClick(closeEditModal);
+        tg?.BackButton?.hide();
+    } catch (e) {}
+    const clientId = editContext?.clientId;
+    editContext = null;
+    if (reopenReport && clientId) openClientReportModal(clientId);
+}
+
+async function submitEdit(e) {
+    e.preventDefault();
+    if (!editContext) return;
+    const saveBtn = document.getElementById('edit-save-btn');
+    let url;
+    let payload;
+    if (editContext.kind === 'client') {
+        const fullName = document.getElementById('edit-client-name').value.trim();
+        if (!fullName) {
+            showToast(t('Mijoz ismini kiriting'), 'error');
+            return;
+        }
+        url = `/api/clients/${editContext.clientId}`;
+        payload = { full_name: fullName, phone: document.getElementById('edit-client-phone').value.trim() };
+    } else {
+        const debtDate = document.getElementById('edit-debt-date').value.trim();
+        if (!isValidDateString(debtDate)) {
+            showToast(t("Sanani KK.OO.YYYY ko'rinishida kiriting"), 'error');
+            return;
+        }
+        const products = readEditProducts();
+        if (products.some(p => !p.name || p.quantity < 1 || p.price_per_unit < 1)) {
+            showToast(t("Har bir tovarning nomi, soni va narxini to'ldiring"), 'error');
+            return;
+        }
+        url = `/api/debts/${editContext.debt.id}`;
+        payload = { debt_date: debtDate, products };
+    }
+
+    saveBtn.disabled = true;
+    try {
+        await apiJson(url, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+    } catch (err) {
+        notifyError(err);
+        saveBtn.disabled = false;
+        return;
+    }
+    saveBtn.disabled = false;
+    hapticSuccess();
+    showToast(t("O'zgarishlar saqlandi"), 'success');
+    closeEditModal();
+    refreshAllData();
+}
+
+function setupEditing() {
+    document.getElementById('modal-edit-client-btn')?.addEventListener('click', () => {
+        const report = state.selectedClientReport;
+        if (report) openEditModal({ kind: 'client', clientId: report.client.id });
+    });
+    document.getElementById('modal-debts-list')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-edit-debt]');
+        const report = state.selectedClientReport;
+        if (!btn || !report) return;
+        const debt = report.debts.find(d => String(d.id) === btn.dataset.editDebt);
+        if (debt) openEditModal({ kind: 'debt', clientId: report.client.id, debt });
+    });
+
+    const body = document.getElementById('edit-modal-body');
+    body?.addEventListener('click', (e) => {
+        if (e.target.closest('#edit-add-product')) {
+            document.getElementById('edit-products')?.insertAdjacentHTML(
+                'beforeend', editProductRowHTML({}, editContext?.debt?.currency));
+            updateEditTotal();
+            return;
+        }
+        const remove = e.target.closest('.edit-remove-product');
+        if (remove) {
+            remove.closest('.edit-product')?.remove();
+            updateEditTotal();
+        }
+    });
+    body?.addEventListener('input', updateEditTotal);
+
+    document.getElementById('edit-form')?.addEventListener('submit', submitEdit);
+    document.getElementById('edit-close-btn')?.addEventListener('click', () => closeEditModal());
+    document.getElementById('edit-cancel-btn')?.addEventListener('click', () => closeEditModal());
+    const overlay = document.getElementById('edit-modal');
+    overlay?.addEventListener('click', (e) => {
+        if (e.target === overlay) closeEditModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && overlay && overlay.style.display !== 'none') closeEditModal();
+    });
+}
+
+// ==========================================
+// SOZLAMALAR → ADMINLAR (uchala filial boti uchun umumiy ro'yxat)
+// ==========================================
+
+async function loadAdmins() {
+    const list = document.getElementById('admins-list');
+    if (!list) return;
+    let data;
+    try {
+        data = await apiJson('/api/admins');
+    } catch (err) {
+        list.innerHTML = historyEmptyHTML(t("Adminlar ro'yxatini yuklab bo'lmadi"));
+        return;
+    }
+    const admins = data.admins || [];
+    list.innerHTML = admins.length === 0 ? historyEmptyHTML('—') : admins.map(a => {
+        const isMe = a.telegram_id === data.me;
+        const name = a.full_name ? escapeHtml(a.full_name) : t('Ism kiritilmagan');
+        const tags = [
+            a.is_root ? `<span class="badge badge-neutral">${t('Asosiy')}</span>` : '',
+            isMe ? `<span class="badge badge-success">${t('Siz')}</span>` : '',
+        ].join('');
+        const removeBtn = (!a.is_root && !isMe)
+            ? `<button type="button" class="icon-btn" data-remove-admin="${a.telegram_id}" aria-label="${t("Adminni o'chirish")}">${icon('trash')}</button>`
+            : '';
+        return `
+            <div class="admin-row">
+                <div class="admin-info">
+                    <span class="admin-name">${name} ${tags}</span>
+                    <span class="admin-id">ID: ${a.telegram_id}</span>
+                </div>
+                ${removeBtn}
+            </div>`;
+    }).join('');
+}
+
+function confirmAction(message, onConfirm) {
+    if (tg?.showConfirm) {
+        tg.showConfirm(message, ok => { if (ok) onConfirm(); });
+    } else if (window.confirm(message)) {
+        onConfirm();
+    }
+}
+
+function setupAdmins() {
+    document.getElementById('btn-settings')?.addEventListener('click', loadAdmins);
+
+    const addBtn = document.getElementById('btn-add-admin');
+    addBtn?.addEventListener('click', async () => {
+        const idInput = document.getElementById('admin-new-id');
+        const nameInput = document.getElementById('admin-new-name');
+        const raw = idInput.value.replace(/\s+/g, '');
+        if (!/^\d{1,15}$/.test(raw) || Number(raw) <= 0) {
+            showToast(t("Telegram ID faqat raqamlardan iborat bo'lishi kerak"), 'error');
+            idInput.focus();
+            return;
+        }
+        addBtn.disabled = true;
+        try {
+            await apiJson('/api/admins', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ telegram_id: Number(raw), full_name: nameInput.value.trim() }),
+            });
+        } catch (err) {
+            notifyError(err);
+            addBtn.disabled = false;
+            return;
+        }
+        addBtn.disabled = false;
+        idInput.value = '';
+        nameInput.value = '';
+        hapticSuccess();
+        showToast(t("Admin qo'shildi — u uchala botdan foydalana oladi"), 'success');
+        loadAdmins();
+    });
+
+    document.getElementById('admins-list')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-remove-admin]');
+        if (!btn) return;
+        const id = btn.dataset.removeAdmin;
+        confirmAction(t("{id} adminlikdan o'chirilsinmi? U uchala botdan ham chiqariladi.", { id }), async () => {
+            try {
+                await apiJson(`/api/admins/${id}`, { method: 'DELETE' });
+            } catch (err) {
+                notifyError(err);
+                return;
+            }
+            hapticSuccess();
+            showToast(t("Admin o'chirildi"), 'success');
+            loadAdmins();
+        });
+    });
 }
 
 // ==========================================
@@ -2258,6 +2602,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initBranches();
     syncLanguageFromServer();
+    setupEditing();
+    setupAdmins();
 
     // Initial Fetch — barcha asosiy ma'lumotlarni birdaniga yuklaymiz
     fetchStats();

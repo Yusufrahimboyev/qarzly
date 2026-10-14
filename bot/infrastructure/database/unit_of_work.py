@@ -14,6 +14,9 @@ from bot.infrastructure.database.repositories.client_repository import (
     PgClientRepository,
 )
 from bot.infrastructure.database.repositories.debt_repository import PgDebtRepository
+from bot.infrastructure.database.repositories.edit_log_repository import (
+    PgEditLogRepository,
+)
 from bot.infrastructure.database.repositories.payment_repository import (
     PgPaymentRepository,
 )
@@ -37,6 +40,7 @@ class PgUnitOfWork(UnitOfWork):
         self.clients = PgClientRepository(conn)
         self.debts = PgDebtRepository(conn)
         self.payments = PgPaymentRepository(conn)
+        self.edits = PgEditLogRepository(conn)
 
     async def commit(self) -> None:
         if self._transaction is not None and not self._finished:

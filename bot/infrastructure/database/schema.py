@@ -145,6 +145,37 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
 );
 """
 
+# Mijoz/qarz tahrirlari tarixi (append-only): nima, eski → yangi, kim, qachon.
+CREATE_EDIT_LOG_TABLE = """
+CREATE TABLE IF NOT EXISTS edit_log (
+    id             BIGSERIAL PRIMARY KEY,
+    client_id      BIGINT NOT NULL,
+    debt_id        BIGINT,
+    changes_json   TEXT NOT NULL,
+    edited_by      BIGINT,
+    edited_by_name TEXT NOT NULL DEFAULT '',
+    edited_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+# Qo'shilgan adminlar — filiallar (sxemalar) emas, uchala bot uchun bitta
+# ro'yxat bo'lishi uchun ataylab `public` sxemada.
+CREATE_BOT_ADMINS_TABLE = """
+CREATE TABLE IF NOT EXISTS public.bot_admins (
+    telegram_id BIGINT PRIMARY KEY,
+    full_name   TEXT NOT NULL DEFAULT '',
+    added_by    BIGINT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+# Supabase `public` sxemadagi jadvallarni REST API (anon kaliti) orqali ochib
+# qo'yadi. RLS yoqilgan va siyosat yo'q — API orqali kirish yopiq; bot jadval
+# egasi (postgres) sifatida ulangani uchun unga ta'sir qilmaydi. Ayniqsa
+# bot_admins uchun muhim: aks holda API orqali o'zini admin qilib qo'shish mumkin.
+ENABLE_RLS_BOT_ADMINS = "ALTER TABLE public.bot_admins ENABLE ROW LEVEL SECURITY;"
+ENABLE_RLS_EDIT_LOG = "ALTER TABLE edit_log ENABLE ROW LEVEL SECURITY;"
+
 CREATE_INDEX_CLIENTS_NAME = (
     "CREATE INDEX IF NOT EXISTS idx_clients_full_name ON clients(LOWER(full_name));"
 )
@@ -196,6 +227,9 @@ CREATE_INDEX_IDEMPOTENCY_CREATED = (
     "CREATE INDEX IF NOT EXISTS idx_idempotency_created_at"
     " ON idempotency_keys(created_at);"
 )
+CREATE_INDEX_EDIT_LOG_CLIENT = (
+    "CREATE INDEX IF NOT EXISTS idx_edit_log_client_id ON edit_log(client_id);"
+)
 
 # Barcha DDL iboralari ketma-ketligi. Migration runner shu ro'yxat bo'yicha
 # yuradi (faqat "yangi baza" holati uchun; mavjud bazalar migrations.py dagi
@@ -210,6 +244,10 @@ SCHEMA: tuple[str, ...] = (
     CREATE_TRASH_TABLE,
     CREATE_TRASH_PAYMENTS_TABLE,
     CREATE_IDEMPOTENCY_TABLE,
+    CREATE_EDIT_LOG_TABLE,
+    CREATE_BOT_ADMINS_TABLE,
+    ENABLE_RLS_EDIT_LOG,
+    ENABLE_RLS_BOT_ADMINS,
     CREATE_INDEX_CLIENTS_NAME,
     CREATE_INDEX_CLIENTS_PHONE,
     CREATE_INDEX_DEBTS_CLIENT,
@@ -223,4 +261,5 @@ SCHEMA: tuple[str, ...] = (
     CREATE_INDEX_TRASH_ORIGINAL,
     CREATE_INDEX_TRASH_PAYMENTS_CLIENT,
     CREATE_INDEX_IDEMPOTENCY_CREATED,
+    CREATE_INDEX_EDIT_LOG_CLIENT,
 )

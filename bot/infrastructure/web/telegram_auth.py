@@ -15,6 +15,7 @@ import json
 import logging
 import time
 from collections import deque
+from collections.abc import Awaitable, Callable
 from urllib.parse import parse_qsl
 
 from aiohttp import web
@@ -139,11 +140,13 @@ def create_auth_middleware(
     allow_open_access: bool = False,
     rate_limit_per_minute: int = 120,
     max_age_seconds: int = MAX_INIT_DATA_AGE_SECONDS,
+    is_admin: Callable[[int], Awaitable[bool]] | None = None,
 ):
     """/api/* route'lari uchun Telegram initData autentifikatsiya middleware'i.
 
     - Imzosiz/eskirgan initData yoki Telegram ichidan ochilmagan sahifa → 401.
-    - ADMIN_IDS ro'yxatidagi foydalanuvchigina kiradi (aks holda 403).
+    - ADMIN_IDS ro'yxatidagi yoki `is_admin` tasdiqlagan (bazaga qo'shilgan)
+      foydalanuvchigina kiradi (aks holda 403).
     - ADMIN_IDS bo'sh bo'lsa kirish taqiqlanadi; ochiq rejim faqat
       `allow_open_access=True` bilan (development) ishlaydi.
     - Har bir foydalanuvchi/IP uchun daqiqadagi so'rovlar soni cheklanadi;
@@ -200,7 +203,9 @@ def create_auth_middleware(
                 status=403,
             )
 
-        if allowed_ids and user_id not in allowed_ids:
+        if allowed_ids and user_id not in allowed_ids and not (
+            is_admin is not None and isinstance(user_id, int) and await is_admin(user_id)
+        ):
             logger.warning("API'ga admin bo'lmagan foydalanuvchi urindi: %s", user_id)
             return web.json_response(
                 {"error": "Sizga bu ma'lumotlarga kirish huquqi berilmagan."},

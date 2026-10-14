@@ -69,6 +69,15 @@ def format_date(value: date | datetime | None) -> str:
     return value.strftime("%d.%m.%Y")
 
 
+def format_datetime_local(value: datetime | None) -> str:
+    """Vaqt belgisini Toshkent vaqtida 'DD.MM.YYYY HH:MM' ko'rinishiga keltiradi."""
+    if value is None:
+        return ""
+    if value.tzinfo is not None:
+        value = value.astimezone(_TASHKENT_TZ)
+    return value.strftime("%d.%m.%Y %H:%M")
+
+
 def to_date(value: date | datetime | str) -> date:
     """Sanani `datetime.date` ga keltiradi (matn bo'lsa parse qiladi).
 

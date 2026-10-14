@@ -9,13 +9,16 @@ from bot.application.common.formatters import (
     aggregate_remaining,
     esc_html,
     format_date,
+    format_datetime_local,
     format_money,
     format_money_map,
 )
 from bot.application.services.client_service import ClientService
 from bot.application.services.debt_service import DebtService
+from bot.application.services.edit_service import EditService
 from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import DebtStatus
+from bot.domain.entities.edit import EditRecord
 from bot.domain.entities.payment import PaymentType
 from bot.domain.entities.report import ClientReport
 from bot.i18n import _, all_variants
@@ -128,6 +131,7 @@ async def cb_back_to_debt_table(
 async def cb_client_report(
     callback: CallbackQuery,
     debt_service: DebtService,
+    edit_service: EditService | None = None,
 ) -> None:
     """Tanlangan mijozning to'liq qarz va to'lovlar hisobotini ko'rsatadi."""
     if callback.data is None or not isinstance(callback.message, Message):
@@ -140,7 +144,8 @@ async def cb_client_report(
         await callback.answer(_("Mijoz topilmadi."), show_alert=True)
         return
 
-    text = _render_report(report)
+    edits = await edit_service.get_edits(client_id) if edit_service else []
+    text = _render_report(report, edits)
     keyboard = get_client_report_keyboard(client_id, has_debt=_has_debt(report))
     chunks = split_message(text)
 
@@ -159,13 +164,27 @@ def _has_debt(report: ClientReport) -> bool:
     return any(amount > 0 for amount in report.total_remaining_debt.values())
 
 
-def _render_report(report: ClientReport) -> str:
+def _edited_line(record: EditRecord | None, indent: str = "") -> list[str]:
+    """Telegram'dagidek kichik "tahrirlangan" belgisi (oxirgi tahrir vaqti bilan)."""
+    if record is None:
+        return []
+    return [indent + _(
+        "<i>✏️ tahrirlangan · {when}</i>", when=format_datetime_local(record.edited_at)
+    )]
+
+
+def _render_report(report: ClientReport, edits: list[EditRecord] | None = None) -> str:
     """Mijoz hisoboti matnini valyutalar ajratilgan holda shakllantiradi."""
     client = report.client
+    # Har bir yozuvning oxirgi tahriri (edits eng yangisidan boshlanadi).
+    last_edit: dict[int | None, EditRecord] = {}
+    for record in edits or []:
+        last_edit.setdefault(record.debt_id, record)
 
     lines: list[str] = [
         _("👤 <b>MIJOZ HISOBOTI:</b> <b>{name}</b>", name=esc_html(client.full_name)),
         _("📞 <b>Telefon:</b> {phone}", phone=esc_html(client.phone)),
+        *_edited_line(last_edit.get(None)),
         "━━━━━━━━━━━━━━━━━━━━",
         _("<b>📦 QARZLAR TARIXI:</b>"),
     ]
@@ -181,6 +200,7 @@ def _render_report(report: ClientReport) -> str:
                 f"\n<b>{idx}. {format_date(d.debt_date)} — "
                 f"{status_icon} {status_text}</b>"
             )
+            lines.extend(_edited_line(last_edit.get(d.id), "  "))
 
             # Ko'p tovarli bo'lsa har bir tovarni alohida ko'rsatamiz
             if len(d.products) > 1:

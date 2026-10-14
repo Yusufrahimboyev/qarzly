@@ -16,6 +16,7 @@ from types import TracebackType
 
 from bot.domain.repositories.client_repository import ClientRepository
 from bot.domain.repositories.debt_repository import DebtRepository
+from bot.domain.repositories.edit_log_repository import EditLogRepository
 from bot.domain.repositories.payment_repository import PaymentRepository
 
 
@@ -25,6 +26,7 @@ class UnitOfWork(ABC):
     clients: ClientRepository
     debts: DebtRepository
     payments: PaymentRepository
+    edits: EditLogRepository
 
     @abstractmethod
     async def begin(self) -> None:
@@ -80,10 +82,13 @@ class NonTransactionalUnitOfWork(UnitOfWork):
         clients: ClientRepository,
         debts: DebtRepository,
         payments: PaymentRepository,
+        edits: EditLogRepository | None = None,
     ) -> None:
         self.clients = clients
         self.debts = debts
         self.payments = payments
+        if edits is not None:
+            self.edits = edits
 
     async def begin(self) -> None:
         return None

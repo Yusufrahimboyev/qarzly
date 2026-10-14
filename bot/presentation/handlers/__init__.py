@@ -4,6 +4,7 @@ from __future__ import annotations
 from aiogram import Dispatcher
 
 from bot.presentation.handlers import (
+    admins,
     debt_creation,
     debt_payment,
     debt_table,
@@ -19,6 +20,7 @@ def register_handlers(dp: Dispatcher) -> None:
     """Barcha router'larni Dispatcher'ga ulaydi."""
     dp.include_router(start.router)
     dp.include_router(settings.router)
+    dp.include_router(admins.router)
     dp.include_router(debt_table.router)
     dp.include_router(debt_creation.router)
     dp.include_router(debt_payment.router)
