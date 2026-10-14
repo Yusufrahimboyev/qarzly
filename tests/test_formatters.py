@@ -1,7 +1,7 @@
 """Formatlash va parser funksiyalari uchun testlar."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
 from bot.application.common.formatters import (
     clip_button_text,
@@ -9,6 +9,7 @@ from bot.application.common.formatters import (
     format_date,
     format_money,
     normalize_phone,
+    now_local,
     parse_date,
     parse_date_input,
     parse_money,
@@ -50,7 +51,7 @@ def test_parse_money() -> None:
 
 
 def test_parse_date_input() -> None:
-    today_str = datetime.now().strftime("%d.%m.%Y")
+    today_str = now_local().strftime("%d.%m.%Y")
     assert parse_date_input("bugun") == today_str
     assert parse_date_input("today") == today_str
     assert parse_date_input("16.08.2026") == "16.08.2026"
