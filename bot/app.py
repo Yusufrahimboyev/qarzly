@@ -26,9 +26,10 @@ from bot.application.services.debt_service import DebtService
 from bot.application.services.edit_service import EditService
 from bot.application.services.user_service import UserService
 from bot.application.services.voice_debt_service import VoiceDebtService
-from bot.core.branches import BRANCH_SCHEMAS, BRANCH_TITLES
+from bot.core.branches import BRANCH_SCHEMAS, BRANCH_TITLES, oil_code, oil_title
 from bot.core.config import Settings, get_settings
 from bot.core.logging import setup_logging
+from bot.domain.entities.debt import UNIT_LITRES, UNIT_PIECES
 from bot.infrastructure.branches import Branch, BranchRegistry
 from bot.infrastructure.database.connection import Database
 from bot.infrastructure.database.repositories.admin_repository import PgAdminRepository
@@ -82,11 +83,15 @@ async def _open_branch(
     settings: Settings,
     code: str,
     laya: LayaKitClient | None,
+    *,
+    title: str,
+    schema: str | None,
+    unit: str = UNIT_PIECES,
 ) -> Branch:
-    """Filial sxemasini (migratsiyalar bilan) ochadi va servislarini yig'adi."""
+    """Filial (yoki uning Oil daftari) sxemasini ochadi va servislarini yig'adi."""
     database = Database(
         settings.dsn,
-        schema=BRANCH_SCHEMAS[code],
+        schema=schema,
         min_size=settings.db_pool_min_size,
         max_size=settings.db_pool_max_size,
         command_timeout=settings.db_command_timeout,
@@ -106,10 +111,12 @@ async def _open_branch(
         debts=debt_repository,
         payments=payment_repository,
         uow_factory=uow_factory,
+        unit=unit,
     )
     return Branch(
         code=code,
-        title=BRANCH_TITLES[code],
+        title=title,
+        unit=unit,
         client_service=client_service,
         debt_service=debt_service,
         user_service=UserService(PgUserRepository(pool)),
@@ -126,6 +133,7 @@ async def _open_branch(
             payments=payment_repository,
             edits=PgEditLogRepository(pool),
             uow_factory=uow_factory,
+            unit=unit,
         ),
     )
 
@@ -153,9 +161,21 @@ async def run() -> None:
                 timeout_seconds=settings.layakit_timeout_seconds,
             )
 
-        branch = await _open_branch(stack, settings, settings.branch, laya)
-        registry = BranchRegistry([branch], settings.branch)
-        logger.info("Filial ulandi: %s", branch.code)
+        code = settings.branch
+        branches = [
+            await _open_branch(
+                stack, settings, code, laya,
+                title=BRANCH_TITLES[code], schema=BRANCH_SCHEMAS[code],
+            )
+        ]
+        if settings.oil_enabled:
+            # Moy daftari faqat Mini App'da (bot asosiy daftar bilan ishlaydi).
+            branches.append(await _open_branch(
+                stack, settings, oil_code(code), None,
+                title=oil_title(code), schema=oil_code(code), unit=UNIT_LITRES,
+            ))
+        registry = BranchRegistry(branches, code)
+        logger.info("Filial ulandi: %s", ", ".join(b.code for b in registry))
         language_store = LanguageStore(registry.default.database.pool)
         admin_service = AdminService(
             PgAdminRepository(registry.default.database.pool), settings.admin_id_list
@@ -185,14 +205,16 @@ async def run() -> None:
         daily_report_job = None
         if settings.report_channel_id:
             async def daily_report_job() -> None:  # noqa: E306
-                await send_daily_report(
-                    bot=bot,
-                    debt_service=branch.debt_service,
-                    channel_id=settings.report_channel_id,
-                    start_date=settings.report_start_date,
-                    branch_code=branch.code,
-                    branch_title=branch.title,
-                )
+                # Asosiy daftar va (yoqilgan bo'lsa) Oil daftari — alohida fayllar.
+                for branch in registry:
+                    await send_daily_report(
+                        bot=bot,
+                        debt_service=branch.debt_service,
+                        channel_id=settings.report_channel_id,
+                        start_date=settings.report_start_date,
+                        branch_code=branch.code,
+                        branch_title=branch.title,
+                    )
 
         scheduler = create_scheduler(
             settings.render_external_url,

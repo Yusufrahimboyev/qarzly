@@ -337,6 +337,49 @@ function setCurrentBranch(code) {
     currentBranch = code;
 }
 
+// O'lchov birligi: oddiy daftarda dona, moy (Oil) daftarida litr.
+// Birlik har filial uchun /api/branches dan keladi.
+const branchUnits = {};
+
+function isLitreBook() {
+    return branchUnits[currentBranch] === 'litr';
+}
+
+function qtyFieldLabel() {
+    return isLitreBook() ? t('Litr') : t('Soni');
+}
+
+function unitPriceLabel() {
+    return isLitreBook() ? t('Narxi (1 litr)') : t('Narxi (1 dona)');
+}
+
+// "4 × 95 000 so'm" → Oil daftarida "4 litr × 95 000 so'm"
+function qtyTimes(quantity) {
+    return isLitreBook() ? `${quantity} ${t('litr')}` : String(quantity);
+}
+
+// Qarz nomidan keyingi "× 4". Oil daftarida nomning o'zida litr bor ("Mobil — 4 litr").
+function qtySuffix(quantity) {
+    return quantity > 1 && !isLitreBook() ? ` × ${quantity}` : '';
+}
+
+// Formadagi mavjud tovar kartalarining "Soni"/"Narxi" yorliqlarini joriy daftarga moslaydi
+function applyUnitLabels() {
+    const setLabel = (input, text) => {
+        const label = input.closest('.form-group')?.querySelector('label');
+        if (label?.firstChild) label.firstChild.nodeValue = `${text} `;
+    };
+    document.querySelectorAll('.product-qty').forEach(input => setLabel(input, qtyFieldLabel()));
+    document.querySelectorAll('.product-price').forEach(input => setLabel(input, unitPriceLabel()));
+    document.querySelectorAll('#products-container .product-name').forEach(input => {
+        input.placeholder = productNamePlaceholder();
+    });
+}
+
+function productNamePlaceholder() {
+    return isLitreBook() ? t('Masalan: Mobil 5W-30, Shell 10W-40') : t('Masalan: Shina, Akkumulyator');
+}
+
 // Barcha API so'rovlarini Telegram initData imzosi bilan yuboradi.
 // Server imzoni tekshiradi — begona shaxs URLni bilsa ham ma'lumot ololmaydi.
 async function apiFetch(url, options = {}) {
@@ -926,7 +969,7 @@ async function loadExistingDebts(clientId) {
     }
 
     listEl.innerHTML = activeDebts.map(d => {
-        const qtyLabel = d.product_quantity > 1 ? ` × ${d.product_quantity}` : '';
+        const qtyLabel = qtySuffix(d.product_quantity);
         return `
             <div class="banner-debt-item">
                 <span class="banner-debt-name"><span class="banner-debt-date">${escapeHtml(d.debt_date)}</span>${escapeHtml(d.product_name)}${qtyLabel}</span>
@@ -1004,7 +1047,7 @@ function renderDebtHistoryCard(d) {
     const productListHtml = products.length > 1
         ? products.map((p, i) => {
             const pCur = p.currency || d.currency;
-            const qtyPart = p.quantity > 1 ? ` · ${p.quantity} × ${formatMoney(p.price_per_unit, pCur)}` : '';
+            const qtyPart = p.quantity > 1 ? ` · ${qtyTimes(p.quantity)} × ${formatMoney(p.price_per_unit, pCur)}` : '';
             return `
                 <div class="history-card-detail is-sub">
                     <span>${i + 1}. ${escapeHtml(p.name)}${qtyPart}</span>
@@ -1022,7 +1065,7 @@ function renderDebtHistoryCard(d) {
     return `
         <div class="history-card">
             <div class="history-card-header">
-                <span>${escapeHtml(d.product_name)}${d.product_quantity > 1 ? ` × ${d.product_quantity}` : ''}</span>
+                <span>${escapeHtml(d.product_name)}${qtySuffix(d.product_quantity)}</span>
                 ${statusHtml}
             </div>
             ${productListHtml}
@@ -1216,6 +1259,7 @@ document.addEventListener('click', (e) => {
 let editContext = null;  // { kind: 'client'|'debt', clientId, debt? }
 
 function editProductRowHTML(p = {}, currency = 'UZS') {
+    const curLabel = currency === 'USD' ? '$' : t("so'm");
     return `
         <div class="product-group edit-product">
             <div class="product-group-header">
@@ -1228,11 +1272,11 @@ function editProductRowHTML(p = {}, currency = 'UZS') {
             </div>
             <div class="product-row">
                 <div class="form-group">
-                    <label>${t('Soni')}</label>
+                    <label>${qtyFieldLabel()}</label>
                     <input type="number" class="edit-p-qty" value="${Number(p.quantity) || 1}" min="1" step="1" inputmode="numeric" required>
                 </div>
                 <div class="form-group">
-                    <label>${t('Narxi (1 dona, {currency})', { currency: currency === 'USD' ? '$' : t("so'm") })}</label>
+                    <label>${isLitreBook() ? t('Narxi (1 litr, {currency})', { currency: curLabel }) : t('Narxi (1 dona, {currency})', { currency: curLabel })}</label>
                     <input type="number" class="edit-p-price" value="${Number(p.price_per_unit) || ''}" min="1" step="1" inputmode="numeric" required>
                 </div>
             </div>
@@ -1545,15 +1589,15 @@ function createProductGroupHTML(index, kind = 'product') {
             </div>
             <div class="form-group">
                 <label>${t('Nomi')} <span class="req" aria-hidden="true">*</span></label>
-                <input type="text" class="product-name" placeholder="${escapeHtml(t(g.placeholder))}" autocomplete="off" required>
+                <input type="text" class="product-name" placeholder="${escapeHtml(kind === 'product' ? productNamePlaceholder() : t(g.placeholder))}" autocomplete="off" required>
             </div>
             <div class="product-row">
                 <div class="form-group">
-                    <label>${t('Soni')}</label>
+                    <label>${qtyFieldLabel()}</label>
                     <input type="number" class="product-qty" placeholder="1" min="1" step="1" value="1" inputmode="numeric" required>
                 </div>
                 <div class="form-group">
-                    <label>${t('Narxi (1 dona)')} <span class="req" aria-hidden="true">*</span></label>
+                    <label>${unitPriceLabel()} <span class="req" aria-hidden="true">*</span></label>
                     <input type="number" class="product-price" placeholder="0" min="1" step="1000" inputmode="numeric" required>
                 </div>
             </div>
@@ -1671,7 +1715,7 @@ function updateCreateCalculation() {
         if (products.length === 1) {
             const p = products[0];
             productCalcEl.textContent = p.quantity > 1
-                ? `${p.quantity} × ${formatMoney(p.price_per_unit, p.currency)} = ${formatMoney(p.quantity * p.price_per_unit, p.currency)}`
+                ? `${qtyTimes(p.quantity)} × ${formatMoney(p.price_per_unit, p.currency)} = ${formatMoney(p.quantity * p.price_per_unit, p.currency)}`
                 : formatMoney(p.price_per_unit, p.currency);
         } else {
             productCalcEl.textContent = formatMoneyMap(totals);
@@ -3058,9 +3102,11 @@ async function initBranches() {
     }
     const branches = info.branches || [];
     if (!branches.length) return;
+    branches.forEach(b => { branchUnits[b.code] = b.unit; });
     // Saqlangan filial endi mavjud bo'lmasa — asosiy filialga qaytamiz.
     if (!branches.some(b => b.code === currentBranch)) {
         setCurrentBranch(info.default || branches[0].code);
+        applyUnitLabels();
         resetForBranchChange();
         refreshAllData();
     }
@@ -3070,6 +3116,7 @@ async function initBranches() {
         if (!chip || chip.dataset.branch === currentBranch) return;
         hapticImpact();
         setCurrentBranch(chip.dataset.branch);
+        applyUnitLabels();
         renderBranchSwitch(branches);
         resetForBranchChange();
         refreshAllData();

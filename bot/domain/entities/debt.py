@@ -21,6 +21,10 @@ MAX_MONEY = 9_000_000_000_000_000
 MAX_QUANTITY = 1_000_000
 MAX_PRODUCTS_PER_DEBT = 50
 
+# O'lchov birligi: oddiy daftarda dona ("ta"), moy (Oil) daftarida litr.
+UNIT_PIECES = "ta"
+UNIT_LITRES = "litr"
+
 
 class DebtStatus(StrEnum):
     ACTIVE   = "active"
@@ -97,20 +101,21 @@ class DebtProduct:
         )
 
 
-def build_summary_name(products: list[DebtProduct]) -> str:
+def build_summary_name(products: list[DebtProduct], unit: str = UNIT_PIECES) -> str:
     """Tovarlar ro'yxatidan qisqacha bittagan nom yaratadi.
 
     Masalan: "Shina — 4 ta, Moy — 2 ta, Akkumulyator — 1 ta"
+    (Oil daftarida: "Mobil 5W-30 — 4 litr").
     """
     if not products:
         return ""
     if len(products) == 1:
         p = products[0]
-        return f"{p.name} — {p.quantity} ta" if p.quantity > 1 else p.name
+        return f"{p.name} — {p.quantity} {unit}" if p.quantity > 1 else p.name
     parts = []
     for p in products:
         if p.quantity > 1:
-            parts.append(f"{p.name} — {p.quantity} ta")
+            parts.append(f"{p.name} — {p.quantity} {unit}")
         else:
             parts.append(p.name)
     return ", ".join(parts)

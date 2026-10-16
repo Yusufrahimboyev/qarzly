@@ -22,6 +22,7 @@ from bot.domain.entities.currency import Currency
 from bot.domain.entities.debt import (
     MAX_MONEY,
     MAX_PRODUCTS_PER_DEBT,
+    UNIT_PIECES,
     Debt,
     DebtProduct,
     DebtStatus,
@@ -74,10 +75,12 @@ class DebtService:
         debts: DebtRepository,
         payments: PaymentRepository,
         uow_factory: UnitOfWorkFactory | None = None,
+        unit: str = UNIT_PIECES,
     ) -> None:
         self._clients = clients
         self._debts = debts
         self._payments = payments
+        self.unit = unit
         self._uow_factory: UnitOfWorkFactory = uow_factory or (
             lambda: NonTransactionalUnitOfWork(clients, debts, payments)
         )
@@ -99,6 +102,7 @@ class DebtService:
         exchange_product_name: str | None,
         exchange_product_price: int,
         given_money: int,
+        unit: str = UNIT_PIECES,
     ) -> _DebtPlan:
         """Qarzni hisoblaydi va invariantlarni tekshiradi (I/O siz).
 
@@ -126,7 +130,7 @@ class DebtService:
 
         total_product_price = sum(p.total_price for p in products)
         total_quantity = sum(p.quantity for p in products)
-        summary_name = build_summary_name(products)
+        summary_name = build_summary_name(products, unit)
 
         if total_product_price <= 0:
             raise ValueError(_("Tovarlar jami narxi 0 dan katta bo'lishi shart."))
@@ -261,6 +265,7 @@ class DebtService:
             exchange_product_name=exchange_product_name,
             exchange_product_price=exchange_product_price,
             given_money=given_money,
+            unit=self.unit,
         )
 
         async with self._unit_of_work() as uow:
@@ -370,7 +375,7 @@ class DebtService:
                 items = exchanges_by_cur.get(cur, [])
                 group_exchange_exists = bool(items)
                 group_exchange_price = sum(e.total_price for e in items)
-                group_exchange_name = build_summary_name(items) if items else None
+                group_exchange_name = build_summary_name(items, self.unit) if items else None
             group_given = given_money if cur == given_currency else 0
 
             plans.append(
@@ -383,6 +388,7 @@ class DebtService:
                     exchange_product_name=group_exchange_name,
                     exchange_product_price=group_exchange_price,
                     given_money=group_given,
+                    unit=self.unit,
                 )
             )
 

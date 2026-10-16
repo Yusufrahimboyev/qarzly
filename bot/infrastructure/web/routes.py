@@ -492,7 +492,8 @@ async def api_get_branches(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "branches": [
-                {"code": branch.code, "title": branch.title} for branch in registry
+                {"code": branch.code, "title": branch.title, "unit": branch.unit}
+                for branch in registry
             ],
             "default": registry.default.code,
         }

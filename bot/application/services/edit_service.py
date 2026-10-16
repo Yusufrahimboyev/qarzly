@@ -23,7 +23,7 @@ from bot.application.common.formatters import (
 )
 from bot.application.services.debt_service import DebtService
 from bot.domain.entities.client import Client
-from bot.domain.entities.debt import Debt, DebtProduct, DebtStatus
+from bot.domain.entities.debt import UNIT_PIECES, Debt, DebtProduct, DebtStatus
 from bot.domain.entities.edit import EditRecord, FieldChange
 from bot.domain.repositories.client_repository import ClientRepository
 from bot.domain.repositories.debt_repository import DebtRepository
@@ -58,7 +58,9 @@ class EditService:
         payments: PaymentRepository,
         edits: EditLogRepository,
         uow_factory: UnitOfWorkFactory | None = None,
+        unit: str = UNIT_PIECES,
     ) -> None:
+        self._unit = unit
         self._clients = clients
         self._debts = debts
         self._edits = edits
@@ -148,6 +150,7 @@ class EditService:
             exchange_product_name=debt.exchange_product_name,
             exchange_product_price=debt.exchange_product_price,
             given_money=debt.given_money,
+            unit=self._unit,
         )
         repaid = debt.original_debt - debt.remaining_debt
         new_remaining = plan.debt.original_debt - repaid

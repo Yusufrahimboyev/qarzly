@@ -21,3 +21,16 @@ BRANCH_SCHEMAS: dict[str, str | None] = {
     "nukus": "nukus",
     "lassa": "lassa",
 }
+
+# Moy (Oil) daftari: filialning alohida qarz daftari (o'z sxemasi), miqdori
+# litrda. `.env` dagi OIL_ENABLED bilan har bot uchun alohida yoqiladi.
+OIL_SUFFIX = "_oil"
+
+
+def oil_code(code: str) -> str:
+    """Filialning Oil daftari kodi va sxemasi, masalan "lassa_oil"."""
+    return f"{code}{OIL_SUFFIX}"
+
+
+def oil_title(code: str) -> str:
+    return f"{BRANCH_TITLES[code]} Oil"

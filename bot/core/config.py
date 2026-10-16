@@ -45,6 +45,10 @@ class Settings(BaseSettings):
         default="mangit",
         description="Shu bot xizmat qiladigan filial kodi (mangit, nukus yoki lassa).",
     )
+    oil_enabled: bool = Field(
+        default=False,
+        description="Filialning alohida moy (Oil) qarz daftarini yoqish (Mini App'da).",
+    )
 
     # --- Kunlik hisobot (kanalga avtomatik yuborish) ---
     report_channel_id: int = Field(

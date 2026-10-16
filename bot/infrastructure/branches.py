@@ -33,6 +33,7 @@ class Branch:
     idempotency_store: IdempotencyStore | None = None
     voice_debt_service: VoiceDebtService | None = None
     edit_service: EditService | None = None
+    unit: str = "ta"
 
 
 class BranchRegistry:
