@@ -346,11 +346,11 @@ function isLitreBook() {
 }
 
 function qtyFieldLabel() {
-    return isLitreBook() ? t('Litr') : t('Soni');
+    return isLitreBook() ? t('Litr yoki dona') : t('Soni');
 }
 
 function unitPriceLabel() {
-    return isLitreBook() ? t('Narxi (1 litr)') : t('Narxi (1 dona)');
+    return isLitreBook() ? t('Narxi (1 litr yoki dona)') : t('Narxi (1 dona)');
 }
 
 // "4 × 95 000 so'm" → Oil daftarida "4 litr × 95 000 so'm"
@@ -1276,7 +1276,7 @@ function editProductRowHTML(p = {}, currency = 'UZS') {
                     <input type="number" class="edit-p-qty" value="${Number(p.quantity) || 1}" min="1" step="1" inputmode="numeric" required>
                 </div>
                 <div class="form-group">
-                    <label>${isLitreBook() ? t('Narxi (1 litr, {currency})', { currency: curLabel }) : t('Narxi (1 dona, {currency})', { currency: curLabel })}</label>
+                    <label>${isLitreBook() ? t('Narxi (1 litr yoki dona, {currency})', { currency: curLabel }) : t('Narxi (1 dona, {currency})', { currency: curLabel })}</label>
                     <input type="number" class="edit-p-price" value="${Number(p.price_per_unit) || ''}" min="1" step="1" inputmode="numeric" required>
                 </div>
             </div>
