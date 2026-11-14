@@ -24,6 +24,7 @@ MAX_PRODUCTS_PER_DEBT = 50
 # O'lchov birligi: oddiy daftarda dona ("ta"), moy (Oil) daftarida litr.
 UNIT_PIECES = "ta"
 UNIT_LITRES = "litr"
+UNITS = (UNIT_PIECES, UNIT_LITRES)
 
 
 class DebtStatus(StrEnum):
@@ -44,6 +45,9 @@ class DebtProduct:
     quantity: int = 1
     price_per_unit: int = 0
     currency: Currency = Currency.UZS
+    # Tovarning o'z birligi (Oil daftarida litr yoki dona). None — daftar birligi;
+    # eski yozuvlarda bu maydon yo'q, ular daftar birligida qoladi.
+    unit: str | None = None
 
     def __post_init__(self) -> None:
         # Valyuta matn ko'rinishida ("USD") kelsa ham entity ichida har doim
@@ -76,14 +80,22 @@ class DebtProduct:
             raise ValueError("Tovarning jami narxi ruxsat etilgan chegaradan katta.")
         if not isinstance(self.currency, Currency):
             raise ValueError("Tovar valyutasi noto'g'ri (UZS yoki USD bo'lishi kerak).")
+        if self.unit is not None and self.unit not in UNITS:
+            raise ValueError("Tovar birligi noto'g'ri (litr yoki dona bo'lishi kerak).")
+
+    def unit_or(self, default: str) -> str:
+        return self.unit or default
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "name": self.name,
             "quantity": self.quantity,
             "price_per_unit": self.price_per_unit,
             "currency": self.currency.value,
         }
+        if self.unit is not None:
+            d["unit"] = self.unit
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> DebtProduct:
@@ -98,6 +110,7 @@ class DebtProduct:
             quantity=int(d.get("quantity", 1)),
             price_per_unit=int(d.get("price_per_unit", 0)),
             currency=currency,
+            unit=d.get("unit") if d.get("unit") in UNITS else None,
         )
 
 
@@ -105,17 +118,13 @@ def build_summary_name(products: list[DebtProduct], unit: str = UNIT_PIECES) -> 
     """Tovarlar ro'yxatidan qisqacha bittagan nom yaratadi.
 
     Masalan: "Shina — 4 ta, Moy — 2 ta, Akkumulyator — 1 ta"
-    (Oil daftarida: "Mobil 5W-30 — 4 litr").
+    (Oil daftarida: "Mobil 5W-30 — 4 litr"). Tovarning o'z birligi bo'lsa,
+    daftar birligidan ustun turadi: "Mobil — 4 litr, Filtr — 2 ta".
     """
-    if not products:
-        return ""
-    if len(products) == 1:
-        p = products[0]
-        return f"{p.name} — {p.quantity} {unit}" if p.quantity > 1 else p.name
     parts = []
     for p in products:
         if p.quantity > 1:
-            parts.append(f"{p.name} — {p.quantity} {unit}")
+            parts.append(f"{p.name} — {p.quantity} {p.unit_or(unit)}")
         else:
             parts.append(p.name)
     return ", ".join(parts)

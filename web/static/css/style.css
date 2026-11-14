@@ -683,7 +683,8 @@ select { scroll-margin: calc(var(--header-h) + var(--space-6)) 0 calc(var(--nav-
 
 /* Segmented control (filtr + valyuta) */
 .segmented,
-.currency-chips {
+.currency-chips,
+.unit-chips {
     display: flex;
     gap: 2px;
     padding: 3px;
@@ -693,7 +694,8 @@ select { scroll-margin: calc(var(--header-h) + var(--space-6)) 0 calc(var(--nav-
 }
 
 .chip,
-.cur-chip {
+.cur-chip,
+.unit-chip {
     flex: 1;
     display: inline-flex;
     align-items: center;
@@ -712,10 +714,12 @@ select { scroll-margin: calc(var(--header-h) + var(--space-6)) 0 calc(var(--nav-
 }
 
 .chip:hover,
-.cur-chip:hover { color: var(--color-text); }
+.cur-chip:hover,
+.unit-chip:hover { color: var(--color-text); }
 
 .chip.active,
-.cur-chip.active {
+.cur-chip.active,
+.unit-chip.active {
     background: var(--color-surface);
     color: var(--color-text);
     font-weight: var(--weight-semibold);
@@ -733,6 +737,8 @@ select { scroll-margin: calc(var(--header-h) + var(--space-6)) 0 calc(var(--nav-
 
 .currency-chips { display: inline-flex; }
 .cur-chip { min-height: var(--control-h-xs); padding: 0 var(--space-3); flex: 0 0 auto; }
+.unit-chips { display: flex; }
+.unit-chip { min-height: var(--control-h-xs); }
 
 /* Switch */
 .switch {

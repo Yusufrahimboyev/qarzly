@@ -15,7 +15,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from aiohttp import web
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
@@ -102,6 +102,8 @@ class ProductItemDTO(BaseModel):
     quantity: int = Field(default=1, ge=1, le=MAX_QUANTITY)
     price_per_unit: int = Field(..., gt=0, le=MAX_MONEY)
     currency: str = Field(default="UZS")
+    # Oil daftarida tovar birligi: "litr" yoki "ta" (dona). Yo'q bo'lsa — daftar birligi.
+    unit: Literal["litr", "ta"] | None = None
 
 
 class CreateDebtDTO(BaseModel):
@@ -667,6 +669,7 @@ async def api_create_debt(request: web.Request) -> web.Response:
                     quantity=p.quantity,
                     price_per_unit=p.price_per_unit,
                     currency=p_cur,
+                    unit=p.unit,
                 )
             )
     else:
@@ -692,6 +695,7 @@ async def api_create_debt(request: web.Request) -> web.Response:
                 quantity=e.quantity,
                 price_per_unit=e.price_per_unit,
                 currency=e_cur,
+                unit=e.unit,
             )
         )
 
@@ -1052,7 +1056,9 @@ async def api_update_debt(request: web.Request) -> web.Response:
             status=400,
         )
     products = [
-        DebtProduct(name=p.name, quantity=p.quantity, price_per_unit=p.price_per_unit)
+        DebtProduct(
+            name=p.name, quantity=p.quantity, price_per_unit=p.price_per_unit, unit=p.unit
+        )
         for p in dto.products
     ]
     try:

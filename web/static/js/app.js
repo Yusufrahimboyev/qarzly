@@ -345,18 +345,73 @@ function isLitreBook() {
     return branchUnits[currentBranch] === 'litr';
 }
 
-function qtyFieldLabel() {
-    return isLitreBook() ? t('Litr yoki dona') : t('Soni');
+// Oil daftarida har bir tovar litr yoki dona bo'ladi. Tovarda birlik bo'lmasa
+// (eski yozuvlar) — daftar birligi, ya'ni litr.
+function isLitreUnit(unit) {
+    return isLitreBook() && unit !== 'ta';
 }
 
-function unitPriceLabel() {
-    return isLitreBook() ? t('Narxi (1 litr yoki dona)') : t('Narxi (1 dona)');
+function qtyFieldLabel(unit) {
+    return isLitreUnit(unit) ? t('Litr') : t('Soni');
 }
 
-// "4 × 95 000 so'm" → Oil daftarida "4 litr × 95 000 so'm"
-function qtyTimes(quantity) {
-    return isLitreBook() ? `${quantity} ${t('litr')}` : String(quantity);
+function unitPriceLabel(unit) {
+    return isLitreUnit(unit) ? t('Narxi (1 litr)') : t('Narxi (1 dona)');
 }
+
+// "4 × 95 000 so'm" → Oil daftarida "4 litr × 95 000 so'm" yoki "2 dona × …"
+function qtyTimes(quantity, unit) {
+    if (!isLitreBook()) return String(quantity);
+    return `${quantity} ${unit === 'ta' ? t('dona') : t('litr')}`;
+}
+
+// "Litr | Dona" tugmalari — faqat Oil daftarida ko'rinadi
+function unitChipsHTML(unit = 'litr') {
+    const chip = (value, label) => {
+        const on = (unit === 'ta') === (value === 'ta');
+        return `<button type="button" class="unit-chip${on ? ' active' : ''}" data-unit="${value}" aria-pressed="${on}">${label}</button>`;
+    };
+    return `
+        <div class="form-group unit-field">
+            <label>${t('Birlik')}</label>
+            <div class="unit-chips" role="group" aria-label="${escapeHtml(t('Birlik'))}">
+                ${chip('litr', t('Litr'))}${chip('ta', t('Dona'))}
+            </div>
+        </div>`;
+}
+
+// Guruhdagi tanlangan birlik; Oil bo'lmagan daftarda birlik yuborilmaydi (null)
+function groupUnit(group) {
+    if (!isLitreBook()) return null;
+    return group.querySelector('.unit-chip.active')?.getAttribute('data-unit') || 'litr';
+}
+
+// Guruh "Litr/Soni" va "Narxi (1 litr/dona)" yorliqlarini tanlangan birlikka moslaydi
+function applyGroupUnitLabels(group) {
+    const unit = groupUnit(group);
+    const setLabel = (input, text) => {
+        const label = input?.closest('.form-group')?.querySelector('label');
+        if (label?.firstChild) label.firstChild.nodeValue = `${text} `;
+    };
+    setLabel(group.querySelector('.product-qty, .edit-p-qty'), qtyFieldLabel(unit));
+    setLabel(group.querySelector('.product-price'), unitPriceLabel(unit));
+    const editPrice = group.querySelector('.edit-p-price');
+    if (editPrice) setLabel(editPrice, editPriceLabel(unit, group.getAttribute('data-currency') || 'UZS'));
+}
+
+// Birlik tugmasi bosilganda (delegatsiya — dinamik kartalar uchun ham ishlaydi)
+document.addEventListener('click', (e) => {
+    const chip = e.target.closest('.unit-chip');
+    if (!chip) return;
+    chip.closest('.unit-chips').querySelectorAll('.unit-chip').forEach(c => {
+        c.classList.toggle('active', c === chip);
+        c.setAttribute('aria-pressed', String(c === chip));
+    });
+    const group = chip.closest('.product-group');
+    if (group) applyGroupUnitLabels(group);
+    if (group?.closest('#create-debt-form')) updateCreateCalculation();
+    hapticImpact();
+});
 
 // Qarz nomidan keyingi "× 4". Oil daftarida nomning o'zida litr bor ("Mobil — 4 litr").
 function qtySuffix(quantity) {
@@ -365,12 +420,16 @@ function qtySuffix(quantity) {
 
 // Formadagi mavjud tovar kartalarining "Soni"/"Narxi" yorliqlarini joriy daftarga moslaydi
 function applyUnitLabels() {
-    const setLabel = (input, text) => {
-        const label = input.closest('.form-group')?.querySelector('label');
-        if (label?.firstChild) label.firstChild.nodeValue = `${text} `;
-    };
-    document.querySelectorAll('.product-qty').forEach(input => setLabel(input, qtyFieldLabel()));
-    document.querySelectorAll('.product-price').forEach(input => setLabel(input, unitPriceLabel()));
+    document.querySelectorAll('#create-debt-form .product-group').forEach(group => {
+        // Daftar almashganda "Litr | Dona" tugmalari qo'shiladi yoki olib tashlanadi
+        const field = group.querySelector('.unit-field');
+        if (isLitreBook() && !field) {
+            group.querySelector('.product-row')?.insertAdjacentHTML('beforebegin', unitChipsHTML());
+        } else if (!isLitreBook() && field) {
+            field.remove();
+        }
+        applyGroupUnitLabels(group);
+    });
     document.querySelectorAll('#products-container .product-name').forEach(input => {
         input.placeholder = productNamePlaceholder();
     });
@@ -1047,7 +1106,7 @@ function renderDebtHistoryCard(d) {
     const productListHtml = products.length > 1
         ? products.map((p, i) => {
             const pCur = p.currency || d.currency;
-            const qtyPart = p.quantity > 1 ? ` · ${qtyTimes(p.quantity)} × ${formatMoney(p.price_per_unit, pCur)}` : '';
+            const qtyPart = p.quantity > 1 ? ` · ${qtyTimes(p.quantity, p.unit)} × ${formatMoney(p.price_per_unit, pCur)}` : '';
             return `
                 <div class="history-card-detail is-sub">
                     <span>${i + 1}. ${escapeHtml(p.name)}${qtyPart}</span>
@@ -1258,10 +1317,17 @@ document.addEventListener('click', (e) => {
 
 let editContext = null;  // { kind: 'client'|'debt', clientId, debt? }
 
-function editProductRowHTML(p = {}, currency = 'UZS') {
+function editPriceLabel(unit, currency) {
     const curLabel = currency === 'USD' ? '$' : t("so'm");
+    return isLitreUnit(unit)
+        ? t('Narxi (1 litr, {currency})', { currency: curLabel })
+        : t('Narxi (1 dona, {currency})', { currency: curLabel });
+}
+
+function editProductRowHTML(p = {}, currency = 'UZS') {
+    const unit = p.unit || 'litr';
     return `
-        <div class="product-group edit-product">
+        <div class="product-group edit-product" data-currency="${escapeHtml(currency || 'UZS')}">
             <div class="product-group-header">
                 <span class="product-group-title">${t('Tovar')}</span>
                 <button type="button" class="icon-btn edit-remove-product" aria-label="${t("Tovarni o'chirish")}">${icon('trash')}</button>
@@ -1270,13 +1336,14 @@ function editProductRowHTML(p = {}, currency = 'UZS') {
                 <label>${t('Tovar nomi')}</label>
                 <input type="text" class="edit-p-name" value="${escapeHtml(p.name || '')}" maxlength="80" autocomplete="off" required>
             </div>
+            ${isLitreBook() ? unitChipsHTML(unit) : ''}
             <div class="product-row">
                 <div class="form-group">
-                    <label>${qtyFieldLabel()}</label>
+                    <label>${qtyFieldLabel(unit)}</label>
                     <input type="number" class="edit-p-qty" value="${Number(p.quantity) || 1}" min="1" step="1" inputmode="numeric" required>
                 </div>
                 <div class="form-group">
-                    <label>${isLitreBook() ? t('Narxi (1 litr yoki dona, {currency})', { currency: curLabel }) : t('Narxi (1 dona, {currency})', { currency: curLabel })}</label>
+                    <label>${editPriceLabel(unit, currency)}</label>
                     <input type="number" class="edit-p-price" value="${Number(p.price_per_unit) || ''}" min="1" step="1" inputmode="numeric" required>
                 </div>
             </div>
@@ -1288,6 +1355,7 @@ function readEditProducts() {
         name: row.querySelector('.edit-p-name').value.trim(),
         quantity: Number(row.querySelector('.edit-p-qty').value) || 0,
         price_per_unit: Number(row.querySelector('.edit-p-price').value) || 0,
+        ...(groupUnit(row) ? { unit: groupUnit(row) } : {}),
     }));
 }
 
@@ -1591,6 +1659,7 @@ function createProductGroupHTML(index, kind = 'product') {
                 <label>${t('Nomi')} <span class="req" aria-hidden="true">*</span></label>
                 <input type="text" class="product-name" placeholder="${escapeHtml(kind === 'product' ? productNamePlaceholder() : t(g.placeholder))}" autocomplete="off" required>
             </div>
+            ${isLitreBook() ? unitChipsHTML() : ''}
             <div class="product-row">
                 <div class="form-group">
                     <label>${qtyFieldLabel()}</label>
@@ -1643,8 +1712,9 @@ function getProductsData(kind = 'product') {
         const qty = Math.max(1, Math.floor(Number(group.querySelector('.product-qty')?.value) || 1));
         const price = Math.floor(Number(group.querySelector('.product-price')?.value) || 0);
         const currency = getGroupCurrency(group);
+        const unit = groupUnit(group);
         if (name && price > 0) {
-            products.push({ name, quantity: qty, price_per_unit: price, currency });
+            products.push({ name, quantity: qty, price_per_unit: price, currency, ...(unit ? { unit } : {}) });
         }
     });
     return products;
@@ -1715,7 +1785,7 @@ function updateCreateCalculation() {
         if (products.length === 1) {
             const p = products[0];
             productCalcEl.textContent = p.quantity > 1
-                ? `${qtyTimes(p.quantity)} × ${formatMoney(p.price_per_unit, p.currency)} = ${formatMoney(p.quantity * p.price_per_unit, p.currency)}`
+                ? `${qtyTimes(p.quantity, p.unit)} × ${formatMoney(p.price_per_unit, p.currency)} = ${formatMoney(p.quantity * p.price_per_unit, p.currency)}`
                 : formatMoney(p.price_per_unit, p.currency);
         } else {
             productCalcEl.textContent = formatMoneyMap(totals);
